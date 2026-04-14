@@ -1,0 +1,36 @@
+# Build artefacts
+build/
+*.apk
+*.aab
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# uv
+.uv-cache/
+
+# Local user data (SQLite)
+ironlog.db
+*.db-journal
+
+# Downloaded exercise images (fetched at runtime from Free Exercise DB)
+assets/exercises/
+
+# Playwright test artefacts
+.playwright-cli/
+*.png
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Local Claude Code config (skills, scheduled tasks, etc.)
+.claude/
+
+# macOS
+.DS_Store

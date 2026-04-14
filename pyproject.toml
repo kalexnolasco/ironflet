@@ -1,0 +1,19 @@
+[project]
+name = "ironlog"
+version = "1.0.0"
+description = "App de entrenamiento - IronLog"
+requires-python = ">=3.10,<3.13"
+dependencies = ["flet>=0.25,<0.30"]
+
+[tool.flet]
+app.module = "main"
+
+[tool.flet.splash]
+color = "#0A0A0B"
+dark_color = "#0A0A0B"
+
+[tool.flet.android]
+package_name = "com.ironlog.app"
+product_name = "IronLog"
+adaptive_icon_background = "#0A0A0B"
+splash_color = "#0A0A0B"
