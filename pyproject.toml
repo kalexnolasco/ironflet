@@ -31,7 +31,7 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Topic :: Software Development :: User Interfaces",
 ]
-dependencies = ["flet>=0.25,<0.30"]
+dependencies = ["flet>=0.25,<0.85"]
 
 [dependency-groups]
 dev = [
