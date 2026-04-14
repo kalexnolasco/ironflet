@@ -1,4 +1,4 @@
-# Contribuir a IronLog
+# Contribuir a IronFlet
 
 Gracias por el interés. Este proyecto es pequeño y personal, pero las
 aportaciones son bienvenidas.

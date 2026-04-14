@@ -1,8 +1,8 @@
-# IronLog — Bilingual Weight Training Tracker
+# IronFlet — Bilingual Weight Training Tracker
 
 <div align="center">
 
-![Project](https://img.shields.io/badge/Project-IronLog-blue?style=for-the-badge)
+![Project](https://img.shields.io/badge/Project-IronFlet-blue?style=for-the-badge)
 ![Version](https://img.shields.io/badge/Version-0.1.0-green?style=for-the-badge)
 ![Python](https://img.shields.io/badge/Python-3.10%20%7C%203.11%20%7C%203.12-yellow?style=for-the-badge&logo=python&logoColor=white)
 ![Flet](https://img.shields.io/badge/Flet-0.28-7F52FF?style=for-the-badge&logoColor=white)
@@ -34,7 +34,7 @@
 ```mermaid
 graph TD
     USER["🖥️ User"]
-    subgraph APP["📱 IronLog Flet app"]
+    subgraph APP["📱 IronFlet Flet app"]
         NAV["Navigation<br/>5 tabs + Settings"]
         HOME["🏠 Home"]
         PLAN["📅 Plan"]
@@ -43,7 +43,7 @@ graph TD
         HIST["📊 History"]
         PROF["⚙️ Settings"]
     end
-    SQLITE[("🗄️ SQLite<br/>ironlog.db")]
+    SQLITE[("🗄️ SQLite<br/>ironflet.db")]
     CACHE[("📸 Image cache<br/>exercises/")]
     GH["📦 GitHub Release<br/>exercises.tar.gz"]
     FEDB["🌐 Free Exercise DB<br/>Unlicense"]
@@ -88,7 +88,7 @@ uv sync --group dev
 uv run python main.py
 
 # 3. Or run as a local web server on :8550
-IRONLOG_WEB=1 uv run python main.py
+IRONFLET_WEB=1 uv run python main.py
 
 # 4. Or build the Android APK
 flet build apk --target-platform android-arm64
@@ -96,7 +96,7 @@ flet build apk --target-platform android-arm64
 
 ---
 
-**IronLog** · Flet · Python
+**IronFlet** · Flet · Python
 
 &copy; 2026 Alex Nolasco
 

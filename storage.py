@@ -31,7 +31,7 @@ def _db_dir() -> str:
 
 class Storage:
     def __init__(self, db_path: str | None = None):
-        self.db_path = db_path or os.path.join(_db_dir(), "ironlog.db")
+        self.db_path = db_path or os.path.join(_db_dir(), "ironflet.db")
         self._init_db()
 
     def _conn(self) -> sqlite3.Connection:
@@ -173,7 +173,7 @@ class Storage:
                 "SELECT date, kg, timestamp FROM weight_log ORDER BY id ASC"
             ).fetchall()
         return {
-            "app": "ironlog",
+            "app": "ironflet",
             "version": self.BACKUP_VERSION,
             "exported_at": time.time(),
             "profile": self.get_profile(),
@@ -194,8 +194,8 @@ class Storage:
 
     def import_all(self, data: dict, *, wipe: bool = True) -> dict:
         """Restore data from an export dict. Returns counts of inserted rows."""
-        if not isinstance(data, dict) or data.get("app") != "ironlog":
-            raise ValueError("Not an IronLog backup")
+        if not isinstance(data, dict) or data.get("app") not in ("ironflet", "ironlog"):
+            raise ValueError("Not an IronFlet backup")
         version = int(data.get("version") or 0)
         if version > self.BACKUP_VERSION:
             raise ValueError(f"Backup version {version} is newer than supported")

@@ -56,8 +56,8 @@ color = "#0A0A0B"
 dark_color = "#0A0A0B"
 
 [tool.flet.android]
-package_name = "com.ironlog.app"
-product_name = "IronLog"
+package_name = "com.ironflet.app"
+product_name = "IronFlet"
 adaptive_icon_background = "#0A0A0B"
 splash_color = "#0A0A0B"
 

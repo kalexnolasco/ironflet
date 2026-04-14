@@ -1,11 +1,11 @@
-# IronLog — Bilingual Weight Training Tracker
+# IronFlet — Bilingual Weight Training Tracker
 
 <div align="center">
 
 [![Back to Language Selection](https://img.shields.io/badge/%E2%86%90%20Language%20Selection-lightgrey?style=for-the-badge)](README.md)
 [![Ver en Espanol](https://img.shields.io/badge/Espa%C3%B1ol-red?style=for-the-badge)](README.es.md)
 
-![Project](https://img.shields.io/badge/Project-IronLog-blue?style=for-the-badge)
+![Project](https://img.shields.io/badge/Project-IronFlet-blue?style=for-the-badge)
 ![Version](https://img.shields.io/badge/Version-0.1.0-green?style=for-the-badge)
 ![Python](https://img.shields.io/badge/Python-3.10%20%7C%203.11%20%7C%203.12-yellow?style=for-the-badge&logo=python&logoColor=white)
 ![Flet](https://img.shields.io/badge/Flet-0.28-7F52FF?style=for-the-badge&logoColor=white)
@@ -33,7 +33,7 @@
 
 ## Introduction
 
-**IronLog** is an offline-first fitness app for weight-training with periodized
+**IronFlet** is an offline-first fitness app for weight-training with periodized
 routines. It tracks sets, reps, rest, body weight and personal health
 metrics, and works without an account, without servers and without
 telemetry.
@@ -59,7 +59,7 @@ telemetry.
 ```mermaid
 graph TD
     USER["🖥️ User"]
-    subgraph APP["📱 IronLog Flet app"]
+    subgraph APP["📱 IronFlet Flet app"]
         HOME["🏠 Home"]
         PLAN["📅 Plan"]
         TRAIN["💪 Train"]
@@ -67,7 +67,7 @@ graph TD
         HIST["📊 History"]
         PROF["⚙️ Settings"]
     end
-    SQLITE[("🗄️ SQLite<br/>ironlog.db")]
+    SQLITE[("🗄️ SQLite<br/>ironflet.db")]
     CACHE[("📸 Image cache<br/>exercises/")]
     GH["📦 GitHub Release<br/>exercises.tar.gz"]
 
@@ -110,7 +110,7 @@ uv sync --group dev
 uv run python main.py
 
 # Web (localhost:8550, reachable on the LAN)
-IRONLOG_WEB=1 uv run python main.py
+IRONFLET_WEB=1 uv run python main.py
 
 # Android APK (~80 MB, arm64 only)
 flet build apk --target-platform android-arm64
@@ -155,7 +155,7 @@ adb install -r build/apk/app-release.apk
 
 ### Data
 
-- SQLite (stdlib only), single file `ironlog.db`.
+- SQLite (stdlib only), single file `ironflet.db`.
 - JSON backup / restore through the clipboard.
 - Destructive actions (clear history, clear all data) behind a confirm.
 
@@ -182,7 +182,7 @@ uv run python main.py
 ### Web
 
 ```bash
-IRONLOG_WEB=1 uv run python main.py
+IRONFLET_WEB=1 uv run python main.py
 # then open http://localhost:8550 in any browser
 ```
 
@@ -384,7 +384,7 @@ and instructions for adding a new routine or exercise.
 
 <div align="center">
 
-**IronLog** · Flet · Python
+**IronFlet** · Flet · Python
 
 [Language Selection](README.md) · [Documentacion en Espanol](README.es.md)
 

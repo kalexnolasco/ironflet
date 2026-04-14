@@ -1,11 +1,11 @@
-# IronLog — Registro de Entrenamiento Bilingüe
+# IronFlet — Registro de Entrenamiento Bilingüe
 
 <div align="center">
 
 [![Volver a la seleccion de idioma](https://img.shields.io/badge/%E2%86%90%20Seleccion%20de%20Idioma-lightgrey?style=for-the-badge)](README.md)
 [![English](https://img.shields.io/badge/English-blue?style=for-the-badge)](README.en.md)
 
-![Proyecto](https://img.shields.io/badge/Proyecto-IronLog-blue?style=for-the-badge)
+![Proyecto](https://img.shields.io/badge/Proyecto-IronFlet-blue?style=for-the-badge)
 ![Version](https://img.shields.io/badge/Version-0.1.0-green?style=for-the-badge)
 ![Python](https://img.shields.io/badge/Python-3.10%20%7C%203.11%20%7C%203.12-yellow?style=for-the-badge&logo=python&logoColor=white)
 ![Flet](https://img.shields.io/badge/Flet-0.28-7F52FF?style=for-the-badge&logoColor=white)
@@ -33,7 +33,7 @@
 
 ## Introduccion
 
-**IronLog** es una app offline para registrar entrenamientos de pesas con
+**IronFlet** es una app offline para registrar entrenamientos de pesas con
 rutinas periodizadas. Anota series, repeticiones, descanso, peso corporal
 y métricas de salud sin cuenta, sin servidores y sin telemetría.
 
@@ -58,7 +58,7 @@ y métricas de salud sin cuenta, sin servidores y sin telemetría.
 ```mermaid
 graph TD
     USER["🖥️ Usuario"]
-    subgraph APP["📱 IronLog Flet app"]
+    subgraph APP["📱 IronFlet Flet app"]
         HOME["🏠 Inicio"]
         PLAN["📅 Plan"]
         TRAIN["💪 Entrena"]
@@ -66,7 +66,7 @@ graph TD
         HIST["📊 Historial"]
         PROF["⚙️ Ajustes"]
     end
-    SQLITE[("🗄️ SQLite<br/>ironlog.db")]
+    SQLITE[("🗄️ SQLite<br/>ironflet.db")]
     CACHE[("📸 Cache de imagenes<br/>exercises/")]
     GH["📦 GitHub Release<br/>exercises.tar.gz"]
 
@@ -109,7 +109,7 @@ uv sync --group dev
 uv run python main.py
 
 # Modo web (localhost:8550, accesible en la LAN)
-IRONLOG_WEB=1 uv run python main.py
+IRONFLET_WEB=1 uv run python main.py
 
 # APK Android (~80 MB, solo arm64)
 flet build apk --target-platform android-arm64
@@ -154,7 +154,7 @@ adb install -r build/apk/app-release.apk
 
 ### Datos
 
-- SQLite (solo stdlib), un único fichero `ironlog.db`.
+- SQLite (solo stdlib), un único fichero `ironflet.db`.
 - Backup / restore en JSON vía portapapeles.
 - Acciones destructivas (borrar historial, borrar todo) con
   confirmación.
@@ -182,7 +182,7 @@ uv run python main.py
 ### Web
 
 ```bash
-IRONLOG_WEB=1 uv run python main.py
+IRONFLET_WEB=1 uv run python main.py
 # abre http://localhost:8550 en cualquier navegador
 ```
 
@@ -388,7 +388,7 @@ y cómo añadir una rutina o ejercicio nuevo.
 
 <div align="center">
 
-**IronLog** · Flet · Python
+**IronFlet** · Flet · Python
 
 [Seleccion de Idioma](README.md) · [English Documentation](README.en.md)
 

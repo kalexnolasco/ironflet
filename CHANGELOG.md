@@ -1,6 +1,6 @@
 # Changelog
 
-Todos los cambios notables de IronLog.
+Todos los cambios notables de IronFlet.
 El formato sigue [Keep a Changelog](https://keepachangelog.com/) y el proyecto
 usa [SemVer](https://semver.org/).
 

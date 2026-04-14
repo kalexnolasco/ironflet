@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-IronLog — bilingual (EN/ES) weight-training tracker (7-phase, 24-week periodized routine from CambiaTuFísico). Built with **Flet** (`>=0.25,<0.30`) on Python `>=3.10,<3.13`. Targets desktop and Android; no backend.
+IronFlet — bilingual (EN/ES) weight-training tracker (7-phase, 24-week periodized routine from CambiaTuFísico). Built with **Flet** (`>=0.25,<0.30`) on Python `>=3.10,<3.13`. Targets desktop and Android; no backend.
 
 All source strings are **canonical English**. Spanish is provided via the `ES` dict in `i18n.py`; the UI has a language toggle (home header) that persists in the `prefs` table.
 
@@ -15,9 +15,9 @@ All source strings are **canonical English**. Spanish is provided via the `ES` d
 flet run                  # or: python main.py
 
 # Web browser mode (port 8550, binds 0.0.0.0)
-IRONLOG_WEB=1 python main.py
+IRONFLET_WEB=1 python main.py
 
-# Android build (package: com.ironlog.app, configured in pyproject.toml)
+# Android build (package: com.ironflet.app, configured in pyproject.toml)
 flet build apk
 ```
 
@@ -46,7 +46,7 @@ Each view class (`HomeView`, `PlanView`, `WorkoutView`, `HistoryView`) must impl
 `storage.py` uses **only** `sqlite3` from stdlib (a design choice — no ORM, no external DB deps). DB path resolution:
 
 1. `$FLET_APP_STORAGE_DATA` if set (Flet provides this on Android)
-2. Otherwise `cwd/ironlog.db`
+2. Otherwise `cwd/ironflet.db`
 
 Two tables, both created via `CREATE TABLE IF NOT EXISTS` on every `Storage()` instantiation:
 

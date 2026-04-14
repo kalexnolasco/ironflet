@@ -1,4 +1,4 @@
-"""IronLog - Entry point + navigation."""
+"""IronFlet - Entry point + navigation."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ from views.workout import WorkoutView
 
 
 def main(page: ft.Page):
-    page.title = "IronLog"
+    page.title = "IronFlet"
     page.theme_mode = ft.ThemeMode.DARK
     page.bgcolor = DARK_BG
     page.padding = 0
@@ -135,7 +135,7 @@ def main(page: ft.Page):
 if __name__ == "__main__":
     import os
 
-    if os.environ.get("IRONLOG_WEB"):
+    if os.environ.get("IRONFLET_WEB"):
         ft.app(main, view=ft.AppView.WEB_BROWSER, port=8550, host="0.0.0.0", assets_dir="assets")
     else:
         ft.app(main, assets_dir="assets")

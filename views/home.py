@@ -153,7 +153,7 @@ class HomeView:
                         ft.Row(
                             [
                                 ft.Text(
-                                    "IRONLOG", size=11, weight=ft.FontWeight.W_900, color=ACCENT
+                                    "IRONFLET", size=11, weight=ft.FontWeight.W_900, color=ACCENT
                                 ),
                                 ft.Container(width=8),
                                 self._lang_toggle(),
