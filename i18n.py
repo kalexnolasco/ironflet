@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re as _re
+
 _lang = "en"
 
 # Spanish translations. Keys are the English strings used in source.
@@ -17,7 +19,6 @@ ES: dict[str, str] = {
     "Guides": "Guías",
     "Training": "Entrenamiento",
     "Nutrition": "Nutrición",
-
     # ── Profile ─────────────────────────────────────────────
     "Profile": "Perfil",
     "Settings": "Ajustes",
@@ -25,13 +26,11 @@ ES: dict[str, str] = {
     "Clear workout history": "Borrar historial de entrenamientos",
     "Clear all data": "Borrar todos los datos",
     "This will permanently delete all logged workouts. "
-    "Profile and weight log stay.":
-        "Esto borrará todos los entrenamientos registrados. "
-        "El perfil y el historial de peso se mantienen.",
+    "Profile and weight log stay.": "Esto borrará todos los entrenamientos registrados. "
+    "El perfil y el historial de peso se mantienen.",
     "This will erase profile, weight log, workouts and preferences. "
-    "Cannot be undone.":
-        "Esto borrará el perfil, historial de peso, entrenamientos y preferencias. "
-        "No se puede deshacer.",
+    "Cannot be undone.": "Esto borrará el perfil, historial de peso, entrenamientos y preferencias. "
+    "No se puede deshacer.",
     "Delete": "Borrar",
     "Erase all": "Borrar todo",
     "Exercise guides": "Guías de ejercicios",
@@ -43,9 +42,8 @@ ES: dict[str, str] = {
     "Clear cache": "Limpiar caché",
     "Exercise photos and instructions are downloaded "
     "from a public fitness database (Unlicense). "
-    "Approx. 9 MB over Wi-Fi is recommended.":
-        "Las fotos e instrucciones se descargan de una base de "
-        "datos pública (Unlicense). ~9 MB, mejor por Wi-Fi.",
+    "Approx. 9 MB over Wi-Fi is recommended.": "Las fotos e instrucciones se descargan de una base de "
+    "datos pública (Unlicense). ~9 MB, mejor por Wi-Fi.",
     "Your data": "Tus datos",
     "Derived metrics": "Métricas derivadas",
     "Weight": "Peso",
@@ -75,7 +73,6 @@ ES: dict[str, str] = {
     "obese": "obesidad",
     "Current weight": "Peso actual",
     "Log weight": "Registrar peso",
-    "History": "Historial",
     "No weight logged yet": "Sin registros de peso aún",
     "Weight (kg)": "Peso (kg)",
     "Date (YYYY-MM-DD)": "Fecha (AAAA-MM-DD)",
@@ -83,7 +80,6 @@ ES: dict[str, str] = {
     "Invalid date format": "Formato de fecha inválido",
     "Cancel": "Cancelar",
     "Save": "Guardar",
-
     # ── Backup ──────────────────────────────────────────────
     "Backup": "Respaldo",
     "Export backup": "Exportar respaldo",
@@ -100,12 +96,9 @@ ES: dict[str, str] = {
     "Size": "Tamaño",
     "Invalid backup JSON": "JSON de respaldo inválido",
     "Paste backup JSON below": "Pega aquí el JSON del respaldo",
-    "This will replace all current data.":
-        "Esto reemplazará todos los datos actuales.",
-    "Keep current data / merge prefs only":
-        "Mantener datos actuales / solo combinar prefs",
+    "This will replace all current data.": "Esto reemplazará todos los datos actuales.",
+    "Keep current data / merge prefs only": "Mantener datos actuales / solo combinar prefs",
     "Replace all": "Reemplazar todo",
-
     # ── Home ────────────────────────────────────────────────
     "Sessions": "Sesiones",
     "Sets": "Series",
@@ -114,11 +107,9 @@ ES: dict[str, str] = {
     "Today": "Hoy",
     "No records": "Sin registros",
     "days": "días",
-
     # ── Plan ────────────────────────────────────────────────
     "Training Plan": "Plan de Entrenamiento",
-    "Periodized routine · 24 weeks · 7 phases":
-        "Rutina periodizada · 24 semanas · 7 fases",
+    "Periodized routine · 24 weeks · 7 phases": "Rutina periodizada · 24 semanas · 7 fases",
     "PHASE": "FASE",
     "WK": "SEM",
     "High freq.": "Alta freq.",
@@ -129,7 +120,6 @@ ES: dict[str, str] = {
     "Sets:": "Series:",
     "Rest:": "Descanso:",
     "Wk": "Sem",
-
     # ── Workout ─────────────────────────────────────────────
     "Choose your current phase": "Elige tu fase actual",
     "exercises": "ejercicios",
@@ -148,20 +138,16 @@ ES: dict[str, str] = {
     "exercises logged": "ejercicios registrados",
     "Back to Home": "Volver al Inicio",
     "Duration": "Duración",
-
     # ── History ─────────────────────────────────────────────
     "History & Progress": "Historial y Progresión",
-    "Tap an exercise to see your progress":
-        "Toca un ejercicio para ver tu evolución",
-    "Start training to see your progress":
-        "Empieza a entrenar para ver tu progresión",
+    "Tap an exercise to see your progress": "Toca un ejercicio para ver tu evolución",
+    "Start training to see your progress": "Empieza a entrenar para ver tu progresión",
     "sessions": "sesiones",
     "max kg": "kg máx",
     "Max weight": "Peso máximo",
     "Total volume": "Volumen total",
     "Session detail": "Detalle por sesión",
     "PR": "PR",
-
     # ── Routines ────────────────────────────────────────────
     "Routine": "Rutina",
     "CambiaTuFísico": "CambiaTuFísico",
@@ -171,21 +157,12 @@ ES: dict[str, str] = {
     "Women — Home": "Mujer — Casa",
     "Women — Strength": "Mujer — Fuerza",
     "Women — Volume": "Mujer — Volumen",
-    "Periodized routine · 24 weeks · 7 phases":
-        "Rutina periodizada · 24 semanas · 7 fases",
-    "4-day split · 12 weeks · 2 phases":
-        "Rutina 4 días · 12 semanas · 2 fases",
-    "6-day split · 12 weeks · 2 phases":
-        "Rutina 6 días · 12 semanas · 2 fases",
-    "Glute + tone focus · 12 weeks · 2 phases":
-        "Enfoque glúteo + tonificación · 12 semanas · 2 fases",
-    "At home · 3 days · 8 weeks · 1 phase":
-        "En casa · 3 días · 8 semanas · 1 fase",
-    "Barbell strength · 4 days · 12 weeks · 2 phases":
-        "Fuerza con barra · 4 días · 12 semanas · 2 fases",
-    "High volume hypertrophy · 4 days · 12 weeks · 2 phases":
-        "Hipertrofia alto volumen · 4 días · 12 semanas · 2 fases",
-
+    "4-day split · 12 weeks · 2 phases": "Rutina 4 días · 12 semanas · 2 fases",
+    "6-day split · 12 weeks · 2 phases": "Rutina 6 días · 12 semanas · 2 fases",
+    "Glute + tone focus · 12 weeks · 2 phases": "Enfoque glúteo + tonificación · 12 semanas · 2 fases",
+    "At home · 3 days · 8 weeks · 1 phase": "En casa · 3 días · 8 semanas · 1 fase",
+    "Barbell strength · 4 days · 12 weeks · 2 phases": "Fuerza con barra · 4 días · 12 semanas · 2 fases",
+    "High volume hypertrophy · 4 days · 12 weeks · 2 phases": "Hipertrofia alto volumen · 4 días · 12 semanas · 2 fases",
     # ── Phase names ─────────────────────────────────────────
     "Conditioning": "Acondicionamiento",
     "Total Hypertrophy": "Hipertrofia Total",
@@ -209,7 +186,6 @@ ES: dict[str, str] = {
     "Build volume": "Construir volumen",
     "Metabolic Peak": "Pico Metabólico",
     "Pump + burn": "Bombeo + quema",
-
     # ── Phase subtitles ─────────────────────────────────────
     "Hypertrophy": "Hipertrofia",
     "Muscle Failure": "Fallo muscular",
@@ -220,11 +196,9 @@ ES: dict[str, str] = {
     "Bi-sets / Supersets": "Biseries / Superseries",
     "Build base": "Construir base",
     "Volume + Intensity": "Volumen + Intensidad",
-
     # ── Sets schemes (free-form) ────────────────────────────
     "Ascending Pyramid": "Pirámide ascendente",
     "Drop sets (e.g.: 10,8,6+12↓)": "Descendentes (ej: 10,8,6+12↓)",
-
     # ── Rest notations ──────────────────────────────────────
     "1' sets / 2-3' exercises": "1' series / 2-3' ejercicios",
     "1'30\" sets (max 2')": "1'30\" series (máx 2')",
@@ -247,68 +221,44 @@ ES: dict[str, str] = {
     "4×10-12": "4×10-12",
     "4×12-15 + drop set": "4×12-15 + descendente",
     "3×10-15": "3×10-15",
-
     # ── Phase notes ─────────────────────────────────────────
-    "No absolute failure. 20' continuous cardio post-weights. Abs 2 days/week.":
-        "Sin fallo absoluto. Cardio 20' continuo post-pesas. Abs 2 días/semana.",
-    "Failure on last set. Same exercises. 20' cardio. More intense abs.":
-        "Fallo en última serie. Mismos ejercicios. Cardio 20'. Abs más intensidad.",
-    "Increase loads. *= 3×8 to failure. 20' cardio. Abs 5×8-12.":
-        "Subir kilajes. *= 3×8 fallo. Cardio 20'. Abs 5×8-12.",
-    "Low intensity, no failure. 3 days full body.":
-        "Baja intensidad, sin fallo. 3 días full body.",
-    "5 days, 1 muscle/day. Failure on all sets except first.":
-        "5 días, 1 músculo/día. Fallo en todas menos 1ª serie.",
-    "Drop sets on last set. 5' treadmill pre-weights.":
-        "Series descendentes en última serie. 5' cinta pre-pesas.",
-    "Weeks 1-3: bi-sets. Weeks 4-6: antagonist supersets.":
-        "Sem 1-3: biseries. Sem 4-6: superseries antagonistas.",
-    "Same loads. RIR 2-3. Add weight when top reps are easy.":
-        "Mismas cargas. RIR 2-3. Sube peso cuando las top reps vayan fáciles.",
-    "Last set close to failure. Add isolation finishers.":
-        "Última serie cerca del fallo. Añade aislamientos de remate.",
-    "6 days/week. Same exercises twice. RIR 2-3 until last set.":
-        "6 días/semana. Mismos ejercicios dos veces. RIR 2-3 hasta la última serie.",
-    "Push last set to failure. Add drop set on isolation moves.":
-        "Última serie al fallo. Añade descendentes en los aislamientos.",
-    "3 days/week. Glute focus + upper body balance. 20' cardio after.":
-        "3 días/semana. Enfoque glúteo + equilibrio superior. 20' de cardio al final.",
-    "4 days/week. Supersets and HIIT finishers. Keep intensity up.":
-        "4 días/semana. Superseries y remates HIIT. Mantén la intensidad alta.",
-    "3 days/week at home. Start bodyweight, add DBs when top reps feel easy.":
-        "3 días/semana en casa. Empieza con peso corporal; añade mancuernas cuando las top reps vayan fáciles.",
-    "Submaximal loads. Add weight when 3 sessions at the same load feel easy.":
-        "Cargas submáximas. Sube peso cuando 3 sesiones al mismo kilaje te resulten cómodas.",
-    "Top set RPE 8. Back-off sets 10-15% lighter for volume.":
-        "Serie top a RPE 8. Back-off sets 10-15% más ligeras para sumar volumen.",
-    "Moderate loads, higher volume. Mind-muscle focus over loads.":
-        "Cargas moderadas, mayor volumen. Prioriza conexión músculo-mente antes que kilaje.",
-    "Last set each exercise ends with a drop set for extra intensity.":
-        "La última serie de cada ejercicio acaba con una descendente para sumar intensidad.",
-
+    "No absolute failure. 20' continuous cardio post-weights. Abs 2 days/week.": "Sin fallo absoluto. Cardio 20' continuo post-pesas. Abs 2 días/semana.",
+    "Failure on last set. Same exercises. 20' cardio. More intense abs.": "Fallo en última serie. Mismos ejercicios. Cardio 20'. Abs más intensidad.",
+    "Increase loads. *= 3×8 to failure. 20' cardio. Abs 5×8-12.": "Subir kilajes. *= 3×8 fallo. Cardio 20'. Abs 5×8-12.",
+    "Low intensity, no failure. 3 days full body.": "Baja intensidad, sin fallo. 3 días full body.",
+    "5 days, 1 muscle/day. Failure on all sets except first.": "5 días, 1 músculo/día. Fallo en todas menos 1ª serie.",
+    "Drop sets on last set. 5' treadmill pre-weights.": "Series descendentes en última serie. 5' cinta pre-pesas.",
+    "Weeks 1-3: bi-sets. Weeks 4-6: antagonist supersets.": "Sem 1-3: biseries. Sem 4-6: superseries antagonistas.",
+    "Same loads. RIR 2-3. Add weight when top reps are easy.": "Mismas cargas. RIR 2-3. Sube peso cuando las top reps vayan fáciles.",
+    "Last set close to failure. Add isolation finishers.": "Última serie cerca del fallo. Añade aislamientos de remate.",
+    "6 days/week. Same exercises twice. RIR 2-3 until last set.": "6 días/semana. Mismos ejercicios dos veces. RIR 2-3 hasta la última serie.",
+    "Push last set to failure. Add drop set on isolation moves.": "Última serie al fallo. Añade descendentes en los aislamientos.",
+    "3 days/week. Glute focus + upper body balance. 20' cardio after.": "3 días/semana. Enfoque glúteo + equilibrio superior. 20' de cardio al final.",
+    "4 days/week. Supersets and HIIT finishers. Keep intensity up.": "4 días/semana. Superseries y remates HIIT. Mantén la intensidad alta.",
+    "3 days/week at home. Start bodyweight, add DBs when top reps feel easy.": "3 días/semana en casa. Empieza con peso corporal; añade mancuernas cuando las top reps vayan fáciles.",
+    "Submaximal loads. Add weight when 3 sessions at the same load feel easy.": "Cargas submáximas. Sube peso cuando 3 sesiones al mismo kilaje te resulten cómodas.",
+    "Top set RPE 8. Back-off sets 10-15% lighter for volume.": "Serie top a RPE 8. Back-off sets 10-15% más ligeras para sumar volumen.",
+    "Moderate loads, higher volume. Mind-muscle focus over loads.": "Cargas moderadas, mayor volumen. Prioriza conexión músculo-mente antes que kilaje.",
+    "Last set each exercise ends with a drop set for extra intensity.": "La última serie de cada ejercicio acaba con una descendente para sumar intensidad.",
     # ── Day names (phases 1-3 high-freq) ────────────────────
     "Chest - Biceps": "Pecho - Bíceps",
     "Back - Triceps": "Espalda - Tríceps",
     "Shoulder - Leg": "Hombro - Pierna",
-
     # ── Day names (phase 4 deload) ──────────────────────────
     "Day 1 Full Body": "Día 1 Full Body",
     "Day 2 Full Body": "Día 2 Full Body",
     "Day 3 Full Body": "Día 3 Full Body",
-
     # ── Day names (phase 5 Weider) ──────────────────────────
     "D1: Chest + Abs": "D1: Pecho + Abs",
     "D2: Back + Abs": "D2: Espalda + Abs",
     "D3: Leg": "D3: Pierna",
     "D4: Shoulder + Abs": "D4: Hombro + Abs",
     "D5: Arms + Abs": "D5: Brazos + Abs",
-
     # ── Day names (phase 6 high intensity) ──────────────────
     "D1: Chest + Abs A": "D1: Pecho + Abs A",
     "D2: Back + Abs B": "D2: Espalda + Abs B",
     "D4: Shoulder + Abs A": "D4: Hombro + Abs A",
     "D5: Arms + Abs B": "D5: Brazos + Abs B",
-
     # ── Day names (phase 7 fat loss) ────────────────────────
     "W1-3: Chest-Biceps": "S1-3: Pecho-Bíceps",
     "W1-3: Back-Triceps": "S1-3: Espalda-Tríceps",
@@ -316,18 +266,15 @@ ES: dict[str, str] = {
     "W4-6: Chest-Back (SS)": "S4-6: Pecho-Espalda (SS)",
     "W4-6: Shoulder-Leg (SS)": "S4-6: Hombro-Pierna (SS)",
     "W4-6: Arms (Antag. SS)": "S4-6: Brazos (SS Antag.)",
-
     # ── Day names (Upper / Lower routine) ───────────────────
     "Upper A: Push focus": "Torso A: Empuje",
     "Upper B: Pull focus": "Torso B: Tirón",
     "Lower A: Squat focus": "Pierna A: Sentadilla",
     "Lower B: Deadlift focus": "Pierna B: Peso Muerto",
-
     # ── Day names (Push / Pull / Legs routine) ──────────────
     "Push Day": "Día Empuje",
     "Pull Day": "Día Tirón",
     "Leg Day": "Día Pierna",
-
     # ── Day names (Women Fitness routine) ───────────────────
     "Glutes + Lower": "Glúteos + Pierna",
     "Upper Body": "Tren Superior",
@@ -336,34 +283,23 @@ ES: dict[str, str] = {
     "Upper + HIIT": "Superior + HIIT",
     "Lower B: Quad focus": "Pierna B: Cuádriceps",
     "Full Body + Core": "Full Body + Core",
-
     # ── Day names (Women — Home routine) ────────────────────
     "Upper at Home": "Superior en Casa",
     "Lower at Home": "Inferior en Casa",
     "Full Body Flow": "Full Body",
-
     # ── Day names (Women — Strength routine) ────────────────
     "Squat Day": "Día Sentadilla",
     "Bench Day": "Día Press Banca",
     "Deadlift Day": "Día Peso Muerto",
     "Press Day": "Día Press Militar",
-
     # ── Day names (Women — Volume routine) ──────────────────
     "Lower A: Quads": "Inferior A: Cuádriceps",
     "Upper A: Push": "Superior A: Empuje",
     "Lower B: Posterior": "Inferior B: Posterior",
     "Upper B: Pull": "Superior B: Tirón",
-
-    # ── Muscle groups (catalog keys) ────────────────────────
-    "Chest": "Pecho",
-    "Back": "Espalda",
-    "Shoulder": "Hombro",
-    "Biceps": "Bíceps",
-    "Triceps": "Tríceps",
-    "Leg": "Pierna",
-    "Abs": "Abdomen",
-    "Cardio": "Cardio",
-
+    # (Muscle group catalog keys live in MUSCLE_ES below, to avoid the
+    #  collision between "Back" as a muscle ("Espalda") and "Back" as the
+    #  Workout back button ("Volver").)
     # ── Exercises (canonical English → Spanish) ─────────────
     # Chest
     "Barbell Bench Press": "Press Banca Barra",
@@ -455,10 +391,8 @@ ES: dict[str, str] = {
     "Bike": "Bicicleta",
     "Elliptical": "Elíptica",
     "HIIT Intervals": "HIIT Intervalos",
-
     # ── Day-of-week / month abbrev (shown via helpers) ──────
     # (handled by DAYS_OF_WEEK / MONTHS below)
-
     # ── Week rotation strings (plan.py distribution view) ───
     "Chest-Biceps": "Pecho-Bíceps",
     "Back-Triceps": "Espalda-Tríceps",
@@ -467,75 +401,45 @@ ES: dict[str, str] = {
     "Back-Triceps + Abs": "Espalda-Tríceps + Abs",
     "Shoulder-Leg + Abs": "Hombro-Pierna + Abs",
     "Rest": "Descanso",
-
     # ── Composite / Phase-6 compound exercises ──────────────
     "V-Pulldown + V-Row": "Jalones V + Remo V",
     "Lying + Seated Leg Curl": "Femoral Tumb. + Sent.",
     "Calf Press + Seated": "Gemelo Prensa + Sent.",
     "Skull Crushers + Close-Grip": "Press Francés + Cerrado",
-
     # ── Phase-7 bi-sets / supersets / trisets ───────────────
     # W1-3 Chest-Biceps
-    "Bi-set: Incline DB Press + Flat Machine Press":
-        "BI: Press Inc. Manc. + Press Plano Máq.",
-    "Bi-set: Incline Flyes + Machine Flyes":
-        "BI: Aperturas Inc. + Aperturas Máq.",
-    "Bi-set: Decline Press + Push-ups":
-        "BI: Press Declinado + Flexiones",
-    "Bi-set: Barbell Curl + Simultaneous DB Curl":
-        "BI: Curl Barra + Curl Manc. Sim.",
-    "Bi-set: EZ Preacher + Hammer Curl":
-        "BI: Curl Scott Z + Curl Martillo",
+    "Bi-set: Incline DB Press + Flat Machine Press": "BI: Press Inc. Manc. + Press Plano Máq.",
+    "Bi-set: Incline Flyes + Machine Flyes": "BI: Aperturas Inc. + Aperturas Máq.",
+    "Bi-set: Decline Press + Push-ups": "BI: Press Declinado + Flexiones",
+    "Bi-set: Barbell Curl + Simultaneous DB Curl": "BI: Curl Barra + Curl Manc. Sim.",
+    "Bi-set: EZ Preacher + Hammer Curl": "BI: Curl Scott Z + Curl Martillo",
     # W1-3 Back-Triceps
-    "Bi-set: Front + Behind-Neck Pulldown":
-        "BI: Jalones Front. + Tras Nuca",
-    "Bi-set: V-Pulldown + Seated Row":
-        "BI: Jalones V + Remo Sentado",
-    "Bi-set: Machine Row + Reverse Barbell Row":
-        "BI: Remo Máq. + Remo Barra Inv.",
-    "Bi-set: Dips + Triceps Pushdown":
-        "BI: Fondos + Jalones Tríceps",
-    "Bi-set: Barbell + DB Skull Crushers":
-        "BI: Press Francés Barra + Manc.",
+    "Bi-set: Front + Behind-Neck Pulldown": "BI: Jalones Front. + Tras Nuca",
+    "Bi-set: V-Pulldown + Seated Row": "BI: Jalones V + Remo Sentado",
+    "Bi-set: Machine Row + Reverse Barbell Row": "BI: Remo Máq. + Remo Barra Inv.",
+    "Bi-set: Dips + Triceps Pushdown": "BI: Fondos + Jalones Tríceps",
+    "Bi-set: Barbell + DB Skull Crushers": "BI: Press Francés Barra + Manc.",
     # W1-3 Shoulder-Leg
-    "Bi-set: DB Press + Arnold Press":
-        "BI: Press Manc. + Press Arnold",
-    "Triset: Front + Lateral + Rear Delts":
-        "TRI: Elev. Front. + Lat. + Pájaros",
-    "Bi-set: Leg Press + Extensions":
-        "BI: Prensa + Extensiones",
-    "Bi-set: Romanian DL + Lying Leg Curl":
-        "BI: PM Rumano + Femoral Tumb.",
-    "Triset: Lunges + Seated + Standing Calf":
-        "TRI: Splits + Gem. Sent. + Gem. Pie",
+    "Bi-set: DB Press + Arnold Press": "BI: Press Manc. + Press Arnold",
+    "Triset: Front + Lateral + Rear Delts": "TRI: Elev. Front. + Lat. + Pájaros",
+    "Bi-set: Leg Press + Extensions": "BI: Prensa + Extensiones",
+    "Bi-set: Romanian DL + Lying Leg Curl": "BI: PM Rumano + Femoral Tumb.",
+    "Triset: Lunges + Seated + Standing Calf": "TRI: Splits + Gem. Sent. + Gem. Pie",
     # W4-6 Chest-Back SS
-    "SS: Bench Press + Pull-ups":
-        "SS: Press Banca + Dominadas",
-    "SS: Incline DB Press + DB Row":
-        "SS: Press Inc. Manc. + Remo Manc.",
-    "SS: Machine Flyes + Machine Row":
-        "SS: Aperturas Máq. + Remo Máq.",
-    "SS: Cable Crossover + Behind-Neck Pulldown":
-        "SS: Cruces Polea + Jalones Nuca",
+    "SS: Bench Press + Pull-ups": "SS: Press Banca + Dominadas",
+    "SS: Incline DB Press + DB Row": "SS: Press Inc. Manc. + Remo Manc.",
+    "SS: Machine Flyes + Machine Row": "SS: Aperturas Máq. + Remo Máq.",
+    "SS: Cable Crossover + Behind-Neck Pulldown": "SS: Cruces Polea + Jalones Nuca",
     # W4-6 Shoulder-Leg SS
-    "Bi-set: Military + Smith Press":
-        "BI: Press Militar + Press Multi.",
-    "Triset: Upright Row + Rear Delts + Lateral":
-        "TRI: Remo Mentón + Pájaros + Lat.",
-    "SS: Squat + Lying Leg Curl":
-        "SS: Sentadilla + Femoral Tumb.",
-    "SS: Leg Press + Romanian DL":
-        "SS: Prensa + PM Rumano",
-    "Triset: Standing + Seated + Press Calf":
-        "TRI: Gemelo Pie + Sent. + Prensa",
+    "Bi-set: Military + Smith Press": "BI: Press Militar + Press Multi.",
+    "Triset: Upright Row + Rear Delts + Lateral": "TRI: Remo Mentón + Pájaros + Lat.",
+    "SS: Squat + Lying Leg Curl": "SS: Sentadilla + Femoral Tumb.",
+    "SS: Leg Press + Romanian DL": "SS: Prensa + PM Rumano",
+    "Triset: Standing + Seated + Press Calf": "TRI: Gemelo Pie + Sent. + Prensa",
     # W4-6 Arms antag. SS
-    "SS: EZ Curl + EZ Skull Crushers":
-        "SS: Curl Barra Z + Press Francés Z",
-    "SS: Barbell Curl + Triceps Pushdown":
-        "SS: Curl Barra + Jalones Tríceps",
-    "SS: Incline DB Curl + Triceps Kickback":
-        "SS: Curl Inc. Manc. + Patadas Tríc.",
-
+    "SS: EZ Curl + EZ Skull Crushers": "SS: Curl Barra Z + Press Francés Z",
+    "SS: Barbell Curl + Triceps Pushdown": "SS: Curl Barra + Jalones Tríceps",
+    "SS: Incline DB Curl + Triceps Kickback": "SS: Curl Inc. Manc. + Patadas Tríc.",
     # ── Exercise detail dialog ──────────────────────────────
     "Primary": "Primario",
     "Secondary": "Secundario",
@@ -546,7 +450,6 @@ ES: dict[str, str] = {
     "Instructions in English": "Instrucciones en inglés",
     "Close": "Cerrar",
     "No details available": "Sin detalles disponibles",
-
     # Equipment values
     "barbell": "barra",
     "dumbbell": "mancuerna",
@@ -561,16 +464,13 @@ ES: dict[str, str] = {
     "other": "otro",
     "foam roll": "foam roll",
     "none": "ninguno",
-
     # Level
     "beginner": "principiante",
     "intermediate": "intermedio",
     "expert": "experto",
-
     # Mechanic
     "compound": "compuesto",
     "isolation": "aislamiento",
-
     # Muscles
     "chest": "pecho",
     "shoulders": "hombros",
@@ -589,7 +489,6 @@ ES: dict[str, str] = {
     "adductors": "aductores",
     "abductors": "abductores",
     "abdominals": "abdominales",
-
     # ── Misc tokens used by t_exercise ──────────────────────
     "to failure": "al fallo",
     "max": "máx",
@@ -602,10 +501,8 @@ DAYS_OF_WEEK = {
 }
 
 MONTHS = {
-    "en": ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
-           "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"],
-    "es": ["Ene", "Feb", "Mar", "Abr", "May", "Jun",
-           "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"],
+    "en": ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"],
+    "es": ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"],
 }
 
 WEEKDAY_LABELS = {
@@ -623,6 +520,18 @@ def get_language() -> str:
     return _lang
 
 
+MUSCLE_ES: dict[str, str] = {
+    "Chest": "Pecho",
+    "Back": "Espalda",
+    "Shoulder": "Hombro",
+    "Biceps": "Bíceps",
+    "Triceps": "Tríceps",
+    "Leg": "Pierna",
+    "Abs": "Abdomen",
+    "Cardio": "Cardio",
+}
+
+
 def t(text: str) -> str:
     """Translate text to active language. Returns input unchanged if unknown."""
     if not text or _lang == "en":
@@ -630,14 +539,19 @@ def t(text: str) -> str:
     return ES.get(text, text)
 
 
-import re as _re
+def t_muscle(name: str) -> str:
+    """Translate a muscle-group catalog key, keeping EN unchanged."""
+    if _lang == "en":
+        return name
+    return MUSCLE_ES.get(name, name)
+
 
 # Tokens that appear inside scheme/modifier brackets.
 _BRACKET_EN_TO_ES = [
     ("max", "máx"),
     ("failure", "fallo"),
     ("triple drop", "triple desc"),
-    ("comp", "comp"),  # identical; listed for discoverability
+    ("comp", "comp"),
 ]
 _EXERCISE_BRACKETS_RE = _re.compile(r"^(.*?)((?:\s*\[[^\]]*\])*)\s*$")
 

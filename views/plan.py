@@ -10,8 +10,13 @@ from exercise_images import image_for
 from i18n import exercise_key, t, t_exercise, weekday_label
 from storage import Storage
 from theme import (
-    ACCENT, BORDER, CARD_BG, DIM, TEXT,
-    card, chip, section_title,
+    ACCENT,
+    BORDER,
+    CARD_BG,
+    DIM,
+    TEXT,
+    card,
+    chip,
 )
 from views.exercise_dialog import open_exercise_detail
 
@@ -21,7 +26,7 @@ class PlanView:
         self.page = page
         self.store = store
         self.selected_phase_idx: int | None = None
-        self.subview = "exercises"   # "exercises" | "distribution"
+        self.subview = "exercises"  # "exercises" | "distribution"
         self.dist_week_idx = 0
         self._expanded_days: set[str] = set()
 
@@ -61,7 +66,9 @@ class PlanView:
                 [
                     ft.Text(
                         f"{t('PHASE')} {phase.id} · {t('WK')} {phase.weeks}",
-                        size=10, color=phase.color, weight=ft.FontWeight.W_900,
+                        size=10,
+                        color=phase.color,
+                        weight=ft.FontWeight.W_900,
                     ),
                     ft.Text(t(phase.name), size=18, weight=ft.FontWeight.W_900, color=TEXT),
                     ft.Text(t(phase.subtitle), size=11, color=DIM),
@@ -90,10 +97,11 @@ class PlanView:
         set_routine = self.page.data["set_routine"]
 
         def chip_for(r):
-            on = (r.id == cur.id)
+            on = r.id == cur.id
             return ft.Container(
-                content=ft.Text(t(r.name), size=11, weight=ft.FontWeight.W_800,
-                                color=ACCENT if on else DIM),
+                content=ft.Text(
+                    t(r.name), size=11, weight=ft.FontWeight.W_800, color=ACCENT if on else DIM
+                ),
                 bgcolor="#1d1410" if on else CARD_BG,
                 border=ft.border.all(1, ACCENT if on else BORDER),
                 border_radius=8,
@@ -139,10 +147,10 @@ class PlanView:
         thumb: ft.Control
         if thumb_src:
             thumb = ft.Container(
-                content=ft.Image(src=thumb_src, fit=ft.ImageFit.COVER,
-                                 width=44, height=44),
+                content=ft.Image(src=thumb_src, fit=ft.ImageFit.COVER, width=44, height=44),
                 bgcolor="#0f0f11",
-                width=44, height=44,
+                width=44,
+                height=44,
                 border_radius=6,
                 clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
             )
@@ -150,23 +158,35 @@ class PlanView:
             thumb = ft.Container(
                 content=ft.Icon(ft.Icons.FITNESS_CENTER, color="#444", size=20),
                 bgcolor="#101012",
-                width=44, height=44,
+                width=44,
+                height=44,
                 border_radius=6,
                 alignment=ft.alignment.center,
             )
 
         name_widget = ft.Container(
-            content=ft.Text(t_exercise(ex_raw), size=12, color="#ffffff",
-                            weight=ft.FontWeight.W_500,
-                            max_lines=2, overflow=ft.TextOverflow.ELLIPSIS),
+            content=ft.Text(
+                t_exercise(ex_raw),
+                size=12,
+                color="#ffffff",
+                weight=ft.FontWeight.W_500,
+                max_lines=2,
+                overflow=ft.TextOverflow.ELLIPSIS,
+            ),
             width=250,
             alignment=ft.alignment.center_left,
         )
         return ft.Container(
             content=ft.Row(
-                [thumb, name_widget,
-                 (ft.Icon(ft.Icons.INFO_OUTLINE, color=ACCENT, size=16)
-                  if has_detail else ft.Container(width=16))],
+                [
+                    thumb,
+                    name_widget,
+                    (
+                        ft.Icon(ft.Icons.INFO_OUTLINE, color=ACCENT, size=16)
+                        if has_detail
+                        else ft.Container(width=16)
+                    ),
+                ],
                 spacing=10,
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
                 alignment=ft.MainAxisAlignment.START,
@@ -182,14 +202,20 @@ class PlanView:
         header = ft.Container(
             content=ft.Row(
                 [
-                    ft.Text(t(day.name), size=13, weight=ft.FontWeight.W_700,
-                            color=ACCENT if is_open else TEXT, expand=True),
-                    ft.Text(f"{len(day.exercises)}", size=11, color=DIM,
-                            weight=ft.FontWeight.W_700),
+                    ft.Text(
+                        t(day.name),
+                        size=13,
+                        weight=ft.FontWeight.W_700,
+                        color=ACCENT if is_open else TEXT,
+                        expand=True,
+                    ),
+                    ft.Text(
+                        f"{len(day.exercises)}", size=11, color=DIM, weight=ft.FontWeight.W_700
+                    ),
                     ft.Icon(
-                        ft.Icons.KEYBOARD_ARROW_UP if is_open
-                        else ft.Icons.KEYBOARD_ARROW_DOWN,
-                        color=ACCENT if is_open else DIM, size=18,
+                        ft.Icons.KEYBOARD_ARROW_UP if is_open else ft.Icons.KEYBOARD_ARROW_DOWN,
+                        color=ACCENT if is_open else DIM,
+                        size=18,
                     ),
                 ],
                 alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
@@ -227,8 +253,9 @@ class PlanView:
     def _tab_button(self, label: str, key: str) -> ft.Container:
         active = self.subview == key
         return ft.Container(
-            content=ft.Text(label, size=11, weight=ft.FontWeight.W_700,
-                            color=ACCENT if active else DIM),
+            content=ft.Text(
+                label, size=11, weight=ft.FontWeight.W_700, color=ACCENT if active else DIM
+            ),
             bgcolor="#1d1410" if active else CARD_BG,
             border=ft.border.all(1, ACCENT if active else BORDER),
             border_radius=8,
@@ -243,8 +270,12 @@ class PlanView:
         week_tabs = ft.Row(
             [
                 ft.Container(
-                    content=ft.Text(f"{t('WK')} {i + 1}", size=11, weight=ft.FontWeight.W_800,
-                                    color=ACCENT if i == self.dist_week_idx else DIM),
+                    content=ft.Text(
+                        f"{t('WK')} {i + 1}",
+                        size=11,
+                        weight=ft.FontWeight.W_800,
+                        color=ACCENT if i == self.dist_week_idx else DIM,
+                    ),
                     bgcolor="#1d1410" if i == self.dist_week_idx else CARD_BG,
                     border=ft.border.all(1, ACCENT if i == self.dist_week_idx else BORDER),
                     border_radius=8,
@@ -263,14 +294,19 @@ class PlanView:
                     ft.Row(
                         [
                             ft.Container(
-                                content=ft.Text(weekday_label(i), size=10,
-                                                weight=ft.FontWeight.W_800, color=ACCENT),
+                                content=ft.Text(
+                                    weekday_label(i),
+                                    size=10,
+                                    weight=ft.FontWeight.W_800,
+                                    color=ACCENT,
+                                ),
                                 bgcolor=BORDER,
                                 border_radius=6,
                                 padding=ft.padding.symmetric(horizontal=10, vertical=4),
                             ),
-                            ft.Text(t(w), size=13, color=TEXT, weight=ft.FontWeight.W_700,
-                                    expand=True),
+                            ft.Text(
+                                t(w), size=13, color=TEXT, weight=ft.FontWeight.W_700, expand=True
+                            ),
                         ],
                         spacing=10,
                     ),
@@ -303,8 +339,7 @@ class PlanView:
                     content=ft.Row(
                         [
                             ft.Icon(ft.Icons.ARROW_BACK, color=ACCENT, size=16),
-                            ft.Text(t("Phases"), color=ACCENT, size=12,
-                                    weight=ft.FontWeight.W_700),
+                            ft.Text(t("Phases"), color=ACCENT, size=12, weight=ft.FontWeight.W_700),
                         ],
                         spacing=4,
                         tight=True,
@@ -317,8 +352,12 @@ class PlanView:
                     ft.Row(
                         [
                             ft.Container(
-                                content=ft.Text(f"{t('PHASE')} {phase.id}", size=10,
-                                                weight=ft.FontWeight.W_900, color="black"),
+                                content=ft.Text(
+                                    f"{t('PHASE')} {phase.id}",
+                                    size=10,
+                                    weight=ft.FontWeight.W_900,
+                                    color="black",
+                                ),
                                 bgcolor=phase.color,
                                 border_radius=6,
                                 padding=ft.padding.symmetric(horizontal=8, vertical=3),
@@ -328,8 +367,9 @@ class PlanView:
                         spacing=8,
                     ),
                     ft.Text(t(phase.name), size=22, weight=ft.FontWeight.W_900, color=TEXT),
-                    ft.Text(t(phase.subtitle), size=12, color=phase.color,
-                            weight=ft.FontWeight.W_700),
+                    ft.Text(
+                        t(phase.subtitle), size=12, color=phase.color, weight=ft.FontWeight.W_700
+                    ),
                     ft.Container(height=6),
                     ft.Text(f"{t('Sets:')} {t(phase.scheme)}", size=12, color=TEXT),
                     ft.Text(f"{t('Rest:')} {t(phase.rest)}", size=11, color="#aaa"),

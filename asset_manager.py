@@ -10,21 +10,20 @@ domain); we redistribute a subset matching our exercise catalog.
 
 from __future__ import annotations
 
+import contextlib
 import io
 import os
 import tarfile
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 import httpx
 
 from exercise_images import EXERCISE_IMAGE
 
-
 RELEASE_VERSION = "v0.1.0"
 TARBALL_URL = (
-    "https://github.com/kalexnolasco/ironflet/releases/download/"
-    f"{RELEASE_VERSION}/exercises.tar.gz"
+    f"https://github.com/kalexnolasco/ironflet/releases/download/{RELEASE_VERSION}/exercises.tar.gz"
 )
 VERSION_FILE = ".installed-" + RELEASE_VERSION
 
@@ -67,10 +66,8 @@ async def download_all(
 
     def report(done_files: int, total_files: int):
         if progress_cb:
-            try:
+            with contextlib.suppress(Exception):
                 progress_cb(done_files, total_files)
-            except Exception:
-                pass
 
     report(0, total_file_count())
 
@@ -86,9 +83,7 @@ async def download_all(
                     if total_bytes:
                         # Map byte progress to a 0..(file_count // 2) range so
                         # users see movement even before extraction starts.
-                        approx = int(
-                            received / total_bytes * (total_file_count() // 2)
-                        )
+                        approx = int(received / total_bytes * (total_file_count() // 2))
                         report(approx, total_file_count())
             buf.seek(0)
     except Exception:
@@ -99,7 +94,7 @@ async def download_all(
     with tarfile.open(fileobj=buf, mode="r:gz") as tar:
         members = [m for m in tar.getmembers() if m.isfile()]
         total = len(members) or total_file_count()
-        for i, m in enumerate(members, 1):
+        for _i, m in enumerate(members, 1):
             # Sanitize: only relative paths, no escape via ..
             name = m.name
             if name.startswith("/") or ".." in Path(name).parts:
@@ -107,7 +102,7 @@ async def download_all(
             # Strip leading "exercises/" if present (tarball may or may not have it)
             rel = name
             if rel.startswith("exercises/"):
-                rel = rel[len("exercises/"):]
+                rel = rel[len("exercises/") :]
             target = root / rel
             target.parent.mkdir(parents=True, exist_ok=True)
             f = tar.extractfile(m)
@@ -124,6 +119,7 @@ async def download_all(
 
 def clear_cache() -> None:
     import shutil
+
     d = _data_dir()
     if d.exists():
         shutil.rmtree(d)

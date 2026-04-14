@@ -8,8 +8,15 @@ from components.charts import bar_chart
 from i18n import t, t_exercise
 from storage import Storage
 from theme import (
-    ACCENT, BORDER, CARD_BG, DIM, MUTED, TEXT,
-    card, chip, section_title,
+    ACCENT,
+    BORDER,
+    CARD_BG,
+    DIM,
+    MUTED,
+    TEXT,
+    card,
+    chip,
+    section_title,
 )
 
 
@@ -42,18 +49,21 @@ class HistoryView:
         if not summary:
             return ft.Column(
                 [
-                    ft.Text(t("History & Progress"), size=22,
-                            weight=ft.FontWeight.W_900, color=TEXT),
-                    ft.Text(t("Tap an exercise to see your progress"),
-                            size=11, color=MUTED),
+                    ft.Text(
+                        t("History & Progress"), size=22, weight=ft.FontWeight.W_900, color=TEXT
+                    ),
+                    ft.Text(t("Tap an exercise to see your progress"), size=11, color=MUTED),
                     ft.Container(height=20),
                     ft.Container(
                         content=ft.Column(
                             [
                                 ft.Text("📭", size=28, text_align=ft.TextAlign.CENTER),
-                                ft.Text(t("Start training to see your progress"),
-                                        size=12, color="#666",
-                                        text_align=ft.TextAlign.CENTER),
+                                ft.Text(
+                                    t("Start training to see your progress"),
+                                    size=12,
+                                    color="#666",
+                                    text_align=ft.TextAlign.CENTER,
+                                ),
                             ],
                             horizontal_alignment=ft.CrossAxisAlignment.CENTER,
                             spacing=8,
@@ -78,13 +88,18 @@ class HistoryView:
                         [
                             ft.Column(
                                 [
-                                    ft.Text(t_exercise(ex["name"]), size=13,
-                                            weight=ft.FontWeight.W_700,
-                                            color=TEXT, max_lines=1,
-                                            overflow=ft.TextOverflow.ELLIPSIS),
+                                    ft.Text(
+                                        t_exercise(ex["name"]),
+                                        size=13,
+                                        weight=ft.FontWeight.W_700,
+                                        color=TEXT,
+                                        max_lines=1,
+                                        overflow=ft.TextOverflow.ELLIPSIS,
+                                    ),
                                     ft.Text(
                                         f"{ex['count']} {t('sessions')} · {ex['last_date']}",
-                                        size=10, color=DIM,
+                                        size=10,
+                                        color=DIM,
                                     ),
                                 ],
                                 spacing=2,
@@ -92,8 +107,12 @@ class HistoryView:
                             ),
                             ft.Column(
                                 [
-                                    ft.Text(f"{ex['max_weight']:g}", size=16,
-                                            color=ACCENT, weight=ft.FontWeight.W_900),
+                                    ft.Text(
+                                        f"{ex['max_weight']:g}",
+                                        size=16,
+                                        color=ACCENT,
+                                        weight=ft.FontWeight.W_900,
+                                    ),
                                     ft.Text(t("max kg"), size=9, color="#666"),
                                 ],
                                 spacing=0,
@@ -113,8 +132,7 @@ class HistoryView:
             )
         return ft.Column(
             [
-                ft.Text(t("History & Progress"), size=22,
-                        weight=ft.FontWeight.W_900, color=TEXT),
+                ft.Text(t("History & Progress"), size=22, weight=ft.FontWeight.W_900, color=TEXT),
                 ft.Text(t("Tap an exercise to see your progress"), size=11, color=MUTED),
                 ft.Container(height=10),
                 *items,
@@ -146,8 +164,7 @@ class HistoryView:
                 card(
                     ft.Row(
                         [
-                            ft.Text(h.date, size=11, color=ACCENT,
-                                    weight=ft.FontWeight.W_700),
+                            ft.Text(h.date, size=11, color=ACCENT, weight=ft.FontWeight.W_700),
                             ft.Text(t(h.muscle_group), size=10, color=DIM),
                         ],
                         alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
@@ -164,19 +181,21 @@ class HistoryView:
                     content=ft.Row(
                         [
                             ft.Icon(ft.Icons.ARROW_BACK, color=ACCENT, size=16),
-                            ft.Text(t("Exercises"), color=ACCENT, size=12,
-                                    weight=ft.FontWeight.W_700),
+                            ft.Text(
+                                t("Exercises"), color=ACCENT, size=12, weight=ft.FontWeight.W_700
+                            ),
                         ],
-                        spacing=4, tight=True,
+                        spacing=4,
+                        tight=True,
                     ),
                     on_click=self._back_to_list,
                     padding=ft.padding.symmetric(vertical=6),
                     ink=True,
                 ),
-                ft.Text(t_exercise(name), size=20, weight=ft.FontWeight.W_900, color=TEXT,
-                        max_lines=2),
-                ft.Text(f"{len(hist)} {t('sessions')} · {t('PR')} {pr:g}kg",
-                        size=12, color=MUTED),
+                ft.Text(
+                    t_exercise(name), size=20, weight=ft.FontWeight.W_900, color=TEXT, max_lines=2
+                ),
+                ft.Text(f"{len(hist)} {t('sessions')} · {t('PR')} {pr:g}kg", size=12, color=MUTED),
                 ft.Container(height=12),
                 section_title(t("Max weight")),
                 ft.Container(height=6),

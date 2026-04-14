@@ -1,93 +1,103 @@
-# IronLog
+# IronLog — Bilingual Weight Training Tracker
 
-App móvil de seguimiento de entrenamiento (tracker de pesas) escrita en
-Python con [Flet](https://flet.dev) — mismo código corre como Android APK,
-escritorio nativo (Linux/Windows/macOS) y web.
+<div align="center">
 
-Bilingüe **ES/EN**, offline-first, sin cuenta, sin telemetría.
+![Project](https://img.shields.io/badge/Project-IronLog-blue?style=for-the-badge)
+![Version](https://img.shields.io/badge/Version-0.1.0-green?style=for-the-badge)
+![Python](https://img.shields.io/badge/Python-3.10%20%7C%203.11%20%7C%203.12-yellow?style=for-the-badge&logo=python&logoColor=white)
+![Flet](https://img.shields.io/badge/Flet-0.28-7F52FF?style=for-the-badge&logoColor=white)
+![License](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge)
+![Platform](https://img.shields.io/badge/Platform-Android%20%7C%20Linux%20%7C%20Web-lightgrey?style=for-the-badge)
 
-## Características
+**Offline-first fitness tracker with 7 periodized routines, 68 annotated exercises and animated technique images — one Python codebase, three platforms.**
 
-- **7 rutinas** periodizadas incluidas: CambiaTuFísico (24 semanas),
-  Upper/Lower, Push/Pull/Legs, Mujer Fitness y tres variantes femeninas
-  más (Casa, Fuerza, Volumen).
-- **68 ejercicios** con imagen animada (frame 0 ↔ frame 1), músculos
-  primario/secundario, equipamiento, nivel, e **instrucciones paso a paso
-  en español y en inglés**.
-- **Flujo de entrenamiento** guiado con cronómetro de sesión, temporizador
-  de descanso y swipe horizontal entre ejercicios.
-- **Perfil + métricas derivadas**: edad, IMC, TMB (Mifflin-St Jeor), GEDT,
-  objetivo de proteína (1.6–2.2 g/kg), hidratación (~35 ml/kg).
-- **Historial de peso** con gráfico y de entrenamientos por ejercicio con
-  PR y volumen por fecha.
-- **Backup / restore** en JSON via portapapeles.
-- **Guías** originales in-app de entrenamiento, nutrición y mujer fitness
-  (7 tips por tema, EN/ES).
+**Tracker de entrenamiento offline con 7 rutinas periodizadas, 68 ejercicios con imágenes animadas e instrucciones paso a paso — un único código Python que corre como APK, escritorio y web.**
 
-## Capturas
+---
 
-_Pendiente de añadir._
+### Choose Your Language / Elige tu idioma
 
-## Requisitos
+<p align="center">
+  <a href="README.en.md">
+    <img src="https://img.shields.io/badge/English-Documentation-blue?style=for-the-badge&logo=markdown" alt="English Documentation" height="50">
+  </a>
+  &nbsp;&nbsp;&nbsp;
+  <a href="README.es.md">
+    <img src="https://img.shields.io/badge/Espa%C3%B1ol-Documentaci%C3%B3n-red?style=for-the-badge&logo=markdown" alt="Documentacion en Espanol" height="50">
+  </a>
+</p>
 
-- Python `>=3.10,<3.13`
-- [uv](https://github.com/astral-sh/uv) (gestor de entorno y dependencias)
-- Para Android APK: JDK 17+, Flutter SDK y Android SDK (el wrapper
-  `flet build apk` los descarga la primera vez)
+---
 
-## Desarrollo
+### Architecture Overview
+
+```mermaid
+graph TD
+    USER["🖥️ User"]
+    subgraph APP["📱 IronLog Flet app"]
+        NAV["Navigation<br/>5 tabs + Settings"]
+        HOME["🏠 Home"]
+        PLAN["📅 Plan"]
+        TRAIN["💪 Train"]
+        BROWSE["🔍 Browse"]
+        HIST["📊 History"]
+        PROF["⚙️ Settings"]
+    end
+    SQLITE[("🗄️ SQLite<br/>ironlog.db")]
+    CACHE[("📸 Image cache<br/>exercises/")]
+    GH["📦 GitHub Release<br/>exercises.tar.gz"]
+    FEDB["🌐 Free Exercise DB<br/>Unlicense"]
+
+    USER ---> NAV
+    NAV --> HOME
+    NAV --> PLAN
+    NAV --> TRAIN
+    NAV --> BROWSE
+    NAV --> HIST
+    NAV --> PROF
+    TRAIN -->|workouts| SQLITE
+    PROF -->|weights, backup| SQLITE
+    HIST -->|reads| SQLITE
+    BROWSE -->|thumbnails| CACHE
+    TRAIN -.->|animated frames| CACHE
+    PROF -.->|first-run download| GH
+    GH -.->|derived from| FEDB
+
+    style USER fill:#fff4e6,stroke:#e8590c,stroke-width:2px
+    style APP fill:#e7f5ff,stroke:#1971c2,stroke-width:2px
+    style NAV fill:#d0ebff,stroke:#1971c2,stroke-width:2px
+    style HOME fill:#d0ebff,stroke:#1971c2,stroke-width:2px
+    style PLAN fill:#d0ebff,stroke:#1971c2,stroke-width:2px
+    style TRAIN fill:#d0ebff,stroke:#1971c2,stroke-width:2px
+    style BROWSE fill:#d0ebff,stroke:#1971c2,stroke-width:2px
+    style HIST fill:#d0ebff,stroke:#1971c2,stroke-width:2px
+    style PROF fill:#d0ebff,stroke:#1971c2,stroke-width:2px
+    style SQLITE fill:#fff3bf,stroke:#f08c00
+    style CACHE fill:#fff3bf,stroke:#f08c00,stroke-width:3px
+    style GH fill:#f3d9fa,stroke:#9c36b5,stroke-width:2px
+    style FEDB fill:#b2f2bb,stroke:#2f9e44,stroke-width:2px
+```
+
+### Quick Start
 
 ```bash
-uv sync                                  # crear venv + deps
-uv run python main.py                    # ventana nativa (Linux/macOS/Win)
-IRONLOG_WEB=1 uv run python main.py      # modo web en http://localhost:8550
+# 1. Install deps (uses uv)
+uv sync --group dev
+
+# 2. Run as a native desktop window
+uv run python main.py
+
+# 3. Or run as a local web server on :8550
+IRONLOG_WEB=1 uv run python main.py
+
+# 4. Or build the Android APK
+flet build apk --target-platform android-arm64
 ```
 
-En Android o escritorio, la primera vez que abras los ejercicios hay que
-ir a **Ajustes → Datos → Guías de ejercicios → Descargar** (~9 MB) para
-traer las fotos e instrucciones desde la Free Exercise DB. Sin descargar
-verás un icono de pesa de placeholder.
+---
 
-## Build Android (APK)
+**IronLog** · Flet · Python
 
-```bash
-flet build apk                           # universal (todas las arquitecturas)
-flet build apk --target-platform android-arm64   # arm64-only (~80 MB)
-adb install -r build/apk/app-release.apk
-```
+&copy; 2026 Alex Nolasco
 
-## Estructura
-
-```
-main.py                    # entrypoint + navegación
-storage.py                 # SQLite (workouts, profile, weight_log, prefs)
-data.py                    # rutinas + fases + días de entrenamiento
-health.py                  # BMI / BMR / TDEE / proteína
-i18n.py                    # strings y helpers de traducción ES/EN
-guides.py                  # contenido de las guías in-app
-exercise_images.py         # mapping canonical name → slug Free Exercise DB
-exercise_details.py        # detalles (auto-generado desde Free Exercise DB)
-exercise_details_es.py     # instrucciones en español, escritas a mano
-asset_manager.py           # descargador de imágenes runtime
-theme.py                   # paleta y helpers visuales
-components/
-  timer.py                 # temporizador de descanso
-  charts.py                # gráfico de barras simple
-views/
-  home.py, plan.py, workout.py, browse.py, history.py, profile.py
-  exercise_dialog.py, guide_dialog.py
-```
-
-## Licencias y créditos
-
-- Código de IronLog: MIT.
-- Contenido de `exercise_details.py`, imágenes de ejercicios y datos base:
-  [Free Exercise DB](https://github.com/yuhonas/free-exercise-db), Unlicense
-  (dominio público). Se descargan en runtime — no se redistribuyen con el
-  repositorio.
-- Estructura inicial de la rutina "CambiaTuFísico" inspirada en la
-  categorización pública de [cambiatufisico.com](https://www.cambiatufisico.com);
-  cada rutina está modelada como datos (series × reps + ejercicios) en
-  `data.py`. Los textos explicativos son originales.
-- Las guías in-app (training / nutrition / women fitness) son contenido
-  original basado en principios generales de fuerza y nutrición.
+</div>

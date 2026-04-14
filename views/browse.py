@@ -7,10 +7,14 @@ import flet as ft
 from data import EXERCISE_CATALOG, MUSCLE_GROUPS
 from exercise_details import details_for
 from exercise_images import image_for
-from i18n import t, t_exercise
+from i18n import t, t_exercise, t_muscle
 from storage import Storage
 from theme import (
-    ACCENT, BORDER, CARD_BG, DIM, TEXT,
+    ACCENT,
+    BORDER,
+    CARD_BG,
+    DIM,
+    TEXT,
 )
 from views.exercise_dialog import open_exercise_detail
 
@@ -38,8 +42,9 @@ class BrowseView:
     def _group_chip(self, group: str | None, label: str) -> ft.Container:
         active = self.selected_group == group
         return ft.Container(
-            content=ft.Text(label, size=11, weight=ft.FontWeight.W_700,
-                            color=ACCENT if active else DIM),
+            content=ft.Text(
+                label, size=11, weight=ft.FontWeight.W_700, color=ACCENT if active else DIM
+            ),
             bgcolor="#1d1410" if active else CARD_BG,
             border=ft.border.all(1, ACCENT if active else BORDER),
             border_radius=8,
@@ -55,10 +60,10 @@ class BrowseView:
         thumb: ft.Control
         if thumb_src:
             thumb = ft.Container(
-                content=ft.Image(src=thumb_src, fit=ft.ImageFit.COVER,
-                                 width=44, height=44),
+                content=ft.Image(src=thumb_src, fit=ft.ImageFit.COVER, width=44, height=44),
                 bgcolor="#0f0f11",
-                width=44, height=44,
+                width=44,
+                height=44,
                 border_radius=6,
                 clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
             )
@@ -66,22 +71,29 @@ class BrowseView:
             thumb = ft.Container(
                 content=ft.Icon(ft.Icons.FITNESS_CENTER, color="#444", size=20),
                 bgcolor="#101012",
-                width=44, height=44,
+                width=44,
+                height=44,
                 border_radius=6,
                 alignment=ft.alignment.center,
             )
 
         name_widget = ft.Container(
-            content=ft.Text(t_exercise(ex_name), size=12, color="#ffffff",
-                            weight=ft.FontWeight.W_500, max_lines=2,
-                            overflow=ft.TextOverflow.ELLIPSIS),
+            content=ft.Text(
+                t_exercise(ex_name),
+                size=12,
+                color="#ffffff",
+                weight=ft.FontWeight.W_500,
+                max_lines=2,
+                overflow=ft.TextOverflow.ELLIPSIS,
+            ),
             width=250,
             alignment=ft.alignment.center_left,
         )
 
         trailing = (
             ft.Icon(ft.Icons.INFO_OUTLINE, color=ACCENT, size=16)
-            if has_detail else ft.Container(width=16)
+            if has_detail
+            else ft.Container(width=16)
         )
 
         return ft.Container(
@@ -97,7 +109,8 @@ class BrowseView:
             border_radius=10,
             margin=ft.margin.only(bottom=6),
             on_click=(lambda _, k=ex_name: open_exercise_detail(self.page, k))
-                     if has_detail else None,
+            if has_detail
+            else None,
             ink=has_detail,
         )
 
@@ -115,7 +128,7 @@ class BrowseView:
 
     def build(self) -> ft.Control:
         chips = [self._group_chip(None, t("All"))]
-        chips += [self._group_chip(g, t(g)) for g in MUSCLE_GROUPS]
+        chips += [self._group_chip(g, t_muscle(g)) for g in MUSCLE_GROUPS]
 
         exercises = self._exercises_for_selected()
         count = len(exercises)
@@ -127,8 +140,9 @@ class BrowseView:
                 ft.Container(height=8),
                 ft.Row(chips, spacing=6, wrap=True, run_spacing=6),
                 ft.Container(height=10),
-                ft.Text(f"{count} {t('exercises')}", size=11, color=DIM,
-                        weight=ft.FontWeight.W_700),
+                ft.Text(
+                    f"{count} {t('exercises')}", size=11, color=DIM, weight=ft.FontWeight.W_700
+                ),
                 ft.Container(height=6),
                 *[self._exercise_row(ex) for ex in exercises],
             ],

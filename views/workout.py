@@ -14,8 +14,18 @@ from exercise_images import image_frames
 from i18n import exercise_key, t, t_exercise
 from storage import Storage, WorkoutEntry
 from theme import (
-    ACCENT, ACCENT2, BORDER, BORDER_2, CARD_BG, DARK_BG, DIM, MUTED, TEXT,
-    card, chip, ghost_button, primary_button, section_title,
+    ACCENT,
+    BORDER,
+    BORDER_2,
+    CARD_BG,
+    DARK_BG,
+    DIM,
+    MUTED,
+    TEXT,
+    card,
+    chip,
+    ghost_button,
+    primary_button,
 )
 
 
@@ -233,18 +243,25 @@ class WorkoutView:
         return ft.Column(
             [
                 ft.Text(t("Start Routine"), size=22, weight=ft.FontWeight.W_900, color=TEXT),
-                ft.Text(f"{t('Routine')}: {t(routine.name)}",
-                        size=11, color=ACCENT, weight=ft.FontWeight.W_700),
+                ft.Text(
+                    f"{t('Routine')}: {t(routine.name)}",
+                    size=11,
+                    color=ACCENT,
+                    weight=ft.FontWeight.W_700,
+                ),
                 ft.Text(t("Choose your current phase"), size=11, color=MUTED),
                 ft.Container(height=10),
                 *[
                     ft.Container(
                         content=ft.Column(
                             [
-                                ft.Text(f"{t('PHASE')} {p.id}", size=10, color=p.color,
-                                        weight=ft.FontWeight.W_900),
-                                ft.Text(t(p.name), size=17, weight=ft.FontWeight.W_900,
-                                        color=TEXT),
+                                ft.Text(
+                                    f"{t('PHASE')} {p.id}",
+                                    size=10,
+                                    color=p.color,
+                                    weight=ft.FontWeight.W_900,
+                                ),
+                                ft.Text(t(p.name), size=17, weight=ft.FontWeight.W_900, color=TEXT),
                                 ft.Text(t(p.scheme), size=11, color=DIM),
                             ],
                             spacing=2,
@@ -284,16 +301,22 @@ class WorkoutView:
                             [
                                 ft.Column(
                                     [
-                                        ft.Text(t(d.name), size=14, weight=ft.FontWeight.W_700,
-                                                color=TEXT),
-                                        ft.Text(f"{len(d.exercises)} {t('exercises')}",
-                                                size=11, color=DIM),
+                                        ft.Text(
+                                            t(d.name),
+                                            size=14,
+                                            weight=ft.FontWeight.W_700,
+                                            color=TEXT,
+                                        ),
+                                        ft.Text(
+                                            f"{len(d.exercises)} {t('exercises')}",
+                                            size=11,
+                                            color=DIM,
+                                        ),
                                     ],
                                     spacing=2,
                                     expand=True,
                                 ),
-                                ft.Icon(ft.Icons.PLAY_ARROW_ROUNDED, color=phase.color,
-                                        size=22),
+                                ft.Icon(ft.Icons.PLAY_ARROW_ROUNDED, color=phase.color, size=22),
                             ],
                             alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                         ),
@@ -319,14 +342,12 @@ class WorkoutView:
     def _render_finished(self) -> ft.Control:
         completed_blocks = [
             card(
-                ft.Text(t_exercise(c["exercise"]), size=13, weight=ft.FontWeight.W_700,
-                        color=TEXT),
+                ft.Text(t_exercise(c["exercise"]), size=13, weight=ft.FontWeight.W_700, color=TEXT),
                 ft.Row(
-                    [
-                        chip(f"{s['weight']:g}kg × {s['reps']}", color=ACCENT)
-                        for s in c["sets"]
-                    ],
-                    wrap=True, spacing=6, run_spacing=4,
+                    [chip(f"{s['weight']:g}kg × {s['reps']}", color=ACCENT) for s in c["sets"]],
+                    wrap=True,
+                    spacing=6,
+                    run_spacing=4,
                 ),
                 padding=12,
                 margin=ft.margin.only(bottom=6),
@@ -339,18 +360,30 @@ class WorkoutView:
             [
                 ft.Container(height=20),
                 ft.Text("🎉", size=56, text_align=ft.TextAlign.CENTER),
-                ft.Text(t("Session Complete!"), size=22, weight=ft.FontWeight.W_900,
-                        color=TEXT, text_align=ft.TextAlign.CENTER),
-                ft.Text(f"{len(self.completed)} {t('exercises logged')}",
-                        size=13, color=ACCENT, weight=ft.FontWeight.W_700,
-                        text_align=ft.TextAlign.CENTER),
+                ft.Text(
+                    t("Session Complete!"),
+                    size=22,
+                    weight=ft.FontWeight.W_900,
+                    color=TEXT,
+                    text_align=ft.TextAlign.CENTER,
+                ),
+                ft.Text(
+                    f"{len(self.completed)} {t('exercises logged')}",
+                    size=13,
+                    color=ACCENT,
+                    weight=ft.FontWeight.W_700,
+                    text_align=ft.TextAlign.CENTER,
+                ),
                 ft.Container(height=6),
                 ft.Row(
                     [
                         ft.Icon(ft.Icons.TIMER_OUTLINED, color=ACCENT, size=14),
-                        ft.Text(f"{t('Duration')}: {duration_txt}",
-                                size=12, color="#bbbbbb",
-                                weight=ft.FontWeight.W_700),
+                        ft.Text(
+                            f"{t('Duration')}: {duration_txt}",
+                            size=12,
+                            color="#bbbbbb",
+                            weight=ft.FontWeight.W_700,
+                        ),
                     ],
                     alignment=ft.MainAxisAlignment.CENTER,
                     spacing=6,
@@ -405,16 +438,22 @@ class WorkoutView:
         return ft.Row(
             [
                 ft.Container(
-                    content=ft.Text(str(i + 1), size=13, weight=ft.FontWeight.W_900,
-                                    color=self._phase().color if self._phase() else ACCENT,
-                                    text_align=ft.TextAlign.CENTER),
-                    width=28, alignment=ft.alignment.center,
+                    content=ft.Text(
+                        str(i + 1),
+                        size=13,
+                        weight=ft.FontWeight.W_900,
+                        color=self._phase().color if self._phase() else ACCENT,
+                        text_align=ft.TextAlign.CENTER,
+                    ),
+                    width=28,
+                    alignment=ft.alignment.center,
                 ),
                 w_field,
                 r_field,
                 ft.Container(
                     content=ft.Icon(ft.Icons.CLOSE, size=14, color="#555"),
-                    width=32, height=40,
+                    width=32,
+                    height=40,
                     border=ft.border.all(1, "#222"),
                     border_radius=6,
                     alignment=ft.alignment.center,
@@ -441,14 +480,17 @@ class WorkoutView:
             last_row = ft.Container(
                 content=ft.Column(
                     [
-                        ft.Text(t("LAST SESSION"), size=10, color=MUTED,
-                                weight=ft.FontWeight.W_700),
+                        ft.Text(
+                            t("LAST SESSION"), size=10, color=MUTED, weight=ft.FontWeight.W_700
+                        ),
                         ft.Row(
                             [
                                 chip(f"{s['weight']:g}kg × {s['reps']}", color=ACCENT)
                                 for s in last_sets
                             ],
-                            wrap=True, spacing=6, run_spacing=4,
+                            wrap=True,
+                            spacing=6,
+                            run_spacing=4,
                         ),
                     ],
                     spacing=6,
@@ -458,24 +500,41 @@ class WorkoutView:
                 padding=10,
             )
         else:
-            last_row = ft.Text(t("First time - no history"),
-                               size=11, color="#444", italic=True)
+            last_row = ft.Text(t("First time - no history"), size=11, color="#444", italic=True)
 
-        set_rows = [
-            self._set_row(i, s, last_ref_for_placeholder)
-            for i, s in enumerate(self.sets)
-        ]
+        set_rows = [self._set_row(i, s, last_ref_for_placeholder) for i, s in enumerate(self.sets)]
         header_row = ft.Row(
             [
-                ft.Container(ft.Text(t("SET"), size=9, color="#444",
-                                     weight=ft.FontWeight.W_700,
-                                     text_align=ft.TextAlign.CENTER), width=28),
-                ft.Container(ft.Text(t("KG"), size=9, color="#444",
-                                     weight=ft.FontWeight.W_700,
-                                     text_align=ft.TextAlign.CENTER), expand=True),
-                ft.Container(ft.Text(t("REPS"), size=9, color="#444",
-                                     weight=ft.FontWeight.W_700,
-                                     text_align=ft.TextAlign.CENTER), expand=True),
+                ft.Container(
+                    ft.Text(
+                        t("SET"),
+                        size=9,
+                        color="#444",
+                        weight=ft.FontWeight.W_700,
+                        text_align=ft.TextAlign.CENTER,
+                    ),
+                    width=28,
+                ),
+                ft.Container(
+                    ft.Text(
+                        t("KG"),
+                        size=9,
+                        color="#444",
+                        weight=ft.FontWeight.W_700,
+                        text_align=ft.TextAlign.CENTER,
+                    ),
+                    expand=True,
+                ),
+                ft.Container(
+                    ft.Text(
+                        t("REPS"),
+                        size=9,
+                        color="#444",
+                        weight=ft.FontWeight.W_700,
+                        text_align=ft.TextAlign.CENTER,
+                    ),
+                    expand=True,
+                ),
                 ft.Container(width=32),
             ],
             spacing=6,
@@ -515,8 +574,12 @@ class WorkoutView:
             image_block = ft.Container()
 
         exercise_card = card(
-            ft.Text(f"{t('EXERCISE')} {self.ex_idx + 1}",
-                    size=10, color=phase.color, weight=ft.FontWeight.W_900),
+            ft.Text(
+                f"{t('EXERCISE')} {self.ex_idx + 1}",
+                size=10,
+                color=phase.color,
+                weight=ft.FontWeight.W_900,
+            ),
             ft.Text(display, size=19, weight=ft.FontWeight.W_900, color=TEXT),
             ft.Container(height=8),
             image_block,
@@ -559,7 +622,9 @@ class WorkoutView:
 
         session_label = ft.Text(
             self._format_elapsed(self._session_elapsed_s()),
-            size=12, color=ACCENT, weight=ft.FontWeight.W_800,
+            size=12,
+            color=ACCENT,
+            weight=ft.FontWeight.W_800,
         )
         self._session_label = session_label
         session_chip = ft.Container(
@@ -568,7 +633,8 @@ class WorkoutView:
                     ft.Icon(ft.Icons.TIMER_OUTLINED, color=ACCENT, size=14),
                     session_label,
                 ],
-                spacing=4, tight=True,
+                spacing=4,
+                tight=True,
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
             ),
             bgcolor=DARK_BG,
@@ -579,11 +645,13 @@ class WorkoutView:
 
         header = ft.Row(
             [
-                self._back_btn(t("Back"), lambda _: None,
-                               raw_handler=lambda _: self._reset_to_days()),
+                self._back_btn(
+                    t("Back"), lambda _: None, raw_handler=lambda _: self._reset_to_days()
+                ),
                 session_chip,
-                ft.Text(f"{self.ex_idx + 1}/{total}", size=11, color="#555",
-                        weight=ft.FontWeight.W_700),
+                ft.Text(
+                    f"{self.ex_idx + 1}/{total}", size=11, color="#555", weight=ft.FontWeight.W_700
+                ),
             ],
             alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
@@ -629,7 +697,8 @@ class WorkoutView:
                     ft.Icon(ft.Icons.ARROW_BACK, color=ACCENT, size=16),
                     ft.Text(label, color=ACCENT, size=12, weight=ft.FontWeight.W_700),
                 ],
-                spacing=4, tight=True,
+                spacing=4,
+                tight=True,
             ),
             on_click=handler,
             padding=ft.padding.symmetric(vertical=6),
@@ -641,14 +710,14 @@ class WorkoutView:
         showing_second = False
         while tick_id == self._anim_tick_id:
             await asyncio.sleep(0.7)
-            if (tick_id != self._anim_tick_id
-                    or self._anim_image is None
-                    or self._anim_frames is None):
+            if (
+                tick_id != self._anim_tick_id
+                or self._anim_image is None
+                or self._anim_frames is None
+            ):
                 return
             showing_second = not showing_second
-            self._anim_image.src = (
-                self._anim_frames[1] if showing_second else self._anim_frames[0]
-            )
+            self._anim_image.src = self._anim_frames[1] if showing_second else self._anim_frames[0]
             try:
                 self.page.update()
             except Exception:

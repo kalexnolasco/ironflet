@@ -81,9 +81,7 @@ class Storage:
     # ── prefs ────────────────────────────────────────────────
     def get_pref(self, key: str, default: str | None = None) -> str | None:
         with self._conn() as conn:
-            row = conn.execute(
-                "SELECT value FROM prefs WHERE key = ?", (key,)
-            ).fetchone()
+            row = conn.execute("SELECT value FROM prefs WHERE key = ?", (key,)).fetchone()
         return row[0] if row else default
 
     def set_pref(self, key: str, value: str):
@@ -98,18 +96,27 @@ class Storage:
     def get_profile(self) -> dict:
         with self._conn() as conn:
             row = conn.execute(
-                "SELECT name, birthdate, height_cm, sex, activity_level "
-                "FROM profile WHERE id = 1"
+                "SELECT name, birthdate, height_cm, sex, activity_level FROM profile WHERE id = 1"
             ).fetchone()
         if not row:
-            return {"name": "", "birthdate": "", "height_cm": 0.0,
-                    "sex": "", "activity_level": "moderate"}
-        return {"name": row[0] or "", "birthdate": row[1] or "",
-                "height_cm": float(row[2] or 0), "sex": row[3] or "",
-                "activity_level": row[4] or "moderate"}
+            return {
+                "name": "",
+                "birthdate": "",
+                "height_cm": 0.0,
+                "sex": "",
+                "activity_level": "moderate",
+            }
+        return {
+            "name": row[0] or "",
+            "birthdate": row[1] or "",
+            "height_cm": float(row[2] or 0),
+            "sex": row[3] or "",
+            "activity_level": row[4] or "moderate",
+        }
 
-    def set_profile(self, name: str, birthdate: str, height_cm: float,
-                    sex: str, activity_level: str):
+    def set_profile(
+        self, name: str, birthdate: str, height_cm: float, sex: str, activity_level: str
+    ):
         with self._conn() as conn:
             conn.execute(
                 "INSERT INTO profile (id, name, birthdate, height_cm, sex, activity_level) "
@@ -138,12 +145,10 @@ class Storage:
     def get_weights(self, limit: int = 60) -> list[dict]:
         with self._conn() as conn:
             rows = conn.execute(
-                "SELECT id, date, kg, timestamp FROM weight_log "
-                "ORDER BY date ASC, timestamp ASC"
+                "SELECT id, date, kg, timestamp FROM weight_log ORDER BY date ASC, timestamp ASC"
             ).fetchall()
         return [
-            {"id": r[0], "date": r[1], "kg": float(r[2]), "timestamp": r[3]}
-            for r in rows[-limit:]
+            {"id": r[0], "date": r[1], "kg": float(r[2]), "timestamp": r[3]} for r in rows[-limit:]
         ]
 
     def get_latest_weight(self) -> float | None:
@@ -172,7 +177,7 @@ class Storage:
             "version": self.BACKUP_VERSION,
             "exported_at": time.time(),
             "profile": self.get_profile(),
-            "prefs": {k: v for k, v in prefs_rows},
+            "prefs": dict(prefs_rows),
             "workouts": [
                 {
                     "date": r[0],
@@ -184,10 +189,7 @@ class Storage:
                 }
                 for r in workout_rows
             ],
-            "weights": [
-                {"date": r[0], "kg": float(r[1]), "timestamp": r[2]}
-                for r in weight_rows
-            ],
+            "weights": [{"date": r[0], "kg": float(r[1]), "timestamp": r[2]} for r in weight_rows],
         }
 
     def import_all(self, data: dict, *, wipe: bool = True) -> dict:
@@ -215,9 +217,13 @@ class Storage:
                     "name = excluded.name, birthdate = excluded.birthdate, "
                     "height_cm = excluded.height_cm, sex = excluded.sex, "
                     "activity_level = excluded.activity_level",
-                    (p.get("name", ""), p.get("birthdate", ""),
-                     float(p.get("height_cm") or 0),
-                     p.get("sex", ""), p.get("activity_level", "moderate")),
+                    (
+                        p.get("name", ""),
+                        p.get("birthdate", ""),
+                        float(p.get("height_cm") or 0),
+                        p.get("sex", ""),
+                        p.get("activity_level", "moderate"),
+                    ),
                 )
                 counts["profile"] = 1
 
@@ -232,8 +238,7 @@ class Storage:
             for w in data.get("weights") or []:
                 conn.execute(
                     "INSERT INTO weight_log (date, kg, timestamp) VALUES (?, ?, ?)",
-                    (w.get("date", ""), float(w.get("kg") or 0),
-                     float(w.get("timestamp") or 0)),
+                    (w.get("date", ""), float(w.get("kg") or 0), float(w.get("timestamp") or 0)),
                 )
                 counts["weights"] += 1
 
@@ -241,10 +246,14 @@ class Storage:
                 conn.execute(
                     "INSERT INTO workouts (date, exercise, muscle_group, phase, sets_json, timestamp) "
                     "VALUES (?, ?, ?, ?, ?, ?)",
-                    (wo.get("date", ""), wo.get("exercise", ""),
-                     wo.get("muscle_group", ""), int(wo.get("phase") or 0),
-                     json.dumps(wo.get("sets") or []),
-                     float(wo.get("timestamp") or 0)),
+                    (
+                        wo.get("date", ""),
+                        wo.get("exercise", ""),
+                        wo.get("muscle_group", ""),
+                        int(wo.get("phase") or 0),
+                        json.dumps(wo.get("sets") or []),
+                        float(wo.get("timestamp") or 0),
+                    ),
                 )
                 counts["workouts"] += 1
 
@@ -270,16 +279,26 @@ class Storage:
             conn.execute(
                 "INSERT INTO workouts (date, exercise, muscle_group, phase, sets_json, timestamp) "
                 "VALUES (?, ?, ?, ?, ?, ?)",
-                (entry.date, entry.exercise, entry.muscle_group,
-                 entry.phase, json.dumps(entry.sets), entry.timestamp),
+                (
+                    entry.date,
+                    entry.exercise,
+                    entry.muscle_group,
+                    entry.phase,
+                    json.dumps(entry.sets),
+                    entry.timestamp,
+                ),
             )
 
     # ── reads ─────────────────────────────────────────────────
     def _rows_to_entries(self, rows) -> list[WorkoutEntry]:
         return [
             WorkoutEntry(
-                date=r[0], exercise=r[1], muscle_group=r[2],
-                phase=r[3], sets=json.loads(r[4]), timestamp=r[5],
+                date=r[0],
+                exercise=r[1],
+                muscle_group=r[2],
+                phase=r[3],
+                sets=json.loads(r[4]),
+                timestamp=r[5],
             )
             for r in rows
         ]
@@ -329,8 +348,7 @@ class Storage:
     def get_last_sets(self, exercise: str) -> list[dict] | None:
         with self._conn() as conn:
             row = conn.execute(
-                "SELECT sets_json FROM workouts WHERE exercise = ? "
-                "ORDER BY timestamp DESC LIMIT 1",
+                "SELECT sets_json FROM workouts WHERE exercise = ? ORDER BY timestamp DESC LIMIT 1",
                 (exercise,),
             ).fetchone()
         return json.loads(row[0]) if row else None
@@ -350,8 +368,10 @@ class Storage:
         for w in self.get_all():
             if w.exercise not in summary:
                 summary[w.exercise] = {
-                    "name": w.exercise, "count": 0,
-                    "last_date": w.date, "max_weight": 0.0,
+                    "name": w.exercise,
+                    "count": 0,
+                    "last_date": w.date,
+                    "max_weight": 0.0,
                 }
             summary[w.exercise]["count"] += 1
             for s in w.sets:

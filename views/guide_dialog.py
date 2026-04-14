@@ -6,7 +6,7 @@ import flet as ft
 
 from guides import guide_icon, guide_tips, guide_title_key
 from i18n import get_language, t
-from theme import ACCENT, CARD_BG, DIM, TEXT
+from theme import ACCENT, CARD_BG, TEXT
 
 
 def open_guide(page: ft.Page, guide_id: str) -> None:
@@ -18,8 +18,7 @@ def open_guide(page: ft.Page, guide_id: str) -> None:
         return ft.Container(
             content=ft.Column(
                 [
-                    ft.Text(heading, size=13, color=ACCENT,
-                            weight=ft.FontWeight.W_800, width=300),
+                    ft.Text(heading, size=13, color=ACCENT, weight=ft.FontWeight.W_800, width=300),
                     ft.Text(body_text, size=11, color="#ffffff", width=300),
                 ],
                 spacing=6,
@@ -46,8 +45,7 @@ def open_guide(page: ft.Page, guide_id: str) -> None:
         modal=False,
         bgcolor=CARD_BG,
         title=ft.Text(title, size=18, weight=ft.FontWeight.W_900, color=TEXT),
-        content=ft.Container(content=body, width=340, height=600,
-                             alignment=ft.alignment.top_left),
+        content=ft.Container(content=body, width=340, height=600, alignment=ft.alignment.top_left),
         actions=[
             ft.TextButton(
                 t("Close"),

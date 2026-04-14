@@ -1,9 +1,52 @@
 [project]
-name = "ironlog"
-version = "1.0.0"
-description = "App de entrenamiento - IronLog"
+name = "ironflet"
+version = "0.1.0"
+description = "Bilingual (ES/EN) weight-training tracker built with Flet — runs on Android, desktop and web from a single Python codebase."
+readme = "README.md"
+license = { file = "LICENSE" }
 requires-python = ">=3.10,<3.13"
+authors = [{ name = "Alex Nolasco", email = "kalex.nolasco@gmail.com" }]
+keywords = [
+    "fitness",
+    "workout",
+    "tracker",
+    "gym",
+    "flet",
+    "flutter",
+    "android",
+    "mobile",
+    "spanish",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Natural Language :: English",
+    "Natural Language :: Spanish",
+    "Operating System :: Android",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: User Interfaces",
+]
 dependencies = ["flet>=0.25,<0.30"]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.7",
+    "pytest>=8",
+    "pytest-asyncio>=0.24",
+    "pre-commit>=3.8",
+]
+
+[project.urls]
+Homepage = "https://github.com/kalexnolasco/ironflet"
+Repository = "https://github.com/kalexnolasco/ironflet"
+Issues = "https://github.com/kalexnolasco/ironflet/issues"
+Changelog = "https://github.com/kalexnolasco/ironflet/blob/main/CHANGELOG.md"
+Releases = "https://github.com/kalexnolasco/ironflet/releases"
 
 [tool.flet]
 app.module = "main"
@@ -17,3 +60,16 @@ package_name = "com.ironlog.app"
 product_name = "IronLog"
 adaptive_icon_background = "#0A0A0B"
 splash_color = "#0A0A0B"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+extend-exclude = ["exercise_details.py", "exercise_details_es.py", ".venv"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

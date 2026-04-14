@@ -7,7 +7,6 @@ from __future__ import annotations
 
 from datetime import date
 
-
 ACTIVITY_FACTORS: dict[str, float] = {
     "sedentary": 1.2,
     "light": 1.375,
@@ -46,8 +45,9 @@ def bmi_category(bmi_value: float | None) -> str | None:
     return "obese"
 
 
-def bmr_mifflin(weight_kg: float | None, height_cm: float | None,
-                age: int | None, sex: str) -> float | None:
+def bmr_mifflin(
+    weight_kg: float | None, height_cm: float | None, age: int | None, sex: str
+) -> float | None:
     """Mifflin-St Jeor BMR in kcal/day."""
     if not (weight_kg and height_cm and age is not None):
         return None

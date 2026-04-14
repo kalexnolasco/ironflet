@@ -5,16 +5,16 @@ from __future__ import annotations
 import flet as ft
 
 import i18n
-from data import ROUTINES, set_active_routine
+from data import set_active_routine
 from i18n import t
 from storage import Storage
-from theme import DARK_BG, ACCENT, NAV_BG
+from theme import ACCENT, DARK_BG, NAV_BG
 from views.browse import BrowseView
+from views.history import HistoryView
 from views.home import HomeView
 from views.plan import PlanView
 from views.profile import ProfileView
 from views.workout import WorkoutView
-from views.history import HistoryView
 
 
 def main(page: ft.Page):
@@ -39,8 +39,7 @@ def main(page: ft.Page):
     browse_view = BrowseView(page, store)
     history_view = HistoryView(page, store)
     profile_view = ProfileView(page, store)
-    view_list = [home_view, plan_view, workout_view, browse_view,
-                 history_view, profile_view]
+    view_list = [home_view, plan_view, workout_view, browse_view, history_view, profile_view]
     # Only first 5 are represented in the nav bar; profile is reached from Home.
     NAV_COUNT = 5
 
@@ -80,7 +79,7 @@ def main(page: ft.Page):
         i18n.set_language(lang)
         store.set_pref("lang", lang)
         nav_labels = ["Home", "Plan", "Train", "Browse", "History"]
-        for dest, key in zip(nav_bar.destinations, nav_labels):
+        for dest, key in zip(nav_bar.destinations, nav_labels, strict=False):
             dest.label = t(key)
         navigate_to(current_tab["idx"])
 
@@ -135,8 +134,8 @@ def main(page: ft.Page):
 
 if __name__ == "__main__":
     import os
+
     if os.environ.get("IRONLOG_WEB"):
-        ft.app(main, view=ft.AppView.WEB_BROWSER, port=8550, host="0.0.0.0",
-               assets_dir="assets")
+        ft.app(main, view=ft.AppView.WEB_BROWSER, port=8550, host="0.0.0.0", assets_dir="assets")
     else:
         ft.app(main, assets_dir="assets")

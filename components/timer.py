@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+
 import flet as ft
 
 ACCENT = "#FF6B35"
@@ -20,11 +21,16 @@ class RestTimer:
 
         self.display = ft.Text("REST", size=14, weight=ft.FontWeight.W_800, color=ACCENT)
         self.ring = ft.ProgressRing(
-            width=56, height=56, stroke_width=4,
-            color=ACCENT, bgcolor=BORDER, value=0,
+            width=56,
+            height=56,
+            stroke_width=4,
+            color=ACCENT,
+            bgcolor=BORDER,
+            value=0,
         )
         self.stop_btn = ft.TextButton(
-            "Stop", on_click=lambda _: self.stop(),
+            "Stop",
+            on_click=lambda _: self.stop(),
             style=ft.ButtonStyle(color=ACCENT2),
             visible=False,
         )
@@ -85,10 +91,12 @@ class RestTimer:
                         ft.Container(
                             self.display,
                             alignment=ft.alignment.center,
-                            width=56, height=56,
+                            width=56,
+                            height=56,
                         ),
                     ],
-                    width=56, height=56,
+                    width=56,
+                    height=56,
                 ),
                 ft.Row(
                     [
@@ -98,7 +106,8 @@ class RestTimer:
                         self._preset("3m", 180),
                         self.stop_btn,
                     ],
-                    spacing=4, wrap=True,
+                    spacing=4,
+                    wrap=True,
                 ),
             ],
             spacing=10,

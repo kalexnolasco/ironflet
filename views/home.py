@@ -9,8 +9,15 @@ import flet as ft
 from i18n import day_name, get_language, month_name, t
 from storage import Storage
 from theme import (
-    ACCENT, BORDER, CARD_BG, DIM, MUTED, TEXT,
-    card, chip, primary_button, section_title,
+    ACCENT,
+    BORDER,
+    CARD_BG,
+    MUTED,
+    TEXT,
+    card,
+    chip,
+    primary_button,
+    section_title,
 )
 
 
@@ -34,10 +41,20 @@ class HomeView:
         return ft.Container(
             content=ft.Column(
                 [
-                    ft.Text(value, size=22, weight=ft.FontWeight.W_900, color=ACCENT,
-                            text_align=ft.TextAlign.CENTER),
-                    ft.Text(label, size=11, weight=ft.FontWeight.W_700, color="#cccccc",
-                            text_align=ft.TextAlign.CENTER),
+                    ft.Text(
+                        value,
+                        size=22,
+                        weight=ft.FontWeight.W_900,
+                        color=ACCENT,
+                        text_align=ft.TextAlign.CENTER,
+                    ),
+                    ft.Text(
+                        label,
+                        size=11,
+                        weight=ft.FontWeight.W_700,
+                        color="#cccccc",
+                        text_align=ft.TextAlign.CENTER,
+                    ),
                 ],
                 horizontal_alignment=ft.CrossAxisAlignment.CENTER,
                 alignment=ft.MainAxisAlignment.CENTER,
@@ -56,10 +73,14 @@ class HomeView:
         set_lang = self.page.data["set_language"]
 
         def pill(code: str) -> ft.Container:
-            active = (cur == code)
+            active = cur == code
             return ft.Container(
-                content=ft.Text(code.upper(), size=10, weight=ft.FontWeight.W_900,
-                                color=ACCENT if active else "#555"),
+                content=ft.Text(
+                    code.upper(),
+                    size=10,
+                    weight=ft.FontWeight.W_900,
+                    color=ACCENT if active else "#555",
+                ),
                 bgcolor="#1d1410" if active else CARD_BG,
                 border=ft.border.all(1, ACCENT if active else BORDER),
                 border_radius=6,
@@ -72,9 +93,11 @@ class HomeView:
 
     def _today_item(self, w) -> ft.Container:
         from i18n import t_exercise
+
         set_chips = [
             chip(
-                f"{s['weight']:g}kg × {s['reps']}" if s.get("weight", 0) > 0
+                f"{s['weight']:g}kg × {s['reps']}"
+                if s.get("weight", 0) > 0
                 else f"{s['reps']} reps",
                 color=ACCENT,
             )
@@ -83,9 +106,15 @@ class HomeView:
         return card(
             ft.Row(
                 [
-                    ft.Text(t_exercise(w.exercise), size=13, weight=ft.FontWeight.W_700,
-                            color=TEXT, expand=True, max_lines=1,
-                            overflow=ft.TextOverflow.ELLIPSIS),
+                    ft.Text(
+                        t_exercise(w.exercise),
+                        size=13,
+                        weight=ft.FontWeight.W_700,
+                        color=TEXT,
+                        expand=True,
+                        max_lines=1,
+                        overflow=ft.TextOverflow.ELLIPSIS,
+                    ),
                     chip(t(w.muscle_group), color=ACCENT),
                 ],
                 alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
@@ -109,7 +138,8 @@ class HomeView:
             bgcolor=CARD_BG,
             border=ft.border.all(1, BORDER),
             border_radius=8,
-            width=34, height=34,
+            width=34,
+            height=34,
             alignment=ft.alignment.center,
             on_click=lambda _: nav_fn(5),
             ink=True,
@@ -122,15 +152,15 @@ class HomeView:
                     [
                         ft.Row(
                             [
-                                ft.Text("IRONLOG", size=11, weight=ft.FontWeight.W_900,
-                                        color=ACCENT),
+                                ft.Text(
+                                    "IRONLOG", size=11, weight=ft.FontWeight.W_900, color=ACCENT
+                                ),
                                 ft.Container(width=8),
                                 self._lang_toggle(),
                             ],
                             vertical_alignment=ft.CrossAxisAlignment.CENTER,
                         ),
-                        ft.Text(today_display(), size=22, weight=ft.FontWeight.W_900,
-                                color=TEXT),
+                        ft.Text(today_display(), size=22, weight=ft.FontWeight.W_900, color=TEXT),
                     ],
                     spacing=2,
                     expand=True,
@@ -141,12 +171,20 @@ class HomeView:
                             profile_btn,
                             card(
                                 ft.Text("🔥", size=18, text_align=ft.TextAlign.CENTER),
-                                ft.Text(str(streak), size=20, weight=ft.FontWeight.W_900,
-                                        color=ACCENT,
-                                        text_align=ft.TextAlign.CENTER),
-                                ft.Text(t("days"), size=9, weight=ft.FontWeight.W_700,
-                                        color=MUTED,
-                                        text_align=ft.TextAlign.CENTER),
+                                ft.Text(
+                                    str(streak),
+                                    size=20,
+                                    weight=ft.FontWeight.W_900,
+                                    color=ACCENT,
+                                    text_align=ft.TextAlign.CENTER,
+                                ),
+                                ft.Text(
+                                    t("days"),
+                                    size=9,
+                                    weight=ft.FontWeight.W_700,
+                                    color=MUTED,
+                                    text_align=ft.TextAlign.CENTER,
+                                ),
                                 padding=ft.padding.symmetric(horizontal=14, vertical=8),
                                 alignment=ft.alignment.center,
                             ),
@@ -179,15 +217,18 @@ class HomeView:
 
         if today:
             today_block: ft.Control = ft.Column(
-                [self._today_item(w) for w in today], spacing=0, tight=True,
+                [self._today_item(w) for w in today],
+                spacing=0,
+                tight=True,
             )
         else:
             today_block = ft.Container(
                 content=ft.Column(
                     [
                         ft.Text("💤", size=28, text_align=ft.TextAlign.CENTER),
-                        ft.Text(t("No records"), size=12, color="#666",
-                                text_align=ft.TextAlign.CENTER),
+                        ft.Text(
+                            t("No records"), size=12, color="#666", text_align=ft.TextAlign.CENTER
+                        ),
                     ],
                     horizontal_alignment=ft.CrossAxisAlignment.CENTER,
                     spacing=8,
@@ -230,11 +271,19 @@ class HomeView:
             return ft.Container(
                 content=ft.Column(
                     [
-                        ft.Text(guide_icon(gid), size=22, color="#ffffff",
-                                text_align=ft.TextAlign.CENTER),
-                        ft.Text(t(guide_title_key(gid)), size=11,
-                                color="#cccccc", weight=ft.FontWeight.W_700,
-                                text_align=ft.TextAlign.CENTER),
+                        ft.Text(
+                            guide_icon(gid),
+                            size=22,
+                            color="#ffffff",
+                            text_align=ft.TextAlign.CENTER,
+                        ),
+                        ft.Text(
+                            t(guide_title_key(gid)),
+                            size=11,
+                            color="#cccccc",
+                            weight=ft.FontWeight.W_700,
+                            text_align=ft.TextAlign.CENTER,
+                        ),
                     ],
                     horizontal_alignment=ft.CrossAxisAlignment.CENTER,
                     alignment=ft.MainAxisAlignment.CENTER,

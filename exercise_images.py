@@ -97,6 +97,7 @@ def image_for(key: str) -> str | None:
     if not slug:
         return None
     from asset_manager import image_path
+
     p = image_path(slug, 0)
     return f"file://{p}" if p else None
 
@@ -107,6 +108,7 @@ def image_frames(key: str) -> tuple[str, str] | None:
     if not slug:
         return None
     from asset_manager import image_path
+
     p0 = image_path(slug, 0)
     p1 = image_path(slug, 1) or p0
     if not p0:
