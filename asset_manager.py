@@ -1,14 +1,18 @@
 """Runtime downloader for exercise images.
 
-Images are NOT bundled in the APK — they're fetched once from the
-Free Exercise DB (Unlicense / public domain) and cached locally in
-the platform's app-storage directory.
+Images are NOT bundled in the APK. On first use the app downloads a single
+tarball attached to a GitHub Release of this repository, extracts it into
+the platform's app-storage directory, and caches it there.
+
+Upstream content comes from the Free Exercise DB (Unlicense / public
+domain); we redistribute a subset matching our exercise catalog.
 """
 
 from __future__ import annotations
 
-import asyncio
+import io
 import os
+import tarfile
 from pathlib import Path
 from typing import Callable
 
@@ -17,9 +21,12 @@ import httpx
 from exercise_images import EXERCISE_IMAGE
 
 
-RAW_BASE = ("https://raw.githubusercontent.com/yuhonas/"
-            "free-exercise-db/main/exercises")
-VERSION_FILE = ".installed-v1"
+RELEASE_VERSION = "v0.1.0"
+TARBALL_URL = (
+    "https://github.com/kalexnolasco/ironflet/releases/download/"
+    f"{RELEASE_VERSION}/exercises.tar.gz"
+)
+VERSION_FILE = ".installed-" + RELEASE_VERSION
 
 
 def _data_dir() -> Path:
@@ -44,64 +51,78 @@ def image_path(slug: str, frame: int = 0) -> Path | None:
     return p if p.exists() else None
 
 
-def _jobs() -> list[tuple[str, Path]]:
-    """(url, target_path) for every required image file."""
-    out: list[tuple[str, Path]] = []
-    slugs = {s for s in EXERCISE_IMAGE.values() if s}
-    for slug in sorted(slugs):
-        for i in range(2):
-            url = f"{RAW_BASE}/{slug}/{i}.jpg"
-            target = _data_dir() / slug / f"{i}.jpg"
-            out.append((url, target))
-    return out
-
-
 def total_file_count() -> int:
-    return len(_jobs())
+    """Number of unique image frames the bundle contains (2 per unique slug)."""
+    slugs = {s for s in EXERCISE_IMAGE.values() if s}
+    return len(slugs) * 2
 
 
 async def download_all(
     progress_cb: Callable[[int, int], None] | None = None,
-    concurrency: int = 6,
 ) -> tuple[int, int]:
-    """Download every missing frame. Returns (downloaded, failed)."""
-    jobs = _jobs()
-    total = len(jobs)
-    data_dir()  # ensure root exists
-    done = {"n": 0, "ok": 0, "err": 0}
-    sem = asyncio.Semaphore(concurrency)
+    """Download and extract the exercise tarball. Returns (extracted, failed)."""
+    root = data_dir()
+    total_bytes = 0
+    received = 0
 
-    async def fetch(client: httpx.AsyncClient, url: str, target: Path):
-        async with sem:
+    def report(done_files: int, total_files: int):
+        if progress_cb:
             try:
-                target.parent.mkdir(parents=True, exist_ok=True)
-                if target.exists() and target.stat().st_size > 0:
-                    done["ok"] += 1
-                else:
-                    r = await client.get(url)
-                    r.raise_for_status()
-                    target.write_bytes(r.content)
-                    done["ok"] += 1
+                progress_cb(done_files, total_files)
             except Exception:
-                done["err"] += 1
-            done["n"] += 1
-            if progress_cb:
-                try:
-                    progress_cb(done["n"], total)
-                except Exception:
-                    pass
+                pass
 
-    async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
-        await asyncio.gather(*[fetch(client, u, t) for u, t in jobs])
+    report(0, total_file_count())
 
-    # Mark installed only if at least half succeeded.
-    if done["ok"] >= total // 2:
+    try:
+        async with httpx.AsyncClient(timeout=120, follow_redirects=True) as client:
+            buf = io.BytesIO()
+            async with client.stream("GET", TARBALL_URL) as r:
+                r.raise_for_status()
+                total_bytes = int(r.headers.get("content-length") or 0)
+                async for chunk in r.aiter_bytes(chunk_size=64 * 1024):
+                    buf.write(chunk)
+                    received += len(chunk)
+                    if total_bytes:
+                        # Map byte progress to a 0..(file_count // 2) range so
+                        # users see movement even before extraction starts.
+                        approx = int(
+                            received / total_bytes * (total_file_count() // 2)
+                        )
+                        report(approx, total_file_count())
+            buf.seek(0)
+    except Exception:
+        return 0, total_file_count()
+
+    # Extract
+    extracted = 0
+    with tarfile.open(fileobj=buf, mode="r:gz") as tar:
+        members = [m for m in tar.getmembers() if m.isfile()]
+        total = len(members) or total_file_count()
+        for i, m in enumerate(members, 1):
+            # Sanitize: only relative paths, no escape via ..
+            name = m.name
+            if name.startswith("/") or ".." in Path(name).parts:
+                continue
+            # Strip leading "exercises/" if present (tarball may or may not have it)
+            rel = name
+            if rel.startswith("exercises/"):
+                rel = rel[len("exercises/"):]
+            target = root / rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            f = tar.extractfile(m)
+            if f is None:
+                continue
+            target.write_bytes(f.read())
+            extracted += 1
+            report(extracted, total)
+
+    if extracted > 0:
         (_data_dir() / VERSION_FILE).write_text("ok")
-    return done["ok"], done["err"]
+    return extracted, max(0, total_file_count() - extracted)
 
 
 def clear_cache() -> None:
-    """Delete all cached image files and the install marker."""
     import shutil
     d = _data_dir()
     if d.exists():

@@ -4,7 +4,7 @@ Todos los cambios notables de IronLog.
 El formato sigue [Keep a Changelog](https://keepachangelog.com/) y el proyecto
 usa [SemVer](https://semver.org/).
 
-## [1.0.0] — 2026-04-14
+## [0.1.0] — 2026-04-14
 
 ### Añadido
 - Rutinas periodizadas: 7 programas incluidos.
