@@ -48,7 +48,7 @@ jobs:
           fail_on_unmatched_files: true
 
       - name: Upload APK as workflow artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ironflet-apk
           path: build/apk/app-release.apk
