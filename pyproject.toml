@@ -32,7 +32,10 @@ classifiers = [
     "Topic :: Software Development :: User Interfaces",
 ]
 dependencies = [
-    "flet>=0.25,<0.30",
+    # flet[all], not plain flet: the web mode needs flet-web, and without the
+    # extra declared here a bare `uv sync` uninstalls it and takes the
+    # vendored CanvasKit with it. Web is the only mode actually deployed.
+    "flet[all]>=0.25,<0.30",
     "sqlalchemy>=2.0",
     "psycopg[binary]>=3.2",
 ]
