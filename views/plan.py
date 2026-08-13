@@ -5,9 +5,10 @@ from __future__ import annotations
 import flet as ft
 
 from data import ROUTINES, active_routine
+from dates import weekday_label
 from exercise_details import details_for
 from exercise_images import image_for
-from i18n import exercise_key, t, t_exercise, weekday_label
+from exercises import exercise_key, phase_color
 from storage import Storage
 from theme import (
     ACCENT,
@@ -15,6 +16,7 @@ from theme import (
     CARD_BG,
     DIM,
     TEXT,
+    C,
     card,
     chip,
 )
@@ -65,17 +67,17 @@ class PlanView:
             content=ft.Column(
                 [
                     ft.Text(
-                        f"{t('PHASE')} {phase.id} · {t('WK')} {phase.weeks}",
+                        f"PHASE {phase.id} · WK {phase.weeks}",
                         size=10,
-                        color=phase.color,
+                        color=phase_color(phase.id),
                         weight=ft.FontWeight.W_900,
                     ),
-                    ft.Text(t(phase.name), size=18, weight=ft.FontWeight.W_900, color=TEXT),
-                    ft.Text(t(phase.subtitle), size=11, color=DIM),
+                    ft.Text(phase.name, size=18, weight=ft.FontWeight.W_900, color=TEXT),
+                    ft.Text(phase.subtitle, size=11, color=DIM),
                     ft.Row(
                         [
-                            chip(t(phase.scheme)),
-                            chip(t("High freq.") if phase.freq == "high" else t("Low freq.")),
+                            chip(phase.scheme),
+                            chip("High freq." if phase.freq == "high" else "Low freq."),
                         ],
                         spacing=6,
                     ),
@@ -100,9 +102,9 @@ class PlanView:
             on = r.id == cur.id
             return ft.Container(
                 content=ft.Text(
-                    t(r.name), size=11, weight=ft.FontWeight.W_800, color=ACCENT if on else DIM
+                    r.name, size=11, weight=ft.FontWeight.W_800, color=ACCENT if on else DIM
                 ),
-                bgcolor="#1d1410" if on else CARD_BG,
+                bgcolor=C.accent_soft if on else CARD_BG,
                 border=ft.border.all(1, ACCENT if on else BORDER),
                 border_radius=8,
                 padding=ft.padding.symmetric(horizontal=12, vertical=6),
@@ -116,11 +118,11 @@ class PlanView:
         routine = active_routine()
         return ft.Column(
             [
-                ft.Text(t("Training Plan"), size=22, weight=ft.FontWeight.W_900, color=TEXT),
+                ft.Text("Training Plan", size=22, weight=ft.FontWeight.W_900, color=TEXT),
                 ft.Container(height=4),
                 self._routine_selector(),
                 ft.Container(height=8),
-                ft.Text(t(routine.description), size=11, color=DIM),
+                ft.Text(routine.description, size=11, color=DIM),
                 ft.Container(height=10),
                 *[self._phase_card(p, i) for i, p in enumerate(routine.phases)],
             ],
@@ -148,7 +150,7 @@ class PlanView:
         if thumb_src:
             thumb = ft.Container(
                 content=ft.Image(src=thumb_src, fit=ft.ImageFit.COVER, width=44, height=44),
-                bgcolor="#0f0f11",
+                bgcolor=C.bg_sunken,
                 width=44,
                 height=44,
                 border_radius=6,
@@ -156,8 +158,8 @@ class PlanView:
             )
         else:
             thumb = ft.Container(
-                content=ft.Icon(ft.Icons.FITNESS_CENTER, color="#444", size=20),
-                bgcolor="#101012",
+                content=ft.Icon(ft.Icons.FITNESS_CENTER, color=C.text_muted, size=20),
+                bgcolor=C.bg_sunken,
                 width=44,
                 height=44,
                 border_radius=6,
@@ -166,9 +168,9 @@ class PlanView:
 
         name_widget = ft.Container(
             content=ft.Text(
-                t_exercise(ex_raw),
+                ex_raw,
                 size=12,
-                color="#ffffff",
+                color=C.text,
                 weight=ft.FontWeight.W_500,
                 max_lines=2,
                 overflow=ft.TextOverflow.ELLIPSIS,
@@ -203,7 +205,7 @@ class PlanView:
             content=ft.Row(
                 [
                     ft.Text(
-                        t(day.name),
+                        day.name,
                         size=13,
                         weight=ft.FontWeight.W_700,
                         color=ACCENT if is_open else TEXT,
@@ -256,7 +258,7 @@ class PlanView:
             content=ft.Text(
                 label, size=11, weight=ft.FontWeight.W_700, color=ACCENT if active else DIM
             ),
-            bgcolor="#1d1410" if active else CARD_BG,
+            bgcolor=C.accent_soft if active else CARD_BG,
             border=ft.border.all(1, ACCENT if active else BORDER),
             border_radius=8,
             padding=ft.padding.symmetric(horizontal=12, vertical=6),
@@ -271,12 +273,12 @@ class PlanView:
             [
                 ft.Container(
                     content=ft.Text(
-                        f"{t('WK')} {i + 1}",
+                        f"WK {i + 1}",
                         size=11,
                         weight=ft.FontWeight.W_800,
                         color=ACCENT if i == self.dist_week_idx else DIM,
                     ),
-                    bgcolor="#1d1410" if i == self.dist_week_idx else CARD_BG,
+                    bgcolor=C.accent_soft if i == self.dist_week_idx else CARD_BG,
                     border=ft.border.all(1, ACCENT if i == self.dist_week_idx else BORDER),
                     border_radius=8,
                     padding=ft.padding.symmetric(horizontal=14, vertical=6),
@@ -305,7 +307,7 @@ class PlanView:
                                 padding=ft.padding.symmetric(horizontal=10, vertical=4),
                             ),
                             ft.Text(
-                                t(w), size=13, color=TEXT, weight=ft.FontWeight.W_700, expand=True
+                                w, size=13, color=TEXT, weight=ft.FontWeight.W_700, expand=True
                             ),
                         ],
                         spacing=10,
@@ -323,9 +325,9 @@ class PlanView:
         phase = routine.phases[idx]
         days = routine.days_for_phase(phase.id)
 
-        tabs_row: list[ft.Control] = [self._tab_button(t("Exercises"), "exercises")]
+        tabs_row: list[ft.Control] = [self._tab_button("Exercises", "exercises")]
         if routine.week_rotation is not None and phase.id in (1, 2, 3):
-            tabs_row.append(self._tab_button(t("Distribution"), "distribution"))
+            tabs_row.append(self._tab_button("Distribution", "distribution"))
 
         body: ft.Control
         if self.subview == "distribution":
@@ -339,7 +341,7 @@ class PlanView:
                     content=ft.Row(
                         [
                             ft.Icon(ft.Icons.ARROW_BACK, color=ACCENT, size=16),
-                            ft.Text(t("Phases"), color=ACCENT, size=12, weight=ft.FontWeight.W_700),
+                            ft.Text("Phases", color=ACCENT, size=12, weight=ft.FontWeight.W_700),
                         ],
                         spacing=4,
                         tight=True,
@@ -353,28 +355,31 @@ class PlanView:
                         [
                             ft.Container(
                                 content=ft.Text(
-                                    f"{t('PHASE')} {phase.id}",
+                                    f"PHASE {phase.id}",
                                     size=10,
                                     weight=ft.FontWeight.W_900,
-                                    color="black",
+                                    color=C.on_accent,
                                 ),
-                                bgcolor=phase.color,
+                                bgcolor=phase_color(phase.id),
                                 border_radius=6,
                                 padding=ft.padding.symmetric(horizontal=8, vertical=3),
                             ),
-                            ft.Text(f"{t('Wk')} {phase.weeks}", size=11, color=DIM),
+                            ft.Text(f"Wk {phase.weeks}", size=11, color=DIM),
                         ],
                         spacing=8,
                     ),
-                    ft.Text(t(phase.name), size=22, weight=ft.FontWeight.W_900, color=TEXT),
+                    ft.Text(phase.name, size=22, weight=ft.FontWeight.W_900, color=TEXT),
                     ft.Text(
-                        t(phase.subtitle), size=12, color=phase.color, weight=ft.FontWeight.W_700
+                        phase.subtitle,
+                        size=12,
+                        color=phase_color(phase.id),
+                        weight=ft.FontWeight.W_700,
                     ),
                     ft.Container(height=6),
-                    ft.Text(f"{t('Sets:')} {t(phase.scheme)}", size=12, color=TEXT),
-                    ft.Text(f"{t('Rest:')} {t(phase.rest)}", size=11, color="#aaa"),
+                    ft.Text(f"Sets: {phase.scheme}", size=12, color=TEXT),
+                    ft.Text(f"Rest: {phase.rest}", size=11, color=C.text_secondary),
                     ft.Container(height=6),
-                    ft.Text(t(phase.notes), size=11, color="#999"),
+                    ft.Text(phase.notes, size=11, color="#999"),
                 ),
                 ft.Container(height=12),
                 ft.Row(tabs_row, spacing=6),

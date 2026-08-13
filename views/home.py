@@ -6,7 +6,7 @@ from datetime import date
 
 import flet as ft
 
-from i18n import day_name, get_language, month_name, t
+from dates import day_name, month_name
 from storage import Storage
 from theme import (
     ACCENT,
@@ -14,6 +14,7 @@ from theme import (
     CARD_BG,
     MUTED,
     TEXT,
+    C,
     card,
     chip,
     primary_button,
@@ -68,31 +69,7 @@ class HomeView:
             height=72,
         )
 
-    def _lang_toggle(self) -> ft.Container:
-        cur = get_language()
-        set_lang = self.page.data["set_language"]
-
-        def pill(code: str) -> ft.Container:
-            active = cur == code
-            return ft.Container(
-                content=ft.Text(
-                    code.upper(),
-                    size=10,
-                    weight=ft.FontWeight.W_900,
-                    color=ACCENT if active else MUTED,
-                ),
-                bgcolor="#1d1410" if active else CARD_BG,
-                border=ft.border.all(1, ACCENT if active else BORDER),
-                border_radius=6,
-                padding=ft.padding.symmetric(horizontal=8, vertical=3),
-                on_click=(None if active else (lambda _, c=code: set_lang(c))),
-                ink=not active,
-            )
-
-        return ft.Row([pill("en"), pill("es")], spacing=4, tight=True)
-
     def _today_item(self, w) -> ft.Container:
-        from i18n import t_exercise
 
         set_chips = [
             chip(
@@ -107,7 +84,7 @@ class HomeView:
             ft.Row(
                 [
                     ft.Text(
-                        t_exercise(w.exercise),
+                        w.exercise,
                         size=13,
                         weight=ft.FontWeight.W_700,
                         color=TEXT,
@@ -115,7 +92,7 @@ class HomeView:
                         max_lines=1,
                         overflow=ft.TextOverflow.ELLIPSIS,
                     ),
-                    chip(t(w.muscle_group), color=ACCENT),
+                    chip(w.muscle_group, color=ACCENT),
                 ],
                 alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
             ),
@@ -143,7 +120,7 @@ class HomeView:
             alignment=ft.alignment.center,
             on_click=lambda _: nav_fn(5),
             ink=True,
-            tooltip=t("Settings"),
+            tooltip="Settings",
         )
 
         header = ft.Row(
@@ -156,7 +133,6 @@ class HomeView:
                                     "IRONFLET", size=11, weight=ft.FontWeight.W_900, color=ACCENT
                                 ),
                                 ft.Container(width=8),
-                                self._lang_toggle(),
                             ],
                             vertical_alignment=ft.CrossAxisAlignment.CENTER,
                         ),
@@ -179,7 +155,7 @@ class HomeView:
                                     text_align=ft.TextAlign.CENTER,
                                 ),
                                 ft.Text(
-                                    t("days"),
+                                    "days",
                                     size=9,
                                     weight=ft.FontWeight.W_700,
                                     color=MUTED,
@@ -200,16 +176,16 @@ class HomeView:
 
         stats_row = ft.Row(
             [
-                self._stat_card(str(stats["sessions"]), t("Sessions")),
-                self._stat_card(str(stats["sets"]), t("Sets")),
-                self._stat_card(vol_str, t("Vol (kg)")),
+                self._stat_card(str(stats["sessions"]), "Sessions"),
+                self._stat_card(str(stats["sets"]), "Sets"),
+                self._stat_card(vol_str, "Vol (kg)"),
             ],
             spacing=8,
         )
 
         nav = self.page.data["navigate_to"]
         start_btn = primary_button(
-            t("Start Routine"),
+            "Start Routine",
             icon=ft.Icons.PLAY_ARROW_ROUNDED,
             on_click=lambda _: nav(2),
             expand=True,
@@ -227,7 +203,10 @@ class HomeView:
                     [
                         ft.Text("💤", size=28, text_align=ft.TextAlign.CENTER),
                         ft.Text(
-                            t("No records"), size=12, color="#666", text_align=ft.TextAlign.CENTER
+                            "No records",
+                            size=12,
+                            color=C.text_muted,
+                            text_align=ft.TextAlign.CENTER,
                         ),
                     ],
                     horizontal_alignment=ft.CrossAxisAlignment.CENTER,
@@ -248,11 +227,11 @@ class HomeView:
                 ft.Container(height=14),
                 ft.Row([start_btn]),
                 ft.Container(height=14),
-                section_title(t("Today")),
+                section_title("Today"),
                 ft.Container(height=4),
                 today_block,
                 ft.Container(height=18),
-                section_title(t("Guides")),
+                section_title("Guides"),
                 ft.Container(height=4),
                 self._guides_row(),
                 ft.Container(height=14),
@@ -274,11 +253,11 @@ class HomeView:
                         ft.Text(
                             guide_icon(gid),
                             size=22,
-                            color="#ffffff",
+                            color=C.text,
                             text_align=ft.TextAlign.CENTER,
                         ),
                         ft.Text(
-                            t(guide_title_key(gid)),
+                            guide_title_key(gid),
                             size=11,
                             color="#cccccc",
                             weight=ft.FontWeight.W_700,

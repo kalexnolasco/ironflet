@@ -5,25 +5,24 @@ from __future__ import annotations
 import flet as ft
 
 from guides import guide_icon, guide_tips, guide_title_key
-from i18n import get_language, t
-from theme import ACCENT, CARD_BG, TEXT
+from theme import ACCENT, CARD_BG, TEXT, C
 
 
 def open_guide(page: ft.Page, guide_id: str) -> None:
-    tips = guide_tips(guide_id, get_language())
+    tips = guide_tips(guide_id)
     icon = guide_icon(guide_id)
-    title = t(guide_title_key(guide_id))
+    title = guide_title_key(guide_id)
 
     def tip_card(heading: str, body_text: str) -> ft.Container:
         return ft.Container(
             content=ft.Column(
                 [
                     ft.Text(heading, size=13, color=ACCENT, weight=ft.FontWeight.W_800, width=300),
-                    ft.Text(body_text, size=11, color="#ffffff", width=300),
+                    ft.Text(body_text, size=11, color=C.text, width=300),
                 ],
                 spacing=6,
             ),
-            bgcolor="#141416",
+            bgcolor=C.bg_surface,
             border_radius=10,
             padding=12,
             width=320,
@@ -48,7 +47,7 @@ def open_guide(page: ft.Page, guide_id: str) -> None:
         content=ft.Container(content=body, width=340, height=600, alignment=ft.alignment.top_left),
         actions=[
             ft.TextButton(
-                t("Close"),
+                "Close",
                 on_click=lambda _: page.close(dialog),
                 style=ft.ButtonStyle(color=ACCENT),
             ),

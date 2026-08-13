@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import flet as ft
 
+from theme import C
+
 
 def bar_chart(
     values: list[float],
@@ -13,7 +15,7 @@ def bar_chart(
 ) -> ft.Control:
     if not values:
         return ft.Container(
-            content=ft.Text("Sin datos", color="#555", size=11, italic=True),
+            content=ft.Text("Sin datos", color=C.text_muted, size=11, italic=True),
             alignment=ft.alignment.center,
             height=height,
         )
@@ -35,7 +37,7 @@ def bar_chart(
                         tooltip=f"{v:g}",
                     ),
                     ft.Text(f"{v:g}", size=8, color=color, weight=ft.FontWeight.W_700),
-                    ft.Text(lbl, size=7, color="#555"),
+                    ft.Text(lbl, size=7, color=C.text_muted),
                 ],
                 horizontal_alignment=ft.CrossAxisAlignment.CENTER,
                 spacing=1,

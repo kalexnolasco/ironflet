@@ -6,6 +6,8 @@ import asyncio
 
 import flet as ft
 
+from theme import C
+
 ACCENT = "#FF6B35"
 ACCENT2 = "#FF3366"
 BORDER = "#1a1a1d"
@@ -75,7 +77,7 @@ class RestTimer:
     def _preset(self, label: str, secs: int) -> ft.Control:
         return ft.Container(
             content=ft.Text(label, size=11, weight=ft.FontWeight.W_700, color="#dddddd"),
-            bgcolor="#252528",
+            bgcolor=C.bg_sunken,
             border=ft.border.all(1, "#242428"),
             border_radius=8,
             padding=ft.padding.symmetric(horizontal=10, vertical=6),

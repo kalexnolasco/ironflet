@@ -7,7 +7,6 @@ import flet as ft
 from data import EXERCISE_CATALOG, MUSCLE_GROUPS
 from exercise_details import details_for
 from exercise_images import image_for
-from i18n import t, t_exercise, t_muscle
 from storage import Storage
 from theme import (
     ACCENT,
@@ -16,6 +15,7 @@ from theme import (
     DIM,
     MUTED,
     TEXT,
+    C,
 )
 from views.exercise_dialog import open_exercise_detail
 
@@ -46,7 +46,7 @@ class BrowseView:
             content=ft.Text(
                 label, size=11, weight=ft.FontWeight.W_700, color=ACCENT if active else DIM
             ),
-            bgcolor="#1d1410" if active else CARD_BG,
+            bgcolor=C.accent_soft if active else CARD_BG,
             border=ft.border.all(1, ACCENT if active else BORDER),
             border_radius=8,
             padding=ft.padding.symmetric(horizontal=12, vertical=6),
@@ -62,7 +62,7 @@ class BrowseView:
         if thumb_src:
             thumb = ft.Container(
                 content=ft.Image(src=thumb_src, fit=ft.ImageFit.COVER, width=44, height=44),
-                bgcolor="#0f0f11",
+                bgcolor=C.bg_sunken,
                 width=44,
                 height=44,
                 border_radius=6,
@@ -71,7 +71,7 @@ class BrowseView:
         else:
             thumb = ft.Container(
                 content=ft.Icon(ft.Icons.FITNESS_CENTER, color=MUTED, size=20),
-                bgcolor="#101012",
+                bgcolor=C.bg_sunken,
                 width=44,
                 height=44,
                 border_radius=6,
@@ -80,9 +80,9 @@ class BrowseView:
 
         name_widget = ft.Container(
             content=ft.Text(
-                t_exercise(ex_name),
+                ex_name,
                 size=12,
-                color="#ffffff",
+                color=C.text,
                 weight=ft.FontWeight.W_500,
                 max_lines=2,
                 overflow=ft.TextOverflow.ELLIPSIS,
@@ -128,22 +128,20 @@ class BrowseView:
         return EXERCISE_CATALOG.get(self.selected_group, [])
 
     def build(self) -> ft.Control:
-        chips = [self._group_chip(None, t("All"))]
-        chips += [self._group_chip(g, t_muscle(g)) for g in MUSCLE_GROUPS]
+        chips = [self._group_chip(None, "All")]
+        chips += [self._group_chip(g, g) for g in MUSCLE_GROUPS]
 
         exercises = self._exercises_for_selected()
         count = len(exercises)
 
         return ft.Column(
             [
-                ft.Text(t("Exercises"), size=22, weight=ft.FontWeight.W_900, color=TEXT),
-                ft.Text(t("Tap an exercise for details"), size=11, color=DIM),
+                ft.Text("Exercises", size=22, weight=ft.FontWeight.W_900, color=TEXT),
+                ft.Text("Tap an exercise for details", size=11, color=DIM),
                 ft.Container(height=8),
                 ft.Row(chips, spacing=6, wrap=True, run_spacing=6),
                 ft.Container(height=10),
-                ft.Text(
-                    f"{count} {t('exercises')}", size=11, color=DIM, weight=ft.FontWeight.W_700
-                ),
+                ft.Text(f"{count} exercises", size=11, color=DIM, weight=ft.FontWeight.W_700),
                 ft.Container(height=6),
                 *[self._exercise_row(ex) for ex in exercises],
             ],

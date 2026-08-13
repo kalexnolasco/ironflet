@@ -5,10 +5,8 @@ from __future__ import annotations
 import flet as ft
 
 from exercise_details import details_for
-from exercise_details_es import instructions_es
-from exercise_images import EXERCISE_IMAGE, image_for
-from i18n import get_language, t, t_exercise
-from theme import ACCENT, BORDER_2, CARD_BG, DARK_BG, DIM, MUTED, TEXT
+from exercise_images import image_for
+from theme import ACCENT, BORDER_2, CARD_BG, DARK_BG, DIM, MUTED, TEXT, C
 
 
 def open_exercise_detail(page: ft.Page, key: str) -> None:
@@ -16,7 +14,6 @@ def open_exercise_detail(page: ft.Page, key: str) -> None:
     if not det:
         return
     img_src = image_for(key)
-    lang_is_es = get_language() == "es"
 
     def chip_item(label: str, value: str) -> ft.Control:
         return ft.Container(
@@ -34,29 +31,22 @@ def open_exercise_detail(page: ft.Page, key: str) -> None:
             padding=ft.padding.symmetric(horizontal=10, vertical=6),
         )
 
-    muscles_primary = ", ".join(t(m) for m in det["primary"]) or "—"
-    muscles_secondary = ", ".join(t(m) for m in det["secondary"]) or "—"
+    muscles_primary = ", ".join(m for m in det["primary"]) or "—"
+    muscles_secondary = ", ".join(m for m in det["secondary"]) or "—"
 
     chips_row = ft.Row(
         [
-            chip_item(t("Equipment"), t(det["equipment"]) or "—"),
-            chip_item(t("Level"), t(det["level"]) or "—"),
-            chip_item(t("Type"), t(det["mechanic"]) or "—"),
+            chip_item("Equipment", det["equipment"] or "—"),
+            chip_item("Level", det["level"] or "—"),
+            chip_item("Type", det["mechanic"] or "—"),
         ],
         spacing=6,
         wrap=True,
         run_spacing=6,
     )
 
-    instructions_header = t("How to do it")
-    slug = EXERCISE_IMAGE.get(key)
+    instructions_header = "How to do it"
     instructions_list = det.get("instructions") or []
-    if lang_is_es and slug:
-        es_steps = instructions_es(slug)
-        if es_steps:
-            instructions_list = es_steps
-        else:
-            instructions_header += f"  ·  {t('Instructions in English').lower()}"
 
     body = ft.Column(
         [
@@ -64,7 +54,7 @@ def open_exercise_detail(page: ft.Page, key: str) -> None:
                 content=ft.Image(
                     src=img_src, fit=ft.ImageFit.COVER, width=float("inf"), height=180
                 ),
-                bgcolor="#0f0f11",
+                bgcolor=C.bg_sunken,
                 border_radius=10,
                 clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
             )
@@ -74,7 +64,7 @@ def open_exercise_detail(page: ft.Page, key: str) -> None:
             chips_row,
             ft.Container(height=10),
             ft.Text(
-                f"{t('Primary')}: ",
+                "Primary: ",
                 size=11,
                 color=ACCENT,
                 weight=ft.FontWeight.W_700,
@@ -85,13 +75,14 @@ def open_exercise_detail(page: ft.Page, key: str) -> None:
                 ],
             ),
             ft.Text(
-                f"{t('Secondary')}: ",
+                "Secondary: ",
                 size=11,
                 color=DIM,
                 weight=ft.FontWeight.W_700,
                 spans=[
                     ft.TextSpan(
-                        muscles_secondary, ft.TextStyle(color="#aaa", weight=ft.FontWeight.W_400)
+                        muscles_secondary,
+                        ft.TextStyle(color=C.text_secondary, weight=ft.FontWeight.W_400),
                     )
                 ],
             ),
@@ -101,7 +92,7 @@ def open_exercise_detail(page: ft.Page, key: str) -> None:
             ft.Text(
                 "\n\n".join(f"{i + 1}.  {s}" for i, s in enumerate(instructions_list)),
                 size=11,
-                color="#ffffff",
+                color=C.text,
                 width=320,
             ),
             ft.Container(height=6),
@@ -114,11 +105,11 @@ def open_exercise_detail(page: ft.Page, key: str) -> None:
     dialog = ft.AlertDialog(
         modal=False,
         bgcolor=CARD_BG,
-        title=ft.Text(t_exercise(key), size=16, weight=ft.FontWeight.W_900, color=TEXT),
+        title=ft.Text(key, size=16, weight=ft.FontWeight.W_900, color=TEXT),
         content=ft.Container(content=body, width=340, height=600, alignment=ft.alignment.top_left),
         actions=[
             ft.TextButton(
-                t("Close"),
+                "Close",
                 on_click=lambda _: page.close(dialog),
                 style=ft.ButtonStyle(color=ACCENT),
             ),

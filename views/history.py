@@ -5,7 +5,6 @@ from __future__ import annotations
 import flet as ft
 
 from components.charts import bar_chart
-from i18n import t, t_exercise
 from storage import Storage
 from theme import (
     ACCENT,
@@ -14,6 +13,7 @@ from theme import (
     DIM,
     MUTED,
     TEXT,
+    C,
     card,
     chip,
     section_title,
@@ -49,19 +49,17 @@ class HistoryView:
         if not summary:
             return ft.Column(
                 [
-                    ft.Text(
-                        t("History & Progress"), size=22, weight=ft.FontWeight.W_900, color=TEXT
-                    ),
-                    ft.Text(t("Tap an exercise to see your progress"), size=11, color=MUTED),
+                    ft.Text("History & Progress", size=22, weight=ft.FontWeight.W_900, color=TEXT),
+                    ft.Text("Tap an exercise to see your progress", size=11, color=MUTED),
                     ft.Container(height=20),
                     ft.Container(
                         content=ft.Column(
                             [
                                 ft.Text("📭", size=28, text_align=ft.TextAlign.CENTER),
                                 ft.Text(
-                                    t("Start training to see your progress"),
+                                    "Start training to see your progress",
                                     size=12,
-                                    color="#666",
+                                    color=C.text_muted,
                                     text_align=ft.TextAlign.CENTER,
                                 ),
                             ],
@@ -89,7 +87,7 @@ class HistoryView:
                             ft.Column(
                                 [
                                     ft.Text(
-                                        t_exercise(ex["name"]),
+                                        ex["name"],
                                         size=13,
                                         weight=ft.FontWeight.W_700,
                                         color=TEXT,
@@ -97,7 +95,7 @@ class HistoryView:
                                         overflow=ft.TextOverflow.ELLIPSIS,
                                     ),
                                     ft.Text(
-                                        f"{ex['count']} {t('sessions')} · {ex['last_date']}",
+                                        f"{ex['count']} sessions · {ex['last_date']}",
                                         size=10,
                                         color=DIM,
                                     ),
@@ -113,7 +111,7 @@ class HistoryView:
                                         color=ACCENT,
                                         weight=ft.FontWeight.W_900,
                                     ),
-                                    ft.Text(t("max kg"), size=9, color="#666"),
+                                    ft.Text("max kg", size=9, color=C.text_muted),
                                 ],
                                 spacing=0,
                                 horizontal_alignment=ft.CrossAxisAlignment.END,
@@ -132,8 +130,8 @@ class HistoryView:
             )
         return ft.Column(
             [
-                ft.Text(t("History & Progress"), size=22, weight=ft.FontWeight.W_900, color=TEXT),
-                ft.Text(t("Tap an exercise to see your progress"), size=11, color=MUTED),
+                ft.Text("History & Progress", size=22, weight=ft.FontWeight.W_900, color=TEXT),
+                ft.Text("Tap an exercise to see your progress", size=11, color=MUTED),
                 ft.Container(height=10),
                 *items,
             ],
@@ -167,7 +165,7 @@ class HistoryView:
                     ft.Row(
                         [
                             ft.Text(h.date, size=11, color=ACCENT, weight=ft.FontWeight.W_700),
-                            ft.Text(t(h.muscle_group), size=10, color=DIM),
+                            ft.Text(h.muscle_group, size=10, color=DIM),
                         ],
                         alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                     ),
@@ -183,9 +181,7 @@ class HistoryView:
                     content=ft.Row(
                         [
                             ft.Icon(ft.Icons.ARROW_BACK, color=ACCENT, size=16),
-                            ft.Text(
-                                t("Exercises"), color=ACCENT, size=12, weight=ft.FontWeight.W_700
-                            ),
+                            ft.Text("Exercises", color=ACCENT, size=12, weight=ft.FontWeight.W_700),
                         ],
                         spacing=4,
                         tight=True,
@@ -194,12 +190,10 @@ class HistoryView:
                     padding=ft.padding.symmetric(vertical=6),
                     ink=True,
                 ),
-                ft.Text(
-                    t_exercise(name), size=20, weight=ft.FontWeight.W_900, color=TEXT, max_lines=2
-                ),
-                ft.Text(f"{len(hist)} {t('sessions')} · {t('PR')} {pr:g}kg", size=12, color=MUTED),
+                ft.Text(name, size=20, weight=ft.FontWeight.W_900, color=TEXT, max_lines=2),
+                ft.Text(f"{len(hist)} sessions · PR {pr:g}kg", size=12, color=MUTED),
                 ft.Container(height=12),
-                section_title(t("Max weight")),
+                section_title("Max weight"),
                 ft.Container(height=6),
                 ft.Container(
                     content=bar_chart(max_weights, labels, color=ACCENT, height=110),
@@ -209,7 +203,7 @@ class HistoryView:
                     padding=12,
                 ),
                 ft.Container(height=14),
-                section_title(t("Total volume")),
+                section_title("Total volume"),
                 ft.Container(height=6),
                 ft.Container(
                     content=bar_chart(volumes, labels, color="#4ECDC4", height=110),
@@ -219,7 +213,7 @@ class HistoryView:
                     padding=12,
                 ),
                 ft.Container(height=14),
-                section_title(t("Session detail")),
+                section_title("Session detail"),
                 ft.Container(height=6),
                 *sessions_cards,
             ],

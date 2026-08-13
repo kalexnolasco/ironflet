@@ -1,8 +1,8 @@
-"""Smoke tests that build every view in both languages and every routine.
+"""Smoke tests that build every view for every routine.
 
 These don't spin up a real Flet runtime — they just verify that the Python
-build pipeline (i18n translations, routine data, view construction) doesn't
-blow up under any combination of language × routine × phase × day.
+build pipeline (routine data, view construction) doesn't blow up under any
+combination of routine × phase × day.
 """
 
 from __future__ import annotations
@@ -12,7 +12,6 @@ from unittest.mock import MagicMock
 
 import pytest
 
-import i18n
 from data import ROUTINES, set_active_routine
 from storage import Storage
 from views.browse import BrowseView
@@ -29,7 +28,6 @@ def page_mock():
     page.data = {
         "navigate_to": lambda i, **k: None,
         "refresh_current": lambda: None,
-        "set_language": lambda lang: None,
         "set_routine": lambda r: None,
     }
     return page
@@ -60,11 +58,9 @@ def store():
     return almacen
 
 
-@pytest.mark.parametrize("lang", ["en", "es"])
 @pytest.mark.parametrize("routine_id", [r.id for r in ROUTINES])
-def test_all_views_build(lang, routine_id, page_mock, store):
+def test_all_views_build(routine_id, page_mock, store):
     page_mock.data["store"] = store
-    i18n.set_language(lang)
     set_active_routine(routine_id)
     for cls in [HomeView, PlanView, WorkoutView, BrowseView, HistoryView, ProfileView]:
         view = cls(page_mock, store)
@@ -73,10 +69,8 @@ def test_all_views_build(lang, routine_id, page_mock, store):
         view.build()
 
 
-@pytest.mark.parametrize("lang", ["en", "es"])
-def test_plan_phase_detail_builds(lang, page_mock, store):
+def test_plan_phase_detail_builds(page_mock, store):
     page_mock.data["store"] = store
-    i18n.set_language(lang)
     for routine in ROUTINES:
         set_active_routine(routine.id)
         pv = PlanView(page_mock, store)
@@ -89,7 +83,6 @@ def test_plan_phase_detail_builds(lang, page_mock, store):
 
 def test_workout_exercise_render(page_mock, store):
     page_mock.data["store"] = store
-    i18n.set_language("en")
     set_active_routine("cambiatufisico")
     wv = WorkoutView(page_mock, store)
     wv.phase_id = 1

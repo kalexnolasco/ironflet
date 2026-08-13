@@ -4,11 +4,9 @@ from __future__ import annotations
 
 import flet as ft
 
-import i18n
 from data import set_active_routine
-from i18n import t
 from storage import Storage
-from theme import ACCENT, DARK_BG, NAV_BG
+from theme import LIGHT, C, apply_theme
 from views.browse import BrowseView
 from views.history import HistoryView
 from views.home import HomeView
@@ -19,16 +17,15 @@ from views.workout import WorkoutView
 
 def main(page: ft.Page):
     page.title = "IronFlet"
-    page.theme_mode = ft.ThemeMode.DARK
-    page.bgcolor = DARK_BG
+    # One call sets the palette, the theme mode and the Material ColorScheme.
+    # Doing it piecemeal leaves dialogs and text fields on the previous theme.
+    apply_theme(page, LIGHT)
     page.padding = 0
     page.window.width = 420
     page.window.height = 820
     page.fonts = {}
-    page.theme = ft.Theme(color_scheme_seed=ACCENT)
 
     store = Storage()
-    i18n.set_language(store.get_pref("lang", "en") or "en")
     set_active_routine(store.get_pref("routine", "cambiatufisico") or "cambiatufisico")
 
     current_tab = {"idx": 0}
@@ -64,24 +61,16 @@ def main(page: ft.Page):
     nav_bar = ft.NavigationBar(
         selected_index=0,
         on_change=on_nav_change,
-        bgcolor=NAV_BG,
-        indicator_color=ft.Colors.with_opacity(0.15, ACCENT),
+        bgcolor=C.bg_nav,
+        indicator_color=C.accent_soft,
         destinations=[
-            ft.NavigationBarDestination(icon=ft.Icons.HOME_ROUNDED, label=t("Home")),
-            ft.NavigationBarDestination(icon=ft.Icons.CALENDAR_MONTH, label=t("Plan")),
-            ft.NavigationBarDestination(icon=ft.Icons.FITNESS_CENTER, label=t("Train")),
-            ft.NavigationBarDestination(icon=ft.Icons.SEARCH, label=t("Browse")),
-            ft.NavigationBarDestination(icon=ft.Icons.BAR_CHART_ROUNDED, label=t("History")),
+            ft.NavigationBarDestination(icon=ft.Icons.HOME_ROUNDED, label="Home"),
+            ft.NavigationBarDestination(icon=ft.Icons.CALENDAR_MONTH, label="Plan"),
+            ft.NavigationBarDestination(icon=ft.Icons.FITNESS_CENTER, label="Train"),
+            ft.NavigationBarDestination(icon=ft.Icons.SEARCH, label="Browse"),
+            ft.NavigationBarDestination(icon=ft.Icons.BAR_CHART_ROUNDED, label="History"),
         ],
     )
-
-    def set_language(lang: str):
-        i18n.set_language(lang)
-        store.set_pref("lang", lang)
-        nav_labels = ["Home", "Plan", "Train", "Browse", "History"]
-        for dest, key in zip(nav_bar.destinations, nav_labels, strict=False):
-            dest.label = t(key)
-        navigate_to(current_tab["idx"])
 
     def set_routine(rid: str):
         set_active_routine(rid)
@@ -99,7 +88,6 @@ def main(page: ft.Page):
         "navigate_to": navigate_to,
         "store": store,
         "refresh_current": lambda: navigate_to(current_tab["idx"]),
-        "set_language": set_language,
         "set_routine": set_routine,
     }
 

@@ -19,7 +19,6 @@ from health import (
     tdee,
     water_target_l,
 )
-from i18n import t
 from storage import Storage
 from theme import (
     ACCENT,
@@ -31,6 +30,7 @@ from theme import (
     DIM,
     MUTED,
     TEXT,
+    C,
     card,
     ghost_button,
     primary_button,
@@ -72,7 +72,7 @@ class ProfileView:
 
     def _open_log_weight(self):
         kg_field = ft.TextField(
-            label=t("Weight (kg)"),
+            label="Weight (kg)",
             keyboard_type=ft.KeyboardType.NUMBER,
             bgcolor=DARK_BG,
             border_color=BORDER,
@@ -82,7 +82,7 @@ class ProfileView:
             autofocus=True,
         )
         date_field = ft.TextField(
-            label=t("Date (YYYY-MM-DD)"),
+            label="Date (YYYY-MM-DD)",
             value=date.today().isoformat(),
             bgcolor=DARK_BG,
             border_color=BORDER,
@@ -98,7 +98,7 @@ class ProfileView:
                 if kg <= 0:
                     raise ValueError("non-positive")
             except ValueError:
-                err.value = t("Enter a valid weight")
+                err.value = "Enter a valid weight"
                 self.page.update()
                 return
             dv = (date_field.value or "").strip()
@@ -106,7 +106,7 @@ class ProfileView:
                 if dv:
                     date.fromisoformat(dv)
             except ValueError:
-                err.value = t("Invalid date format")
+                err.value = "Invalid date format"
                 self.page.update()
                 return
             self.store.save_weight(kg, dv or None)
@@ -116,7 +116,7 @@ class ProfileView:
         dlg = ft.AlertDialog(
             modal=False,
             bgcolor=CARD_BG,
-            title=ft.Text(t("Log weight"), size=16, weight=ft.FontWeight.W_900, color=TEXT),
+            title=ft.Text("Log weight", size=16, weight=ft.FontWeight.W_900, color=TEXT),
             content=ft.Container(
                 content=ft.Column(
                     [kg_field, date_field, err],
@@ -128,11 +128,11 @@ class ProfileView:
             ),
             actions=[
                 ft.TextButton(
-                    t("Cancel"),
+                    "Cancel",
                     on_click=lambda _: self.page.close(dlg),
                     style=ft.ButtonStyle(color=DIM),
                 ),
-                ft.TextButton(t("Save"), on_click=save, style=ft.ButtonStyle(color=ACCENT)),
+                ft.TextButton("Save", on_click=save, style=ft.ButtonStyle(color=ACCENT)),
             ],
             actions_alignment=ft.MainAxisAlignment.END,
         )
@@ -161,19 +161,19 @@ class ProfileView:
 
         def do_copy(_):
             self.page.set_clipboard(payload)
-            status.value = t("Copied!")
+            status.value = "Copied!"
             self.page.update()
 
         body = ft.Column(
             [
-                _stat_row(t("Workouts"), str(len(dump.get("workouts") or []))),
-                _stat_row(t("Weight entries"), str(len(dump.get("weights") or []))),
-                _stat_row(t("Preferences"), str(len(dump.get("prefs") or {}))),
-                _stat_row(t("Profile"), "✓" if (dump.get("profile") or {}).get("name") else "—"),
-                _stat_row(t("Size"), f"{size_kb:.1f} KiB"),
+                _stat_row("Workouts", str(len(dump.get("workouts") or []))),
+                _stat_row("Weight entries", str(len(dump.get("weights") or []))),
+                _stat_row("Preferences", str(len(dump.get("prefs") or {}))),
+                _stat_row("Profile", "✓" if (dump.get("profile") or {}).get("name") else "—"),
+                _stat_row("Size", f"{size_kb:.1f} KiB"),
                 ft.Container(height=6),
                 primary_button(
-                    t("Copy to clipboard"),
+                    "Copy to clipboard",
                     icon=ft.Icons.CONTENT_COPY,
                     on_click=do_copy,
                     expand=True,
@@ -188,13 +188,13 @@ class ProfileView:
         dlg = ft.AlertDialog(
             modal=False,
             bgcolor=CARD_BG,
-            title=ft.Text(t("Export backup"), size=16, weight=ft.FontWeight.W_900, color=TEXT),
+            title=ft.Text("Export backup", size=16, weight=ft.FontWeight.W_900, color=TEXT),
             content=ft.Container(
                 content=body, width=320, height=280, alignment=ft.alignment.top_left
             ),
             actions=[
                 ft.TextButton(
-                    t("Close"),
+                    "Close",
                     on_click=lambda _: self.page.close(dlg),
                     style=ft.ButtonStyle(color=DIM),
                 ),
@@ -205,7 +205,7 @@ class ProfileView:
 
     def _open_import(self):
         paste = ft.TextField(
-            hint_text=t("Paste backup JSON below"),
+            hint_text="Paste backup JSON below",
             multiline=True,
             min_lines=10,
             max_lines=10,
@@ -217,7 +217,7 @@ class ProfileView:
         )
         status = ft.Text("", size=11, color=ACCENT2)
         warn = ft.Text(
-            t("This will replace all current data."),
+            "This will replace all current data.",
             size=10,
             color=ACCENT2,
             weight=ft.FontWeight.W_700,
@@ -234,41 +234,39 @@ class ProfileView:
         def do_import(_):
             raw = (paste.value or "").strip()
             if not raw:
-                status.value = t("Invalid backup JSON")
+                status.value = "Invalid backup JSON"
                 self.page.update()
                 return
             try:
                 data = json.loads(raw)
                 counts = self.store.import_all(data, wipe=True)
             except Exception as exc:  # json error OR ValueError from import
-                status.value = f"{t('Invalid backup JSON')}: {exc}"
+                status.value = f"Invalid backup JSON: {exc}"
                 self.page.update()
                 return
             status.color = ACCENT
             total = sum(counts.values())
-            status.value = f"{t('Backup imported')} ({total})"
+            status.value = f"Backup imported ({total})"
             self.page.update()
             # brief pause then close + refresh
             self.page.close(dlg)
             # reload language/routine from the new prefs
-            import i18n
             from data import set_active_routine
 
-            i18n.set_language(self.store.get_pref("lang", "en") or "en")
             set_active_routine(self.store.get_pref("routine", "cambiatufisico") or "cambiatufisico")
             self.page.data["refresh_current"]()
 
         dlg = ft.AlertDialog(
             modal=False,
             bgcolor=CARD_BG,
-            title=ft.Text(t("Import backup"), size=16, weight=ft.FontWeight.W_900, color=TEXT),
+            title=ft.Text("Import backup", size=16, weight=ft.FontWeight.W_900, color=TEXT),
             content=ft.Container(
                 content=ft.Column(
                     [
                         warn,
                         paste,
                         ft.TextButton(
-                            t("Paste from clipboard"),
+                            "Paste from clipboard",
                             on_click=paste_from_clipboard,
                             style=ft.ButtonStyle(color=ACCENT),
                         ),
@@ -282,12 +280,12 @@ class ProfileView:
             ),
             actions=[
                 ft.TextButton(
-                    t("Cancel"),
+                    "Cancel",
                     on_click=lambda _: self.page.close(dlg),
                     style=ft.ButtonStyle(color=DIM),
                 ),
                 ft.TextButton(
-                    t("Replace all"), on_click=do_import, style=ft.ButtonStyle(color=ACCENT)
+                    "Replace all", on_click=do_import, style=ft.ButtonStyle(color=ACCENT)
                 ),
             ],
             actions_alignment=ft.MainAxisAlignment.END,
@@ -297,8 +295,8 @@ class ProfileView:
     def _backup_section(self) -> ft.Control:
         return ft.Row(
             [
-                ghost_button(t("Export"), on_click=lambda _: self._open_export(), expand=True),
-                ghost_button(t("Import"), on_click=lambda _: self._open_import(), expand=True),
+                ghost_button("Export", on_click=lambda _: self._open_export(), expand=True),
+                ghost_button("Import", on_click=lambda _: self._open_import(), expand=True),
             ],
             spacing=8,
         )
@@ -313,20 +311,18 @@ class ProfileView:
         dlg = ft.AlertDialog(
             modal=True,
             bgcolor=CARD_BG,
-            title=ft.Text(t(title_key), size=16, weight=ft.FontWeight.W_900, color=TEXT),
+            title=ft.Text(title_key, size=16, weight=ft.FontWeight.W_900, color=TEXT),
             content=ft.Container(
-                content=ft.Text(t(message_key), size=12, color="#ddd", width=300),
+                content=ft.Text(message_key, size=12, color="#ddd", width=300),
                 width=320,
             ),
             actions=[
                 ft.TextButton(
-                    t("Cancel"),
+                    "Cancel",
                     on_click=lambda _: self.page.close(dlg),
                     style=ft.ButtonStyle(color=DIM),
                 ),
-                ft.TextButton(
-                    t(action_key), on_click=confirmed, style=ft.ButtonStyle(color=ACCENT2)
-                ),
+                ft.TextButton(action_key, on_click=confirmed, style=ft.ButtonStyle(color=ACCENT2)),
             ],
             actions_alignment=ft.MainAxisAlignment.END,
         )
@@ -339,11 +335,11 @@ class ProfileView:
                     ft.Icon(icon, color=ACCENT2, size=18),
                     ft.Container(
                         content=ft.Text(
-                            t(label_key), size=12, color="#ddd", weight=ft.FontWeight.W_700
+                            label_key, size=12, color="#ddd", weight=ft.FontWeight.W_700
                         ),
                         width=230,
                     ),
-                    ft.Icon(ft.Icons.CHEVRON_RIGHT, color="#555", size=16),
+                    ft.Icon(ft.Icons.CHEVRON_RIGHT, color=C.text_muted, size=16),
                 ],
                 spacing=10,
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
@@ -362,7 +358,7 @@ class ProfileView:
         total = asset_manager.total_file_count()
         installed = asset_manager.is_installed()
         status_label = ft.Text(
-            t("Installed") if installed else f"{t('Not installed')}  ·  ~9 MB",
+            "Installed" if installed else "Not installed  ·  ~9 MB",
             size=11,
             color=ACCENT if installed else DIM,
             weight=ft.FontWeight.W_700,
@@ -381,19 +377,19 @@ class ProfileView:
                 pass
 
         async def do_download(_):
-            status_label.value = t("Downloading…")
+            status_label.value = "Downloading…"
             status_label.color = ACCENT
             self.page.update()
             ok, err = await asset_manager.download_all(progress_cb=on_progress)
             if err == 0:
-                status_label.value = t("Installed")
+                status_label.value = "Installed"
             else:
-                status_label.value = f"{t('Partial')} · {ok} ok / {err} err"
+                status_label.value = f"Partial · {ok} ok / {err} err"
             self.page.update()
 
         def do_clear(_):
             asset_manager.clear_cache()
-            status_label.value = f"{t('Not installed')}  ·  ~9 MB"
+            status_label.value = "Not installed  ·  ~9 MB"
             status_label.color = DIM
             progress_bar.value = 0
             count_label.value = f"0 / {total}"
@@ -402,16 +398,14 @@ class ProfileView:
         dlg = ft.AlertDialog(
             modal=False,
             bgcolor=CARD_BG,
-            title=ft.Text(t("Exercise guides"), size=16, weight=ft.FontWeight.W_900, color=TEXT),
+            title=ft.Text("Exercise guides", size=16, weight=ft.FontWeight.W_900, color=TEXT),
             content=ft.Container(
                 content=ft.Column(
                     [
                         ft.Text(
-                            t(
-                                "Exercise photos and instructions are downloaded "
-                                "from a public fitness database (Unlicense). "
-                                "Approx. 9 MB over Wi-Fi is recommended."
-                            ),
+                            "Exercise photos and instructions are downloaded "
+                            "from a public fitness database (Unlicense). "
+                            "Approx. 9 MB over Wi-Fi is recommended.",
                             size=11,
                             color="#ddd",
                             width=300,
@@ -423,9 +417,9 @@ class ProfileView:
                         ft.Container(height=6),
                         ft.Row(
                             [
-                                ghost_button(t("Clear cache"), on_click=do_clear, expand=True),
+                                ghost_button("Clear cache", on_click=do_clear, expand=True),
                                 primary_button(
-                                    t("Download"),
+                                    "Download",
                                     on_click=do_download,
                                     expand=True,
                                     icon=ft.Icons.CLOUD_DOWNLOAD,
@@ -442,7 +436,7 @@ class ProfileView:
             ),
             actions=[
                 ft.TextButton(
-                    t("Close"),
+                    "Close",
                     on_click=lambda _: self.page.close(dlg),
                     style=ft.ButtonStyle(color=DIM),
                 ),
@@ -453,18 +447,20 @@ class ProfileView:
 
     def _guides_section(self) -> ft.Control:
         installed = asset_manager.is_installed()
-        status = t("Installed") if installed else "~9 MB"
+        status = "Installed" if installed else "~9 MB"
         return ft.Container(
             content=ft.Row(
                 [
                     ft.Icon(
-                        ft.Icons.CLOUD_DOWNLOAD, color=ACCENT if not installed else "#555", size=18
+                        ft.Icons.CLOUD_DOWNLOAD,
+                        color=ACCENT if not installed else C.text_muted,
+                        size=18,
                     ),
                     ft.Container(
                         content=ft.Column(
                             [
                                 ft.Text(
-                                    t("Exercise guides"),
+                                    "Exercise guides",
                                     size=12,
                                     color="#ddd",
                                     weight=ft.FontWeight.W_700,
@@ -476,7 +472,7 @@ class ProfileView:
                         ),
                         width=220,
                     ),
-                    ft.Icon(ft.Icons.CHEVRON_RIGHT, color="#555", size=16),
+                    ft.Icon(ft.Icons.CHEVRON_RIGHT, color=C.text_muted, size=16),
                 ],
                 spacing=10,
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
@@ -502,11 +498,9 @@ class ProfileView:
         def clear_all():
             def do_wipe():
                 self.store.clear_all()
-                # pref defaults reapply next render; reset i18n/routine to defaults.
-                import i18n
+                # pref defaults reapply next render; reset routine to default.
                 from data import set_active_routine
 
-                i18n.set_language("en")
                 set_active_routine("cambiatufisico")
 
             self._confirm_action(
@@ -597,13 +591,13 @@ class ProfileView:
                 return "—"
             return f"{v:.{digits}f}{unit}"
 
-        age_row = self._stat(t("Age"), fmt(age, "y"))
-        bmi_row = self._stat(t("BMI"), fmt(b, "", 1), t(bcat) if bcat else "")
-        bmr_row = self._stat(t("BMR"), f"{fmt(bmr, ' kcal')}" if bmr else "—")
-        tdee_row = self._stat(t("TDEE"), f"{fmt(tdv, ' kcal')}" if tdv else "—", t(activity))
+        age_row = self._stat("Age", fmt(age, "y"))
+        bmi_row = self._stat("BMI", fmt(b, "", 1), bcat if bcat else "")
+        bmr_row = self._stat("BMR", f"{fmt(bmr, ' kcal')}" if bmr else "—")
+        tdee_row = self._stat("TDEE", f"{fmt(tdv, ' kcal')}" if tdv else "—", activity)
         protein_txt = f"{prot[0]:g}–{prot[1]:g} g" if prot else "—"
-        prot_row = self._stat(t("Protein"), protein_txt, "1.6–2.2 g/kg")
-        water_row = self._stat(t("Water"), f"{fmt(water, ' L', 1)}" if water else "—", "~35 ml/kg")
+        prot_row = self._stat("Protein", protein_txt, "1.6–2.2 g/kg")
+        water_row = self._stat("Water", f"{fmt(water, ' L', 1)}" if water else "—", "~35 ml/kg")
 
         return ft.Column(
             [
@@ -625,9 +619,7 @@ class ProfileView:
             [
                 ft.Column(
                     [
-                        ft.Text(
-                            t("Current weight"), size=11, color=MUTED, weight=ft.FontWeight.W_700
-                        ),
+                        ft.Text("Current weight", size=11, color=MUTED, weight=ft.FontWeight.W_700),
                         ft.Text(
                             f"{latest:g} kg" if latest else "—",
                             size=24,
@@ -640,7 +632,7 @@ class ProfileView:
                     expand=True,
                 ),
                 primary_button(
-                    t("Log weight"), icon=ft.Icons.ADD, on_click=lambda _: self._open_log_weight()
+                    "Log weight", icon=ft.Icons.ADD, on_click=lambda _: self._open_log_weight()
                 ),
             ],
             alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
@@ -650,7 +642,7 @@ class ProfileView:
         chart = ft.Container(
             content=bar_chart(kgs, labels, color="#4ECDC4", height=110)
             if entries
-            else ft.Text(t("No weight logged yet"), size=11, color="#666", italic=True),
+            else ft.Text("No weight logged yet", size=11, color=C.text_muted, italic=True),
             bgcolor=CARD_BG,
             border=ft.border.all(1, BORDER),
             border_radius=12,
@@ -679,7 +671,9 @@ class ProfileView:
                                 expand=True,
                             ),
                             ft.Container(
-                                content=ft.Icon(ft.Icons.DELETE_OUTLINE, color="#555", size=16),
+                                content=ft.Icon(
+                                    ft.Icons.DELETE_OUTLINE, color=C.text_muted, size=16
+                                ),
                                 on_click=lambda _, wid=e["id"]: self._delete_weight(wid),
                                 ink=True,
                                 padding=6,
@@ -701,7 +695,7 @@ class ProfileView:
                 ft.Container(height=10),
                 chart,
                 ft.Container(height=10),
-                section_title(t("History")),
+                section_title("History"),
                 ft.Container(height=6),
                 *history_rows,
             ],
@@ -715,24 +709,24 @@ class ProfileView:
         latest_weight = self.store.get_latest_weight()
 
         sex_options = [
-            ("M", t("Male")),
-            ("F", t("Female")),
-            ("", t("Prefer not to say")),
+            ("M", "Male"),
+            ("F", "Female"),
+            ("", "Prefer not to say"),
         ]
-        activity_options = [(k, t(k)) for k in ACTIVITY_KEYS]
+        activity_options = [(k, k) for k in ACTIVITY_KEYS]
 
-        name_field = self._text_input(t("Name"), "name")
+        name_field = self._text_input("Name", "name")
         dob_field = self._text_input(
-            t("Birthdate (YYYY-MM-DD)"),
+            "Birthdate (YYYY-MM-DD)",
             "birthdate",
         )
         height_field = self._text_input(
-            t("Height (cm)"),
+            "Height (cm)",
             "height_cm",
             keyboard=ft.KeyboardType.NUMBER,
         )
-        sex_field = self._dropdown(t("Sex"), "sex", sex_options)
-        activity_field = self._dropdown(t("Activity level"), "activity_level", activity_options)
+        sex_field = self._dropdown("Sex", "sex", sex_options)
+        activity_field = self._dropdown("Activity level", "activity_level", activity_options)
 
         form = card(
             ft.Row([name_field], spacing=8),
@@ -740,11 +734,7 @@ class ProfileView:
             ft.Row([sex_field, activity_field], spacing=8),
             ft.Container(height=6),
             ft.Row(
-                [
-                    primary_button(
-                        t("Save profile"), on_click=lambda _: self._save_form(), expand=True
-                    )
-                ],
+                [primary_button("Save profile", on_click=lambda _: self._save_form(), expand=True)],
             ),
             padding=14,
         )
@@ -755,7 +745,7 @@ class ProfileView:
                     content=ft.Row(
                         [
                             ft.Icon(ft.Icons.ARROW_BACK, color=ACCENT, size=16),
-                            ft.Text(t("Home"), color=ACCENT, size=12, weight=ft.FontWeight.W_700),
+                            ft.Text("Home", color=ACCENT, size=12, weight=ft.FontWeight.W_700),
                         ],
                         spacing=4,
                         tight=True,
@@ -764,7 +754,7 @@ class ProfileView:
                     padding=ft.padding.symmetric(vertical=6),
                     ink=True,
                 ),
-                ft.Text(t("Settings"), size=18, weight=ft.FontWeight.W_900, color=TEXT),
+                ft.Text("Settings", size=18, weight=ft.FontWeight.W_900, color=TEXT),
                 ft.Container(width=60),
             ],
             alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
@@ -775,23 +765,23 @@ class ProfileView:
             [
                 header,
                 ft.Container(height=10),
-                section_title(t("Your data")),
+                section_title("Your data"),
                 ft.Container(height=4),
                 form,
                 ft.Container(height=14),
-                section_title(t("Derived metrics")),
+                section_title("Derived metrics"),
                 ft.Container(height=4),
                 self._metrics_row(profile, latest_weight),
                 ft.Container(height=14),
-                section_title(t("Weight")),
+                section_title("Weight"),
                 ft.Container(height=4),
                 self._weight_section(),
                 ft.Container(height=14),
-                section_title(t("Backup")),
+                section_title("Backup"),
                 ft.Container(height=4),
                 self._backup_section(),
                 ft.Container(height=14),
-                section_title(t("Data")),
+                section_title("Data"),
                 ft.Container(height=4),
                 self._guides_section(),
                 self._danger_zone(),
