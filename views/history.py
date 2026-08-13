@@ -159,6 +159,8 @@ class HistoryView:
             for s in h.sets:
                 is_pr = s["weight"] == pr and pr > 0
                 text = f"{'🏆 ' if is_pr else ''}{s['weight']:g}kg × {s['reps']}"
+                if s.get("rir") is not None:
+                    text += f" · RIR {s['rir']:g}"
                 set_chips.append(chip(text, color=ACCENT))
             sessions_cards.append(
                 card(

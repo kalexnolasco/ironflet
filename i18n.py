@@ -130,6 +130,7 @@ ES: dict[str, str] = {
     "SET": "SET",
     "KG": "KG",
     "REPS": "REPS",
+    "RIR": "RIR",
     "+ Set": "+ Serie",
     "Skip": "Saltar",
     "Save → Next": "Guardar → Siguiente",

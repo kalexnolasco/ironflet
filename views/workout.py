@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import time
 from datetime import date
 
@@ -38,7 +39,7 @@ class WorkoutView:
         self.phase_id: int = 0
         self.day_idx: int = -1
         self.ex_idx: int = 0
-        self.sets: list[dict[str, str]] = [{"weight": "", "reps": ""}]
+        self.sets: list[dict[str, str]] = [{"weight": "", "reps": "", "rir": ""}]
         self.completed: list[dict] = []
         self.finished: bool = False
 
@@ -79,7 +80,7 @@ class WorkoutView:
         self.phase_id = 0
         self.day_idx = -1
         self.ex_idx = 0
-        self.sets = [{"weight": "", "reps": ""}]
+        self.sets = [{"weight": "", "reps": "", "rir": ""}]
         self.completed = []
         self.finished = False
         self.timer.stop()
@@ -124,7 +125,7 @@ class WorkoutView:
     def _go_prev_exercise(self):
         if self.ex_idx > 0:
             self.ex_idx -= 1
-            self.sets = [{"weight": "", "reps": ""}]
+            self.sets = [{"weight": "", "reps": "", "rir": ""}]
             self.page.data["refresh_current"]()
 
     def _go_next_exercise(self):
@@ -132,7 +133,7 @@ class WorkoutView:
         total = len(day.exercises) if day else 0
         if self.ex_idx + 1 < total:
             self.ex_idx += 1
-            self.sets = [{"weight": "", "reps": ""}]
+            self.sets = [{"weight": "", "reps": "", "rir": ""}]
             self.page.data["refresh_current"]()
 
     def _current_day(self):
@@ -166,7 +167,7 @@ class WorkoutView:
     def _select_day(self, idx: int):
         self.day_idx = idx
         self.ex_idx = 0
-        self.sets = [{"weight": "", "reps": ""}]
+        self.sets = [{"weight": "", "reps": "", "rir": ""}]
         self.completed = []
         self.finished = False
         if idx >= 0:
@@ -176,7 +177,7 @@ class WorkoutView:
         self.page.data["refresh_current"]()
 
     def _add_set(self, _):
-        self.sets.append({"weight": "", "reps": ""})
+        self.sets.append({"weight": "", "reps": "", "rir": ""})
         self.page.data["refresh_current"]()
 
     def _remove_set(self, i: int):
@@ -207,7 +208,13 @@ class WorkoutView:
                     r = int(float(s.get("reps") or 0))
                 except ValueError:
                     r = 0
-                sets_parsed.append({"weight": w, "reps": r})
+                parsed = {"weight": w, "reps": r}
+                # RIR is optional: only stored when filled in, so old entries
+                # and the ones written by the Telegram coach stay compatible.
+                if str(s.get("rir") or "").strip():
+                    with contextlib.suppress(ValueError):
+                        parsed["rir"] = float(s["rir"])
+                sets_parsed.append(parsed)
             self.store.save_workout(
                 WorkoutEntry(
                     date=date.today().isoformat(),
@@ -229,7 +236,7 @@ class WorkoutView:
             self._stop_session_timer()
         else:
             self.ex_idx += 1
-            self.sets = [{"weight": "", "reps": ""}]
+            self.sets = [{"weight": "", "reps": "", "rir": ""}]
         self.page.data["refresh_current"]()
 
     def _finish(self, _):
@@ -435,6 +442,22 @@ class WorkoutView:
             expand=True,
             on_change=lambda e, idx=i: self._update_set(idx, "reps", e.control.value),
         )
+        # RIR (reps in reserve): optional. Left blank it simply isn't stored.
+        rir_field = ft.TextField(
+            value=s.get("rir", ""),
+            hint_text=str(last_ref.get("rir", "")) if last_ref and last_ref.get("rir") else "–",
+            keyboard_type=ft.KeyboardType.NUMBER,
+            text_align=ft.TextAlign.CENTER,
+            bgcolor=DARK_BG,
+            border_color=BORDER,
+            focused_border_color=ACCENT,
+            color=TEXT,
+            text_size=14,
+            height=40,
+            width=52,
+            content_padding=ft.padding.symmetric(horizontal=2, vertical=8),
+            on_change=lambda e, idx=i: self._update_set(idx, "rir", e.control.value),
+        )
         return ft.Row(
             [
                 ft.Container(
@@ -450,6 +473,7 @@ class WorkoutView:
                 ),
                 w_field,
                 r_field,
+                rir_field,
                 ft.Container(
                     content=ft.Icon(ft.Icons.CLOSE, size=14, color="#555"),
                     width=32,
@@ -485,7 +509,11 @@ class WorkoutView:
                         ),
                         ft.Row(
                             [
-                                chip(f"{s['weight']:g}kg × {s['reps']}", color=ACCENT)
+                                chip(
+                                    f"{s['weight']:g}kg × {s['reps']}"
+                                    + (f" · RIR {s['rir']:g}" if s.get("rir") is not None else ""),
+                                    color=ACCENT,
+                                )
                                 for s in last_sets
                             ],
                             wrap=True,
@@ -534,6 +562,16 @@ class WorkoutView:
                         text_align=ft.TextAlign.CENTER,
                     ),
                     expand=True,
+                ),
+                ft.Container(
+                    ft.Text(
+                        t("RIR"),
+                        size=9,
+                        color="#444",
+                        weight=ft.FontWeight.W_700,
+                        text_align=ft.TextAlign.CENTER,
+                    ),
+                    width=52,
                 ),
                 ft.Container(width=32),
             ],
