@@ -275,6 +275,34 @@ ES: dict[str, str] = {
     "Push Day": "Día Empuje",
     "Pull Day": "Día Tirón",
     "Leg Day": "Día Pierna",
+    # ── Day names (Recomp PPL + Upper/Lower routine) ────────
+    "Push": "Empuje",
+    "Pull": "Tirón",
+    "Upper": "Torso",
+    "Legs A: quad focus": "Pierna A: Cuádriceps",
+    "Lower: hip focus": "Pierna B: Cadera",
+    # ── Phase names (Recomp routine) ────────────────────────
+    "Base": "Base",
+    "Accumulation": "Acumulación",
+    # "Deload" is already translated above with the CambiaTuFísico phases.
+    "Set your working weights": "Fija tus pesos de trabajo",
+    "One extra set on the opener": "Una serie más en el primer ejercicio",
+    "Same weight, half the sets": "Mismo peso, la mitad de series",
+    "3' compounds / 60-90s isolation": "3' básicos / 60-90s aislamiento",
+    "Find a load that leaves 2-3 reps in reserve. Week 1 sets the baseline, not PRs.": "Busca un peso que te deje 2-3 repeticiones en reserva. La semana 1 establece "
+    "tu base, no vayas a por PRs.",
+    "Add 1 set to the first exercise of each session. Double progression: hit the "
+    "top of the rep range on every set, then add 2.5 kg upper / 5 kg lower.": "Añade 1 serie al primer ejercicio de cada sesión. Progresión doble: cuando "
+    "hagas el techo de reps en todas las series, sube 2,5 kg (torso) o 5 kg (pierna).",
+    "Same loads, half the sets, no morning cardio. Recovery week before the next block.": "Mismos pesos, la mitad de series, sin cardio matinal. Semana de recuperación "
+    "antes del siguiente bloque.",
+    # ── Exercises (Recomp routine) ──────────────────────────
+    "Dips": "Fondos en paralelas",
+    "Face Pull": "Face pull",
+    "Hip Thrust": "Hip thrust",
+    "Bulgarian Split Squat": "Sentadilla búlgara",
+    "Cable Lateral Raises": "Elevaciones laterales en polea",
+    "Incline Barbell Bench Press": "Press inclinado con barra",
     # ── Day names (Women Fitness routine) ───────────────────
     "Glutes + Lower": "Glúteos + Pierna",
     "Upper Body": "Tren Superior",

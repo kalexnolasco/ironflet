@@ -990,6 +990,211 @@ PPL_DAYS_INTENSIFICATION: list[TrainingDay] = [
 ]
 
 
+RECOMP_PHASES: list[Phase] = [
+    Phase(
+        1,
+        "1-2",
+        "Base",
+        "Set your working weights",
+        "#00D4AA",
+        "4×5-8 / 3×8-12",
+        "3' compounds / 60-90s isolation",
+        "Find a load that leaves 2-3 reps in reserve. Week 1 sets the baseline, not PRs.",
+        "low",
+    ),
+    Phase(
+        2,
+        "3-5",
+        "Accumulation",
+        "One extra set on the opener",
+        "#FF6B35",
+        "5×5-8 / 3×8-12",
+        "3' compounds / 60-90s isolation",
+        "Add 1 set to the first exercise of each session. Double progression: hit the "
+        "top of the rep range on every set, then add 2.5 kg upper / 5 kg lower.",
+        "low",
+    ),
+    Phase(
+        3,
+        "6",
+        "Deload",
+        "Same weight, half the sets",
+        "#4A9EFF",
+        "2×5-8 / 2×8-12",
+        "3' compounds / 60-90s isolation",
+        "Same loads, half the sets, no morning cardio. Recovery week before the next block.",
+        "low",
+    ),
+]
+
+# 5-day PPL + Upper/Lower. Frequency 2 per muscle group, legs 72 h apart.
+# Mon Push 18:30 · Tue Legs A 14:30 · Wed Pull 18:30 · Thu Upper 14:30 · Fri Lower 14:30
+RECOMP_DAYS_BASE: list[TrainingDay] = [
+    TrainingDay(
+        "Push",
+        [
+            "Barbell Bench Press [4×5-8]",
+            "Barbell Military Press [3×6-10]",
+            "Incline DB Press [3×8-12]",
+            "Lateral Raises [4×12-20]",
+            "Dips [3×8-12]",
+            "Triceps Pushdown [3×10-15]",
+        ],
+    ),
+    TrainingDay(
+        "Legs A: quad focus",
+        [
+            "Squat [4×5-8]",
+            "Leg Press [3×8-12]",
+            "Leg Extensions [3×12-15]",
+            "Lying Leg Curl [3×10-15]",
+            "Standing Calf Raise [4×12-20]",
+        ],
+    ),
+    TrainingDay(
+        "Pull",
+        [
+            "Pull-ups [4×6-10]",
+            "Barbell Row [4×6-10]",
+            "Seated Cable Row [3×10-12]",
+            "Face Pull [3×15-20]",
+            "EZ Bar Curl [3×8-12]",
+            "Hammer Curl [3×10-15]",
+        ],
+    ),
+    TrainingDay(
+        "Upper",
+        [
+            "Incline Barbell Bench Press [4×6-10]",
+            "DB Row [4×8-12]",
+            "Seated DB Press [3×8-12]",
+            "Front Lat Pulldown [3×10-12]",
+            "Cable Lateral Raises [3×15-20]",
+            "Incline DB Curl [3×10-15]",
+            "Overhead Extension [3×10-15]",
+        ],
+    ),
+    TrainingDay(
+        "Lower: hip focus",
+        [
+            "Romanian Deadlift [4×6-10]",
+            "Hip Thrust [3×8-12]",
+            "Bulgarian Split Squat [3×8-12]",
+            "Seated Leg Curl [3×10-15]",
+            "Seated Calf Raise [4×15-20]",
+        ],
+    ),
+]
+
+# Phase 2 adds one set to the opener of every session.
+RECOMP_DAYS_ACCUMULATION: list[TrainingDay] = [
+    TrainingDay(
+        "Push",
+        [
+            "Barbell Bench Press [5×5-8]",
+            "Barbell Military Press [3×6-10]",
+            "Incline DB Press [3×8-12]",
+            "Lateral Raises [4×12-20]",
+            "Dips [3×8-12]",
+            "Triceps Pushdown [3×10-15]",
+        ],
+    ),
+    TrainingDay(
+        "Legs A: quad focus",
+        [
+            "Squat [5×5-8]",
+            "Leg Press [3×8-12]",
+            "Leg Extensions [3×12-15]",
+            "Lying Leg Curl [3×10-15]",
+            "Standing Calf Raise [4×12-20]",
+        ],
+    ),
+    TrainingDay(
+        "Pull",
+        [
+            "Pull-ups [5×6-10]",
+            "Barbell Row [4×6-10]",
+            "Seated Cable Row [3×10-12]",
+            "Face Pull [3×15-20]",
+            "EZ Bar Curl [3×8-12]",
+            "Hammer Curl [3×10-15]",
+        ],
+    ),
+    TrainingDay(
+        "Upper",
+        [
+            "Incline Barbell Bench Press [5×6-10]",
+            "DB Row [4×8-12]",
+            "Seated DB Press [3×8-12]",
+            "Front Lat Pulldown [3×10-12]",
+            "Cable Lateral Raises [3×15-20]",
+            "Incline DB Curl [3×10-15]",
+            "Overhead Extension [3×10-15]",
+        ],
+    ),
+    TrainingDay(
+        "Lower: hip focus",
+        [
+            "Romanian Deadlift [5×6-10]",
+            "Hip Thrust [3×8-12]",
+            "Bulgarian Split Squat [3×8-12]",
+            "Seated Leg Curl [3×10-15]",
+            "Seated Calf Raise [4×15-20]",
+        ],
+    ),
+]
+
+# Deload: same loads, half the sets.
+RECOMP_DAYS_DELOAD: list[TrainingDay] = [
+    TrainingDay(
+        "Push",
+        [
+            "Barbell Bench Press [2×5-8]",
+            "Barbell Military Press [2×6-10]",
+            "Incline DB Press [2×8-12]",
+            "Lateral Raises [2×12-20]",
+            "Dips [2×8-12]",
+        ],
+    ),
+    TrainingDay(
+        "Legs A: quad focus",
+        [
+            "Squat [2×5-8]",
+            "Leg Press [2×8-12]",
+            "Lying Leg Curl [2×10-15]",
+            "Standing Calf Raise [2×12-20]",
+        ],
+    ),
+    TrainingDay(
+        "Pull",
+        [
+            "Pull-ups [2×6-10]",
+            "Barbell Row [2×6-10]",
+            "Face Pull [2×15-20]",
+            "EZ Bar Curl [2×8-12]",
+        ],
+    ),
+    TrainingDay(
+        "Upper",
+        [
+            "Incline Barbell Bench Press [2×6-10]",
+            "DB Row [2×8-12]",
+            "Seated DB Press [2×8-12]",
+            "Cable Lateral Raises [2×15-20]",
+        ],
+    ),
+    TrainingDay(
+        "Lower: hip focus",
+        [
+            "Romanian Deadlift [2×6-10]",
+            "Hip Thrust [2×8-12]",
+            "Seated Leg Curl [2×10-15]",
+            "Seated Calf Raise [2×15-20]",
+        ],
+    ),
+]
+
+
 @dataclass
 class Routine:
     id: str
@@ -1042,6 +1247,18 @@ ROUTINES: list[Routine] = [
         description="6-day split · 12 weeks · 2 phases",
         phases=PPL_PHASES,
         days_by_phase={1: PPL_DAYS_FOUNDATION, 2: PPL_DAYS_INTENSIFICATION},
+        week_rotation=None,
+    ),
+    Routine(
+        id="recomp-ppl-ul",
+        name="Recomp — PPL + Upper/Lower",
+        description="5 days · 6 weeks · lean bulk",
+        phases=RECOMP_PHASES,
+        days_by_phase={
+            1: RECOMP_DAYS_BASE,
+            2: RECOMP_DAYS_ACCUMULATION,
+            3: RECOMP_DAYS_DELOAD,
+        },
         week_rotation=None,
     ),
     Routine(

@@ -74,6 +74,13 @@ EXERCISE_IMAGE: dict[str, str] = {
     "Barbell Lunges": "Barbell_Walking_Lunge",
     "Standing Calf Raise": "Standing_Barbell_Calf_Raise",
     "Seated Calf Raise": "Seated_Calf_Raise",
+    # Recomp routine. Slugs reused from the existing bundle so no new assets
+    # are needed. Hip Thrust and Bulgarian Split Squat have no close match in
+    # the bundle and deliberately render without an image.
+    "Dips": "Dips_-_Triceps_Version",
+    "Face Pull": "Face_Pull",
+    "Cable Lateral Raises": "Side_Lateral_Raise",
+    "Incline Barbell Bench Press": "Smith_Machine_Incline_Bench_Press",
     "Calf Press": "Calf_Press",
     "Cable Crunch": "Cable_Crunch",
     "Hanging Abs": "Hanging_Leg_Raise",
