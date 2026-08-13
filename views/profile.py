@@ -138,7 +138,7 @@ class ProfileView:
         )
         self.page.open(dlg)
 
-    def _delete_weight(self, wid: int):
+    def _delete_weight(self, wid: str):  # la clave del pesaje es la fecha
         self.store.delete_weight(wid)
         self.page.data["refresh_current"]()
 

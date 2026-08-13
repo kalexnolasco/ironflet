@@ -136,6 +136,12 @@ if __name__ == "__main__":
     import os
 
     if os.environ.get("IRONFLET_WEB"):
-        ft.app(main, view=ft.AppView.WEB_BROWSER, port=8550, host="0.0.0.0", assets_dir="assets")
+        ft.app(
+            main,
+            view=ft.AppView.WEB_BROWSER,
+            port=8550,
+            host="0.0.0.0",
+            assets_dir="assets",
+        )
     else:
         ft.app(main, assets_dir="assets")

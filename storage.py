@@ -1,13 +1,39 @@
-"""Persistencia con sqlite3 (stdlib)."""
+"""Persistencia sobre PostgreSQL, compartida con el entrenador de Telegram.
+
+Antes esto era `sqlite3` de la stdlib con su propio fichero. Ahora la base es
+única: lo que Alex apunta aquí lo ve el bot al instante, y al revés.
+
+La API pública (`Storage` y sus métodos) no ha cambiado, así que las vistas
+siguen igual. Lo que cambia es que la app necesita la base en marcha:
+
+    docker compose up -d        # en ../
+
+La URL sale de `DATABASE_URL`.
+"""
 
 from __future__ import annotations
 
-import json
 import os
-import sqlite3
 import time
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
+
+from sqlalchemy import (
+    JSON,
+    Date,
+    DateTime,
+    Float,
+    Integer,
+    String,
+    Text,
+    create_engine,
+    delete,
+    func,
+    select,
+)
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
+
+DEFAULT_URL = "postgresql+psycopg://entrenador@127.0.0.1:5432/entrenador"
 
 
 @dataclass
@@ -24,81 +50,86 @@ class WorkoutEntry:
             self.timestamp = time.time()
 
 
-def _db_dir() -> str:
-    # Flet expone FLET_APP_STORAGE_DATA en Android; fallback a cwd en desktop.
-    return os.environ.get("FLET_APP_STORAGE_DATA") or os.getcwd()
+class Base(DeclarativeBase):
+    pass
+
+
+class Entreno(Base):
+    __tablename__ = "entrenos"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    fecha: Mapped[date] = mapped_column(Date, index=True)
+    ejercicio: Mapped[str] = mapped_column(String(120), index=True)
+    grupo: Mapped[str] = mapped_column(String(120), default="")
+    fase: Mapped[int] = mapped_column(Integer, default=0)
+    series: Mapped[list] = mapped_column(JSON, default=list)
+    creado: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class Peso(Base):
+    __tablename__ = "pesos"
+
+    fecha: Mapped[date] = mapped_column(Date, primary_key=True)
+    kg: Mapped[float] = mapped_column(Float)
+    creado: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class Preferencia(Base):
+    __tablename__ = "preferencias"
+
+    clave: Mapped[str] = mapped_column(String(60), primary_key=True)
+    valor: Mapped[str] = mapped_column(Text)
+
+
+class Perfil(Base):
+    __tablename__ = "perfil"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    nombre: Mapped[str] = mapped_column(String(120), default="")
+    nacimiento: Mapped[str] = mapped_column(String(20), default="")
+    altura_cm: Mapped[float] = mapped_column(Float, default=0)
+    sexo: Mapped[str] = mapped_column(String(20), default="")
+    actividad: Mapped[str] = mapped_column(String(30), default="moderate")
+
+
+def _hoy() -> date:
+    return date.today()
+
+
+def _fecha(valor: str | date) -> date:
+    return date.fromisoformat(valor) if isinstance(valor, str) else valor
 
 
 class Storage:
-    def __init__(self, db_path: str | None = None):
-        self.db_path = db_path or os.path.join(_db_dir(), "ironflet.db")
+    def __init__(self, db_url: str | None = None):
+        self.db_url = db_url or os.environ.get("DATABASE_URL") or DEFAULT_URL
+        self._engine = create_engine(self.db_url, pool_pre_ping=True)
+        self._Session = sessionmaker(bind=self._engine, expire_on_commit=False)
         self._init_db()
 
-    def _conn(self) -> sqlite3.Connection:
-        return sqlite3.connect(self.db_path)
-
     def _init_db(self):
-        with self._conn() as conn:
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS workouts (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    date TEXT NOT NULL,
-                    exercise TEXT NOT NULL,
-                    muscle_group TEXT DEFAULT '',
-                    phase INTEGER DEFAULT 0,
-                    sets_json TEXT DEFAULT '[]',
-                    timestamp REAL DEFAULT 0
-                )
-            """)
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_workouts_date ON workouts(date)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_workouts_exercise ON workouts(exercise)")
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS prefs (
-                    key TEXT PRIMARY KEY,
-                    value TEXT
-                )
-            """)
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS profile (
-                    id INTEGER PRIMARY KEY CHECK (id = 1),
-                    name TEXT DEFAULT '',
-                    birthdate TEXT DEFAULT '',
-                    height_cm REAL DEFAULT 0,
-                    sex TEXT DEFAULT '',
-                    activity_level TEXT DEFAULT 'moderate'
-                )
-            """)
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS weight_log (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    date TEXT NOT NULL,
-                    kg REAL NOT NULL,
-                    timestamp REAL DEFAULT 0
-                )
-            """)
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_weight_date ON weight_log(date)")
+        Base.metadata.create_all(self._engine)
 
     # ── prefs ────────────────────────────────────────────────
     def get_pref(self, key: str, default: str | None = None) -> str | None:
-        with self._conn() as conn:
-            row = conn.execute("SELECT value FROM prefs WHERE key = ?", (key,)).fetchone()
-        return row[0] if row else default
+        with self._Session() as s:
+            fila = s.get(Preferencia, key)
+        return fila.valor if fila else default
 
     def set_pref(self, key: str, value: str):
-        with self._conn() as conn:
-            conn.execute(
-                "INSERT INTO prefs (key, value) VALUES (?, ?) "
-                "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-                (key, value),
-            )
+        with self._Session() as s:
+            fila = s.get(Preferencia, key)
+            if fila:
+                fila.valor = value
+            else:
+                s.add(Preferencia(clave=key, valor=value))
+            s.commit()
 
     # ── profile ─────────────────────────────────────────────
     def get_profile(self) -> dict:
-        with self._conn() as conn:
-            row = conn.execute(
-                "SELECT name, birthdate, height_cm, sex, activity_level FROM profile WHERE id = 1"
-            ).fetchone()
-        if not row:
+        with self._Session() as s:
+            fila = s.get(Perfil, 1)
+        if not fila:
             return {
                 "name": "",
                 "birthdate": "",
@@ -107,274 +138,267 @@ class Storage:
                 "activity_level": "moderate",
             }
         return {
-            "name": row[0] or "",
-            "birthdate": row[1] or "",
-            "height_cm": float(row[2] or 0),
-            "sex": row[3] or "",
-            "activity_level": row[4] or "moderate",
+            "name": fila.nombre or "",
+            "birthdate": fila.nacimiento or "",
+            "height_cm": float(fila.altura_cm or 0),
+            "sex": fila.sexo or "",
+            "activity_level": fila.actividad or "moderate",
         }
 
     def set_profile(
         self, name: str, birthdate: str, height_cm: float, sex: str, activity_level: str
     ):
-        with self._conn() as conn:
-            conn.execute(
-                "INSERT INTO profile (id, name, birthdate, height_cm, sex, activity_level) "
-                "VALUES (1, ?, ?, ?, ?, ?) "
-                "ON CONFLICT(id) DO UPDATE SET "
-                "name = excluded.name, birthdate = excluded.birthdate, "
-                "height_cm = excluded.height_cm, sex = excluded.sex, "
-                "activity_level = excluded.activity_level",
-                (name, birthdate, height_cm, sex, activity_level),
-            )
+        with self._Session() as s:
+            fila = s.get(Perfil, 1)
+            if fila is None:
+                fila = Perfil(id=1)
+                s.add(fila)
+            fila.nombre, fila.nacimiento = name, birthdate
+            fila.altura_cm, fila.sexo, fila.actividad = height_cm, sex, activity_level
+            s.commit()
 
     # ── weight_log ──────────────────────────────────────────
     def save_weight(self, kg: float, date_iso: str | None = None):
-        if date_iso is None:
-            date_iso = date.today().isoformat()
-        with self._conn() as conn:
-            conn.execute(
-                "INSERT INTO weight_log (date, kg, timestamp) VALUES (?, ?, ?)",
-                (date_iso, kg, time.time()),
-            )
+        """Un pesaje por día: el segundo del mismo día corrige al primero."""
+        dia = _fecha(date_iso) if date_iso else _hoy()
+        with self._Session() as s:
+            fila = s.get(Peso, dia)
+            if fila:
+                fila.kg = float(kg)
+                fila.creado = datetime.now().astimezone()
+            else:
+                s.add(Peso(fecha=dia, kg=float(kg), creado=datetime.now().astimezone()))
+            s.commit()
 
-    def delete_weight(self, weight_id: int):
-        with self._conn() as conn:
-            conn.execute("DELETE FROM weight_log WHERE id = ?", (weight_id,))
+    def delete_weight(self, weight_id):
+        """El id es la fecha: la tabla tiene una fila por día."""
+        with self._Session() as s:
+            s.execute(delete(Peso).where(Peso.fecha == _fecha(weight_id)))
+            s.commit()
 
     def get_weights(self, limit: int = 60) -> list[dict]:
-        with self._conn() as conn:
-            rows = conn.execute(
-                "SELECT id, date, kg, timestamp FROM weight_log ORDER BY date ASC, timestamp ASC"
-            ).fetchall()
+        with self._Session() as s:
+            filas = list(s.scalars(select(Peso).order_by(Peso.fecha)))
         return [
-            {"id": r[0], "date": r[1], "kg": float(r[2]), "timestamp": r[3]} for r in rows[-limit:]
+            {
+                "id": p.fecha.isoformat(),
+                "date": p.fecha.isoformat(),
+                "kg": float(p.kg),
+                "timestamp": p.creado.timestamp(),
+            }
+            for p in filas[-limit:]
         ]
 
     def get_latest_weight(self) -> float | None:
-        with self._conn() as conn:
-            row = conn.execute(
-                "SELECT kg FROM weight_log ORDER BY date DESC, timestamp DESC LIMIT 1"
-            ).fetchone()
-        return float(row[0]) if row else None
+        with self._Session() as s:
+            fila = s.scalar(select(Peso).order_by(Peso.fecha.desc()).limit(1))
+        return float(fila.kg) if fila else None
 
     # ── backup / restore ────────────────────────────────────
-    BACKUP_VERSION = 1
+    BACKUP_VERSION = 2
 
     def export_all(self) -> dict:
-        """Serialize all user data into a JSON-safe dict."""
-        with self._conn() as conn:
-            prefs_rows = conn.execute("SELECT key, value FROM prefs").fetchall()
-            workout_rows = conn.execute(
-                "SELECT date, exercise, muscle_group, phase, sets_json, timestamp "
-                "FROM workouts ORDER BY id ASC"
-            ).fetchall()
-            weight_rows = conn.execute(
-                "SELECT date, kg, timestamp FROM weight_log ORDER BY id ASC"
-            ).fetchall()
+        with self._Session() as s:
+            prefs = {p.clave: p.valor for p in s.scalars(select(Preferencia))}
+            entrenos = list(s.scalars(select(Entreno).order_by(Entreno.id)))
+            pesos = list(s.scalars(select(Peso).order_by(Peso.fecha)))
         return {
             "app": "ironflet",
             "version": self.BACKUP_VERSION,
             "exported_at": time.time(),
             "profile": self.get_profile(),
-            "prefs": dict(prefs_rows),
+            "prefs": prefs,
             "workouts": [
                 {
-                    "date": r[0],
-                    "exercise": r[1],
-                    "muscle_group": r[2],
-                    "phase": r[3],
-                    "sets": json.loads(r[4]),
-                    "timestamp": r[5],
+                    "date": e.fecha.isoformat(),
+                    "exercise": e.ejercicio,
+                    "muscle_group": e.grupo,
+                    "phase": e.fase,
+                    "sets": e.series,
+                    "timestamp": e.creado.timestamp(),
                 }
-                for r in workout_rows
+                for e in entrenos
             ],
-            "weights": [{"date": r[0], "kg": float(r[1]), "timestamp": r[2]} for r in weight_rows],
+            "weights": [
+                {"date": p.fecha.isoformat(), "kg": float(p.kg), "timestamp": p.creado.timestamp()}
+                for p in pesos
+            ],
         }
 
     def import_all(self, data: dict, *, wipe: bool = True) -> dict:
-        """Restore data from an export dict. Returns counts of inserted rows."""
         if not isinstance(data, dict) or data.get("app") not in ("ironflet", "ironlog"):
             raise ValueError("Not an IronFlet backup")
-        version = int(data.get("version") or 0)
-        if version > self.BACKUP_VERSION:
-            raise ValueError(f"Backup version {version} is newer than supported")
+        if int(data.get("version") or 0) > self.BACKUP_VERSION:
+            raise ValueError(f"Backup version {data.get('version')} is newer than supported")
 
         counts = {"workouts": 0, "weights": 0, "prefs": 0, "profile": 0}
-        with self._conn() as conn:
+        with self._Session() as s:
             if wipe:
-                conn.execute("DELETE FROM workouts")
-                conn.execute("DELETE FROM weight_log")
-                conn.execute("DELETE FROM prefs")
-                conn.execute("DELETE FROM profile")
+                s.execute(delete(Entreno))
+                s.execute(delete(Peso))
+                s.execute(delete(Preferencia))
+                s.execute(delete(Perfil))
+                s.commit()
 
             p = data.get("profile") or {}
             if p:
-                conn.execute(
-                    "INSERT INTO profile (id, name, birthdate, height_cm, sex, activity_level) "
-                    "VALUES (1, ?, ?, ?, ?, ?) "
-                    "ON CONFLICT(id) DO UPDATE SET "
-                    "name = excluded.name, birthdate = excluded.birthdate, "
-                    "height_cm = excluded.height_cm, sex = excluded.sex, "
-                    "activity_level = excluded.activity_level",
-                    (
-                        p.get("name", ""),
-                        p.get("birthdate", ""),
-                        float(p.get("height_cm") or 0),
-                        p.get("sex", ""),
-                        p.get("activity_level", "moderate"),
-                    ),
+                s.add(
+                    Perfil(
+                        id=1,
+                        nombre=p.get("name", ""),
+                        nacimiento=p.get("birthdate", ""),
+                        altura_cm=float(p.get("height_cm") or 0),
+                        sexo=p.get("sex", ""),
+                        actividad=p.get("activity_level", "moderate"),
+                    )
                 )
                 counts["profile"] = 1
 
             for k, v in (data.get("prefs") or {}).items():
-                conn.execute(
-                    "INSERT INTO prefs (key, value) VALUES (?, ?) "
-                    "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-                    (str(k), str(v)),
-                )
+                s.merge(Preferencia(clave=str(k), valor=str(v)))
                 counts["prefs"] += 1
 
             for w in data.get("weights") or []:
-                conn.execute(
-                    "INSERT INTO weight_log (date, kg, timestamp) VALUES (?, ?, ?)",
-                    (w.get("date", ""), float(w.get("kg") or 0), float(w.get("timestamp") or 0)),
+                s.merge(
+                    Peso(
+                        fecha=_fecha(w.get("date")),
+                        kg=float(w.get("kg") or 0),
+                        creado=datetime.fromtimestamp(
+                            float(w.get("timestamp") or time.time())
+                        ).astimezone(),
+                    )
                 )
                 counts["weights"] += 1
 
             for wo in data.get("workouts") or []:
-                conn.execute(
-                    "INSERT INTO workouts (date, exercise, muscle_group, phase, sets_json, timestamp) "
-                    "VALUES (?, ?, ?, ?, ?, ?)",
-                    (
-                        wo.get("date", ""),
-                        wo.get("exercise", ""),
-                        wo.get("muscle_group", ""),
-                        int(wo.get("phase") or 0),
-                        json.dumps(wo.get("sets") or []),
-                        float(wo.get("timestamp") or 0),
-                    ),
+                s.add(
+                    Entreno(
+                        fecha=_fecha(wo.get("date")),
+                        ejercicio=wo.get("exercise", ""),
+                        grupo=wo.get("muscle_group", ""),
+                        fase=int(wo.get("phase") or 0),
+                        series=wo.get("sets") or [],
+                        creado=datetime.fromtimestamp(
+                            float(wo.get("timestamp") or time.time())
+                        ).astimezone(),
+                    )
                 )
                 counts["workouts"] += 1
-
+            s.commit()
         return counts
 
     # ── destructive operations ──────────────────────────────
     def clear_workouts(self):
-        """Wipe the workouts table (keeps profile, weights, prefs)."""
-        with self._conn() as conn:
-            conn.execute("DELETE FROM workouts")
+        with self._Session() as s:
+            s.execute(delete(Entreno))
+            s.commit()
 
     def clear_all(self):
-        """Wipe everything: workouts, weights, profile, prefs."""
-        with self._conn() as conn:
-            conn.execute("DELETE FROM workouts")
-            conn.execute("DELETE FROM weight_log")
-            conn.execute("DELETE FROM profile")
-            conn.execute("DELETE FROM prefs")
+        with self._Session() as s:
+            for modelo in (Entreno, Peso, Perfil, Preferencia):
+                s.execute(delete(modelo))
+            s.commit()
 
     # ── writes ────────────────────────────────────────────────
     def save_workout(self, entry: WorkoutEntry):
-        with self._conn() as conn:
-            conn.execute(
-                "INSERT INTO workouts (date, exercise, muscle_group, phase, sets_json, timestamp) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
-                (
-                    entry.date,
-                    entry.exercise,
-                    entry.muscle_group,
-                    entry.phase,
-                    json.dumps(entry.sets),
-                    entry.timestamp,
-                ),
+        with self._Session() as s:
+            s.add(
+                Entreno(
+                    fecha=_fecha(entry.date),
+                    ejercicio=entry.exercise,
+                    grupo=entry.muscle_group,
+                    fase=entry.phase,
+                    series=entry.sets,
+                    creado=datetime.fromtimestamp(entry.timestamp).astimezone(),
+                )
             )
+            s.commit()
 
     # ── reads ─────────────────────────────────────────────────
-    def _rows_to_entries(self, rows) -> list[WorkoutEntry]:
+    @staticmethod
+    def _to_entries(filas) -> list[WorkoutEntry]:
         return [
             WorkoutEntry(
-                date=r[0],
-                exercise=r[1],
-                muscle_group=r[2],
-                phase=r[3],
-                sets=json.loads(r[4]),
-                timestamp=r[5],
+                date=f.fecha.isoformat(),
+                exercise=f.ejercicio,
+                muscle_group=f.grupo,
+                phase=f.fase,
+                sets=f.series or [],
+                timestamp=f.creado.timestamp(),
             )
-            for r in rows
+            for f in filas
         ]
 
     def get_all(self) -> list[WorkoutEntry]:
-        with self._conn() as conn:
-            rows = conn.execute(
-                "SELECT date, exercise, muscle_group, phase, sets_json, timestamp "
-                "FROM workouts ORDER BY timestamp DESC"
-            ).fetchall()
-        return self._rows_to_entries(rows)
+        with self._Session() as s:
+            filas = list(
+                s.scalars(select(Entreno).order_by(Entreno.fecha.desc(), Entreno.id.desc()))
+            )
+        return self._to_entries(filas)
 
     def get_today(self) -> list[WorkoutEntry]:
-        today = date.today().isoformat()
-        with self._conn() as conn:
-            rows = conn.execute(
-                "SELECT date, exercise, muscle_group, phase, sets_json, timestamp "
-                "FROM workouts WHERE date = ? ORDER BY timestamp DESC",
-                (today,),
-            ).fetchall()
-        return self._rows_to_entries(rows)
+        with self._Session() as s:
+            filas = list(
+                s.scalars(
+                    select(Entreno).where(Entreno.fecha == _hoy()).order_by(Entreno.id.desc())
+                )
+            )
+        return self._to_entries(filas)
 
     def get_week_stats(self) -> dict:
-        week_ago = (date.today() - timedelta(days=7)).isoformat()
-        with self._conn() as conn:
-            rows = conn.execute(
-                "SELECT sets_json FROM workouts WHERE date >= ?", (week_ago,)
-            ).fetchall()
-        sets_lists = [json.loads(r[0]) for r in rows]
+        desde = _hoy() - timedelta(days=7)
+        with self._Session() as s:
+            filas = list(s.scalars(select(Entreno).where(Entreno.fecha >= desde)))
+        listas = [f.series or [] for f in filas]
         return {
-            "sessions": len(sets_lists),
-            "sets": sum(len(s) for s in sets_lists),
-            "volume": sum(s["weight"] * s["reps"] for sl in sets_lists for s in sl),
+            "sessions": len(listas),
+            "sets": sum(len(x) for x in listas),
+            "volume": sum(
+                (x.get("weight") or 0) * (x.get("reps") or 0) for sl in listas for x in sl
+            ),
         }
 
     def get_streak(self) -> int:
-        with self._conn() as conn:
-            rows = conn.execute("SELECT DISTINCT date FROM workouts").fetchall()
-        dates_set = {r[0] for r in rows}
-        streak = 0
-        d = date.today()
-        while d.isoformat() in dates_set:
+        with self._Session() as s:
+            fechas = set(s.scalars(select(func.distinct(Entreno.fecha))))
+        streak, d = 0, _hoy()
+        while d in fechas:
             streak += 1
             d -= timedelta(days=1)
         return streak
 
     def get_last_sets(self, exercise: str) -> list[dict] | None:
-        with self._conn() as conn:
-            row = conn.execute(
-                "SELECT sets_json FROM workouts WHERE exercise = ? ORDER BY timestamp DESC LIMIT 1",
-                (exercise,),
-            ).fetchone()
-        return json.loads(row[0]) if row else None
+        with self._Session() as s:
+            fila = s.scalar(
+                select(Entreno)
+                .where(Entreno.ejercicio == exercise)
+                .order_by(Entreno.fecha.desc(), Entreno.id.desc())
+                .limit(1)
+            )
+        return (fila.series or []) if fila else None
 
     def get_exercise_history(self, exercise: str, limit: int = 20) -> list[WorkoutEntry]:
-        with self._conn() as conn:
-            rows = conn.execute(
-                "SELECT date, exercise, muscle_group, phase, sets_json, timestamp "
-                "FROM workouts WHERE exercise = ? ORDER BY timestamp ASC",
-                (exercise,),
-            ).fetchall()
-        entries = self._rows_to_entries(rows)
-        return entries[-limit:]
+        with self._Session() as s:
+            filas = list(
+                s.scalars(
+                    select(Entreno).where(Entreno.ejercicio == exercise).order_by(Entreno.fecha)
+                )
+            )
+        return self._to_entries(filas)[-limit:]
 
     def get_exercise_summary(self) -> list[dict]:
-        summary: dict[str, dict] = {}
+        resumen: dict[str, dict] = {}
         for w in self.get_all():
-            if w.exercise not in summary:
-                summary[w.exercise] = {
+            if w.exercise not in resumen:
+                resumen[w.exercise] = {
                     "name": w.exercise,
                     "count": 0,
                     "last_date": w.date,
                     "max_weight": 0.0,
                 }
-            summary[w.exercise]["count"] += 1
-            for s in w.sets:
-                if s["weight"] > summary[w.exercise]["max_weight"]:
-                    summary[w.exercise]["max_weight"] = s["weight"]
-        return sorted(summary.values(), key=lambda x: x["count"], reverse=True)
+            resumen[w.exercise]["count"] += 1
+            for x in w.sets:
+                peso = x.get("weight") or 0
+                if peso > resumen[w.exercise]["max_weight"]:
+                    resumen[w.exercise]["max_weight"] = peso
+        return sorted(resumen.values(), key=lambda x: x["count"], reverse=True)

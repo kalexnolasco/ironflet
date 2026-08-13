@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+import os
+
 import pytest
 
 import i18n
@@ -35,8 +37,28 @@ def page_mock():
 
 
 @pytest.fixture
-def store(tmp_path):
-    return Storage(str(tmp_path / "test.db"))
+def store():
+    """Base de pruebas aparte, vaciada antes de cada test.
+
+    Necesita PostgreSQL en marcha (`docker compose up -d` en la raíz). La URL
+    sale de TEST_DATABASE_URL, o se deriva de DATABASE_URL cambiando la base.
+    """
+    from sqlalchemy.engine import make_url
+
+    url = os.environ.get("TEST_DATABASE_URL")
+    if not url:
+        base = os.environ.get("DATABASE_URL")
+        if not base:
+            pytest.skip("sin DATABASE_URL: no hay base de datos contra la que probar")
+        # render_as_string, no str(): str() enmascara la contraseña.
+        url = make_url(base).set(database="entrenador_test").render_as_string(hide_password=False)
+
+    from storage import Base
+
+    almacen = Storage(url)
+    Base.metadata.drop_all(almacen._engine)
+    Base.metadata.create_all(almacen._engine)
+    return almacen
 
 
 @pytest.mark.parametrize("lang", ["en", "es"])

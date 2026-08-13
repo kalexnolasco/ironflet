@@ -31,7 +31,11 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Topic :: Software Development :: User Interfaces",
 ]
-dependencies = ["flet>=0.25,<0.30"]
+dependencies = [
+    "flet>=0.25,<0.30",
+    "sqlalchemy>=2.0",
+    "psycopg[binary]>=3.2",
+]
 
 [dependency-groups]
 dev = [

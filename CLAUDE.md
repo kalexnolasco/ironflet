@@ -4,7 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-IronFlet — bilingual (EN/ES) weight-training tracker (7-phase, 24-week periodized routine from CambiaTuFísico). Built with **Flet** (`>=0.25,<0.30`) on Python `>=3.10,<3.13`. Targets desktop and Android; no backend.
+IronFlet — bilingual (EN/ES) weight-training tracker (7-phase, 24-week periodized routine from CambiaTuFísico). Built with **Flet** (`>=0.25,<0.30`) on Python `>=3.10,<3.13`.
+
+**Storage is PostgreSQL, not SQLite.** The database is shared with a Telegram
+coaching bot that lives in `../agente/`, so both write the same training
+history. That means the app now needs the database reachable — see Storage
+below. Desktop and web work; an offline APK does not, since it would have no
+database to talk to.
 
 All source strings are **canonical English**. Spanish is provided via the `ES` dict in `i18n.py`; the UI has a language toggle (home header) that persists in the `prefs` table.
 
@@ -59,26 +65,31 @@ Each view class (`HomeView`, `PlanView`, `WorkoutView`, `HistoryView`) must impl
 
 ### Storage
 
-`storage.py` uses **only** `sqlite3` from stdlib (a design choice — no ORM, no external DB deps). DB path resolution:
+`storage.py` uses **SQLAlchemy 2.x over PostgreSQL 17**. The connection comes
+from `DATABASE_URL`; the container is defined in `../docker-compose.yml` and
+listens on loopback only.
 
-1. `$FLET_APP_STORAGE_DATA` if set (Flet provides this on Android)
-2. Otherwise `cwd/ironflet.db`
+```bash
+cd .. && docker compose up -d
+```
 
-Tables, all created via `CREATE TABLE IF NOT EXISTS` on every `Storage()` instantiation:
+The public API (`Storage` and its methods) is unchanged from the SQLite era, so
+views never touch the ORM. Tables, created via `Base.metadata.create_all` on
+every `Storage()` instantiation:
 
-- `workouts` — rows keyed by `exercise` (canonical English name, no brackets/stars) + date. Sets stored as JSON in `sets_json`. `WorkoutEntry.sets` is a `list[dict]` with `{"weight": float, "reps": int}` plus an **optional** `"rir": float` (reps in reserve). RIR is written only when filled in, so rows without it stay valid — never assume the key exists; read it with `.get("rir")`.
-- `weight_log` — daily body weight (`date`, `kg`, `timestamp`).
-- `profile` — single row (id = 1) with name, birthdate, height, sex, activity level.
-- `prefs` — simple key-value store (`get_pref`, `set_pref`). Currently used for `lang`.
+- `entrenos` — one row per exercise and date. `series` is JSON: a `list[dict]` with `{"weight": float, "reps": int}` plus an **optional** `"rir": float` (reps in reserve). RIR is written only when filled in, so rows without it stay valid — never assume the key exists; read it with `.get("rir")`.
+- `pesos` — body weight, one row per day (the date is the primary key, so a second weigh-in corrects the first instead of duplicating it).
+- `perfil` — single row (id = 1) with name, birthdate, height, sex, activity level.
+- `preferencias` — key-value store (`get_pref`, `set_pref`). Currently used for `lang`.
 
-**Shared database**: this app is not the only writer. A Telegram coaching bot
-(`../agente/`) reads and writes `workouts` and `weight_log` in the same file so
-both share one history. Consequences to respect:
+**Shared database**: this app is not the only writer. The bot in `../agente/`
+reads and writes `entrenos` and `pesos` too. Consequences to respect:
 
 - Keep set dicts open to extra keys. Anything reading sets must tolerate keys it
   does not know, and must not rewrite rows it did not create.
-- The deployed database lives outside both repos, at `../datos/ironflet.db`, via
-  `FLET_APP_STORAGE_DATA`. The `cwd/ironflet.db` fallback is for local runs.
+- The bot declares the same tables in `../agente/entrenador/modelos.py`. If you
+  change a column here, change it there as well — there is no migration tool.
+- `delete_weight()` takes the **date**, not a numeric id: one weigh-in per day.
 
 **Important**: the exercise DB key is the bare name returned by `i18n.exercise_key()` — trailing `[..]` brackets and `*` markers are stripped before insert. This aggregates progression across Phase 5/6/7 (same exercise, different scheme).
 
