@@ -21,7 +21,23 @@ IRONFLET_WEB=1 python main.py
 flet build apk
 ```
 
-No tests, linter, or formatter are configured — do not invent commands for them.
+Web mode needs the `flet-web` package, which plain `flet` does not pull in. In a
+uv venv (no `pip` inside) Flet cannot self-install it, so install the extra
+explicitly — and note that a later `uv sync` removes it again, since it is not
+in the lockfile:
+
+```bash
+uv pip install "flet[all]==0.28.3"   # re-run after any uv sync
+```
+
+CI (`.github/workflows/ci.yml`) runs these — match them before pushing:
+
+```bash
+uv sync --group dev
+uv run ruff check .
+uv run ruff format --check .
+uv run pytest -q
+```
 
 ## Architecture
 
@@ -48,10 +64,21 @@ Each view class (`HomeView`, `PlanView`, `WorkoutView`, `HistoryView`) must impl
 1. `$FLET_APP_STORAGE_DATA` if set (Flet provides this on Android)
 2. Otherwise `cwd/ironflet.db`
 
-Two tables, both created via `CREATE TABLE IF NOT EXISTS` on every `Storage()` instantiation:
+Tables, all created via `CREATE TABLE IF NOT EXISTS` on every `Storage()` instantiation:
 
-- `workouts` — rows keyed by `exercise` (canonical English name, no brackets/stars) + date. Sets stored as JSON in `sets_json`. `WorkoutEntry.sets` is a `list[dict]` with `{"weight": float, "reps": int}`.
+- `workouts` — rows keyed by `exercise` (canonical English name, no brackets/stars) + date. Sets stored as JSON in `sets_json`. `WorkoutEntry.sets` is a `list[dict]` with `{"weight": float, "reps": int}` plus an **optional** `"rir": float` (reps in reserve). RIR is written only when filled in, so rows without it stay valid — never assume the key exists; read it with `.get("rir")`.
+- `weight_log` — daily body weight (`date`, `kg`, `timestamp`).
+- `profile` — single row (id = 1) with name, birthdate, height, sex, activity level.
 - `prefs` — simple key-value store (`get_pref`, `set_pref`). Currently used for `lang`.
+
+**Shared database**: this app is not the only writer. A Telegram coaching bot
+(`../agente/`) reads and writes `workouts` and `weight_log` in the same file so
+both share one history. Consequences to respect:
+
+- Keep set dicts open to extra keys. Anything reading sets must tolerate keys it
+  does not know, and must not rewrite rows it did not create.
+- The deployed database lives outside both repos, at `../datos/ironflet.db`, via
+  `FLET_APP_STORAGE_DATA`. The `cwd/ironflet.db` fallback is for local runs.
 
 **Important**: the exercise DB key is the bare name returned by `i18n.exercise_key()` — trailing `[..]` brackets and `*` markers are stripped before insert. This aggregates progression across Phase 5/6/7 (same exercise, different scheme).
 
@@ -68,10 +95,13 @@ Day/month abbreviations use `day_name(idx)`, `month_name(idx)`, `weekday_label(i
 
 ### Routines & static program data
 
-`data.py` exposes `ROUTINES: list[Routine]` — each `Routine` bundles its own `phases`, `days_by_phase`, and (optionally) `week_rotation`. The active routine is a module-level global set via `set_active_routine(rid)`; views call `active_routine()` to read it. Currently two:
+`data.py` exposes `ROUTINES: list[Routine]` — each `Routine` bundles its own `phases`, `days_by_phase`, and (optionally) `week_rotation`. The active routine is a module-level global set via `set_active_routine(rid)`; views call `active_routine()` to read it. Currently eight:
 
-- `"cambiatufisico"` — 7-phase/24-week periodized (default).
-- `"upper-lower"` — 4-day split, 2 phases, 12 weeks. No `week_rotation`.
+- `"cambiatufisico"` — 7-phase/24-week periodized (default). The only one with `week_rotation`.
+- `"upper-lower"` — 4-day split, 2 phases, 12 weeks.
+- `"push-pull-legs"` — 6-day split, 2 phases, 12 weeks.
+- `"recomp-ppl-ul"` — 5-day PPL + Upper/Lower, 3 phases, 6 weeks. Lean bulk; the routine the Telegram coach follows.
+- `"women-fitness"`, `"women-home"`, `"women-strength"`, `"women-volume"`.
 
 When adding a routine: append to `ROUTINES`, add day-name translations to `i18n.ES`, and (if images are wanted) ensure exercise names already exist in `exercise_images.EXERCISE_IMAGE`.
 
