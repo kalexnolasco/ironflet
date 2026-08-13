@@ -475,7 +475,7 @@ class WorkoutView:
                 r_field,
                 rir_field,
                 ft.Container(
-                    content=ft.Icon(ft.Icons.CLOSE, size=14, color="#555"),
+                    content=ft.Icon(ft.Icons.CLOSE, size=14, color=MUTED),
                     width=32,
                     height=40,
                     border=ft.border.all(1, "#222"),
@@ -528,7 +528,7 @@ class WorkoutView:
                 padding=10,
             )
         else:
-            last_row = ft.Text(t("First time - no history"), size=11, color="#444", italic=True)
+            last_row = ft.Text(t("First time - no history"), size=11, color=MUTED, italic=True)
 
         set_rows = [self._set_row(i, s, last_ref_for_placeholder) for i, s in enumerate(self.sets)]
         header_row = ft.Row(
@@ -537,7 +537,7 @@ class WorkoutView:
                     ft.Text(
                         t("SET"),
                         size=9,
-                        color="#444",
+                        color=MUTED,
                         weight=ft.FontWeight.W_700,
                         text_align=ft.TextAlign.CENTER,
                     ),
@@ -547,7 +547,7 @@ class WorkoutView:
                     ft.Text(
                         t("KG"),
                         size=9,
-                        color="#444",
+                        color=MUTED,
                         weight=ft.FontWeight.W_700,
                         text_align=ft.TextAlign.CENTER,
                     ),
@@ -557,7 +557,7 @@ class WorkoutView:
                     ft.Text(
                         t("REPS"),
                         size=9,
-                        color="#444",
+                        color=MUTED,
                         weight=ft.FontWeight.W_700,
                         text_align=ft.TextAlign.CENTER,
                     ),
@@ -567,7 +567,7 @@ class WorkoutView:
                     ft.Text(
                         t("RIR"),
                         size=9,
-                        color="#444",
+                        color=MUTED,
                         weight=ft.FontWeight.W_700,
                         text_align=ft.TextAlign.CENTER,
                     ),

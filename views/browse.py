@@ -14,6 +14,7 @@ from theme import (
     BORDER,
     CARD_BG,
     DIM,
+    MUTED,
     TEXT,
 )
 from views.exercise_dialog import open_exercise_detail
@@ -69,7 +70,7 @@ class BrowseView:
             )
         else:
             thumb = ft.Container(
-                content=ft.Icon(ft.Icons.FITNESS_CENTER, color="#444", size=20),
+                content=ft.Icon(ft.Icons.FITNESS_CENTER, color=MUTED, size=20),
                 bgcolor="#101012",
                 width=44,
                 height=44,

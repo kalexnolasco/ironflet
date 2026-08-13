@@ -79,7 +79,7 @@ class HomeView:
                     code.upper(),
                     size=10,
                     weight=ft.FontWeight.W_900,
-                    color=ACCENT if active else "#555",
+                    color=ACCENT if active else MUTED,
                 ),
                 bgcolor="#1d1410" if active else CARD_BG,
                 border=ft.border.all(1, ACCENT if active else BORDER),
