@@ -7,9 +7,8 @@ blow up under any combination of language × routine × phase × day.
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
-
 import os
+from unittest.mock import MagicMock
 
 import pytest
 
