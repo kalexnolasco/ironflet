@@ -2,7 +2,7 @@
 CambiaTuFísico routine data.
 7 phases, 24 weeks of periodized training.
 
-All strings are canonical English. i18n.t()/t_exercise() translate to ES.
+All strings are canonical English; there is no translation layer.
 Exercise name (without any [..] bracket) is the DB key in storage.
 """
 

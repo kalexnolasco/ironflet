@@ -21,11 +21,11 @@ labels: bug
 
 ## Entorno
 
-- Plataforma: <!-- Android APK / desktop / web -->
+- Plataforma: <!-- web (navegador) / escritorio -->
 - Versión de la app: <!-- contenido del fichero VERSION o la release -->
-- Idioma activo: <!-- ES / EN -->
 - Android/Linux/Windows/macOS versión: <!-- si aplica -->
 - Python: <!-- si desarrollo -->
+- PostgreSQL en marcha: <!-- docker compose ps -->
 
 ## Captura / log
 

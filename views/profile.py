@@ -247,7 +247,7 @@ class ProfileView:
             self.page.update()
             # brief pause then close + refresh
             self.page.close(dlg)
-            # reload language/routine from the new prefs
+            # reload the routine from the new prefs
             from data import set_active_routine
 
             set_active_routine(self.store.get_pref("routine", "cambiatufisico") or "cambiatufisico")

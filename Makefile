@@ -32,7 +32,7 @@ fmt:
 	uv run ruff format .
 	uv run ruff check --fix .
 
-## run: web mode on the LAN, the way it is actually deployed.
+## run: web mode on loopback, the way it is actually deployed.
 run:
 	IRONFLET_WEB=1 $(PY) main.py
 

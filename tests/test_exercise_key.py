@@ -10,8 +10,8 @@ history splits in two — the app writing one key, the bot another — and the
 progression the whole plan depends on quietly stops aggregating.
 
 These tests freeze the behaviour so that any change has to be deliberate.
-They must keep passing through the English-only refactor, when `exercise_key`
-moves out of `i18n.py` into `exercises.py`.
+They survived the English-only refactor that moved `exercise_key` into
+`exercises.py`, which is exactly what they were written to guard.
 """
 
 from __future__ import annotations
@@ -22,12 +22,7 @@ from pathlib import Path
 import pytest
 
 from data import ROUTINES
-
-try:  # después del refactor vivirá en exercises.py
-    from exercises import exercise_key
-except ImportError:  # pragma: no cover - ruta previa al refactor
-    from i18n import exercise_key
-
+from exercises import exercise_key
 
 RAIZ = Path(__file__).resolve().parent.parent
 BOT = RAIZ.parent / "agente" / "entrenador" / "entrenos.py"

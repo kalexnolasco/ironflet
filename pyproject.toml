@@ -1,7 +1,7 @@
 [project]
 name = "ironflet"
-version = "0.1.0"
-description = "Bilingual (ES/EN) weight-training tracker built with Flet — runs on Android, desktop and web from a single Python codebase."
+version = "0.2.0"
+description = "English-only weight-training tracker built with Flet — runs on Android, desktop and web from a single Python codebase."
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.10,<3.13"
@@ -15,14 +15,12 @@ keywords = [
     "flutter",
     "android",
     "mobile",
-    "spanish",
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: End Users/Desktop",
     "License :: OSI Approved :: MIT License",
     "Natural Language :: English",
-    "Natural Language :: Spanish",
     "Operating System :: Android",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
@@ -58,20 +56,26 @@ Releases = "https://github.com/kalexnolasco/ironflet/releases"
 [tool.flet]
 app.module = "main"
 
+# Must match theme.py: LIGHT.bg_page / DARK.bg_page. LIGHT is the default
+# palette, so a splash painted in the dark background flashed black before the
+# first light frame. These two keys are the only ones flet reads for the splash
+# (per platform it looks at tool.flet.<platform>.splash.color, then falls back
+# here) — a flat `splash_color` under [tool.flet.android] is never read.
 [tool.flet.splash]
-color = "#0A0A0B"
+color = "#F4F6F8"
 dark_color = "#0A0A0B"
 
 [tool.flet.android]
 package_name = "com.ironflet.app"
 product_name = "IronFlet"
+# Launcher-icon background layer, not the splash: it shows on the home screen
+# against the wallpaper, so it does not follow the app's page background.
 adaptive_icon_background = "#0A0A0B"
-splash_color = "#0A0A0B"
 
 [tool.ruff]
 line-length = 100
 target-version = "py310"
-extend-exclude = ["exercise_details.py", "exercise_details_es.py", ".venv"]
+extend-exclude = ["exercise_details.py", ".venv"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM"]

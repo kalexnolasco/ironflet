@@ -46,7 +46,7 @@ CI (`.github/workflows/ci.yml`) runs, on Python 3.12:
 uv sync --group dev
 uv run ruff check .
 uv run ruff format --check .
-uv run pytest -q          # 331 tests
+uv run pytest -q          # 340 tests
 ```
 
 ## Architecture
@@ -233,8 +233,10 @@ Pinned to `flet[all]>=0.25,<0.30` — `flet[all]`, not plain `flet`, because web
 
 ## Tests
 
-`.venv/bin/python -m pytest -q` — **331 tests**, `testpaths = ["tests"]`, `asyncio_mode = "auto"`:
+`.venv/bin/python -m pytest -q` — **340 tests**, `testpaths = ["tests"]`, `asyncio_mode = "auto"`:
 
-`test_analytics.py`, `test_exercise_key.py`, `test_health.py`, `test_nutrition.py`, `test_nutrition_view.py`, `test_routine_builder.py`, `test_set_types.py`, `test_smoke.py`, `test_storage_metrics.py`, `test_theme.py`.
+`test_analytics.py`, `test_exercise_images.py`, `test_exercise_key.py`, `test_health.py`, `test_nutrition.py`, `test_nutrition_view.py`, `test_routine_builder.py`, `test_set_types.py`, `test_smoke.py`, `test_storage_metrics.py`, `test_theme.py`.
+
+Without `DATABASE_URL` the run is `238 passed, 102 skipped`: the skips are every test that needs PostgreSQL. Judge a run by the skip count, not the pass count — a green suite that skipped 102 tests has verified nothing about storage.
 
 The bot's suite in `../agente/` (**82 tests**, pytest available there via its own `requirements-dev.txt`) includes `test_modelos_espejo.py`, the cross-repo schema guard. Anything that changes a shared table must be run against both.

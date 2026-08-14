@@ -7,7 +7,7 @@
 ![Acceso](https://img.shields.io/badge/127.0.0.1%3A8550-solo%20este%20PC-lightgrey?style=for-the-badge)
 ![Flet](https://img.shields.io/badge/Flet-0.28.3-7F52FF?style=for-the-badge)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-17-4169E1?style=for-the-badge&logo=postgresql&logoColor=white)
-![Tests](https://img.shields.io/badge/tests-331-2f9e44?style=for-the-badge)
+![Tests](https://img.shields.io/badge/tests-340-2f9e44?style=for-the-badge)
 
 **Donde apuntas lo que levantas y lo que comes. La misma base de datos que usa el entrenador de Telegram: lo que escribes aquí lo ve él al instante, y al revés.**
 
@@ -465,15 +465,15 @@ Antes de dar por buena cualquier cosa que hayas tocado:
 cd /home/wdna/Documents/Personal/plan-recomposicion/ironflet && make test
 ```
 
-Son **331 pruebas** y tardan unos segundos. Comprueban las métricas, la nutrición, el editor de rutinas, los tipos de serie, el contraste de los colores y que la clave con la que se guardan los ejercicios sigue coincidiendo con la que usa el bot.
+Son **340 pruebas** y tardan unos segundos. Comprueban las métricas, la nutrición, el editor de rutinas, los tipos de serie, el contraste de los colores y que la clave con la que se guardan los ejercicios sigue coincidiendo con la que usa el bot.
 
-**Cuidado con una cosa:** unas 100 de esas pruebas necesitan la base de datos y, si tu terminal no tiene `DATABASE_URL`, se **saltan en silencio** — verás `229 passed, 102 skipped` y parecerá que todo va bien sin haber probado nada de nutrición. Para ejecutarlas todas de verdad:
+**Cuidado con una cosa:** unas 100 de esas pruebas necesitan la base de datos y, si tu terminal no tiene `DATABASE_URL`, se **saltan en silencio** — verás `238 passed, 102 skipped` y parecerá que todo va bien sin haber probado nada de nutrición. Para ejecutarlas todas de verdad:
 
 ```bash
 cd /home/wdna/Documents/Personal/plan-recomposicion/ironflet && export $(grep '^DATABASE_URL=' ../agente/.env | xargs) && make test
 ```
 
-Tiene que decir **`331 passed`**. Esas pruebas trabajan contra una base aparte (`entrenador_test`), nunca contra tus datos.
+Tiene que decir **`340 passed`**. Esas pruebas trabajan contra una base aparte (`entrenador_test`), nunca contra tus datos.
 
 Todo a la vez (formato del código + pruebas), que es lo mismo que se ejecuta en CI:
 
