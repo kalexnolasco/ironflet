@@ -20,7 +20,7 @@ EXERCISE_IMAGE: dict[str, str] = {
     "Cable Crossover": "Cable_Crossover",
     "Push-ups": "Pushups",
     "Front Lat Pulldown": "Wide-Grip_Lat_Pulldown",
-    "Behind-Neck Lat Pulldown": "Reverse_Grip_Bent-Over_Rows",
+    "Behind-Neck Lat Pulldown": "Full_Range-Of-Motion_Lat_Pulldown",
     "V-Grip Lat Pulldown": "V-Bar_Pulldown",
     "Pull-ups": "Pullups",
     "Barbell Row": "Bent_Over_Barbell_Row",
@@ -31,6 +31,7 @@ EXERCISE_IMAGE: dict[str, str] = {
     "Reverse Barbell Row": "Reverse_Grip_Bent-Over_Rows",
     "Deadlift": "Barbell_Deadlift",
     "Romanian Deadlift": "Romanian_Deadlift",
+    "Hip Thrust": "Barbell_Hip_Thrust",
     "Barbell Military Press": "Standing_Military_Press",
     "Smith Military Press": "Smith_Machine_Overhead_Shoulder_Press",
     "Seated DB Press": "Seated_Dumbbell_Press",
@@ -75,8 +76,10 @@ EXERCISE_IMAGE: dict[str, str] = {
     "Standing Calf Raise": "Standing_Barbell_Calf_Raise",
     "Seated Calf Raise": "Seated_Calf_Raise",
     # Recomp routine. Slugs reused from the existing bundle so no new assets
-    # are needed. Hip Thrust and Bulgarian Split Squat have no close match in
-    # the bundle and deliberately render without an image.
+    # are needed, except Barbell_Hip_Thrust and Full_Range-Of-Motion_Lat_Pulldown,
+    # fetched from the source repo. Bulgarian Split Squat has no match at all in
+    # the 500-exercise source and deliberately renders without an image —
+    # a photo of a different movement would be worse than none.
     "Dips": "Dips_-_Triceps_Version",
     "Face Pull": "Face_Pull",
     "Cable Lateral Raises": "Side_Lateral_Raise",
@@ -98,26 +101,30 @@ EXERCISE_IMAGE: dict[str, str] = {
 
 
 def image_for(key: str) -> str | None:
-    """Return a file:// path to the cached first frame, or None if unmapped or
-    not yet downloaded."""
+    """Return an assets-relative path to the first frame, or None.
+
+    Assets-relative — `/exercises/<slug>/0.jpg` — and not `file://`: Flet
+    serves `assets/` over HTTP in web mode, and a `file://` URL is rejected
+    outright by the browser ("Not allowed to load local resource").
+    """
     slug = EXERCISE_IMAGE.get(key)
     if not slug:
         return None
     from asset_manager import image_path
 
-    p = image_path(slug, 0)
-    return f"file://{p}" if p else None
+    return f"/exercises/{slug}/0.jpg" if image_path(slug, 0) else None
 
 
 def image_frames(key: str) -> tuple[str, str] | None:
-    """Return (frame0, frame1) file:// paths for animation, or None."""
+    """Return (frame0, frame1) assets-relative paths for animation, or None."""
     slug = EXERCISE_IMAGE.get(key)
     if not slug:
         return None
     from asset_manager import image_path
 
-    p0 = image_path(slug, 0)
-    p1 = image_path(slug, 1) or p0
-    if not p0:
+    if not image_path(slug, 0):
         return None
-    return f"file://{p0}", f"file://{p1}"
+    # Frame 1 is optional: half the bundle only ships a single frame, and
+    # falling back to frame 0 shows a still instead of a hole.
+    segundo = 1 if image_path(slug, 1) else 0
+    return f"/exercises/{slug}/0.jpg", f"/exercises/{slug}/{segundo}.jpg"

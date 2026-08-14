@@ -29,8 +29,17 @@ VERSION_FILE = ".installed-" + RELEASE_VERSION
 
 
 def _data_dir() -> Path:
+    """Where the downloaded frames live: inside `assets/`, always.
+
+    They used to land next to the source and be referenced as `file://` URLs.
+    That works on desktop and dies in web mode, which is how this app is
+    actually used: the browser refuses with "Not allowed to load local
+    resource" and every exercise renders blank. Under `assets/` Flet serves
+    them over HTTP from the same origin as the page, and the desktop build
+    resolves the same relative path locally.
+    """
     base = os.environ.get("FLET_APP_STORAGE_DATA") or os.getcwd()
-    return Path(base) / "exercises"
+    return Path(base) / "assets" / "exercises"
 
 
 def data_dir() -> Path:

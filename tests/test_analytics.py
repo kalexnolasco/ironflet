@@ -399,12 +399,17 @@ def test_resolve_muscles_exact_hit():
 
 
 def test_resolve_muscles_unknown_is_reported_not_swallowed():
-    """`details_for()` goes through EXERCISE_IMAGE; these two have no image."""
-    for key in ("Hip Thrust", "Bulgarian Split Squat"):
-        res = resolve_muscles(key)
-        assert res.status == "unknown"
-        assert res.unresolved == (key,)
-        assert res.primary == ()
+    """`details_for()` goes through EXERCISE_IMAGE, so an unmapped name has no
+    muscle data either — the two tables are keyed by the same slug.
+
+    `Hip Thrust` used to be the other example here. It resolves now: it was
+    given a slug and a details entry from the source database. Bulgarian Split
+    Squat stays unknown because that source has no such exercise at all.
+    """
+    res = resolve_muscles("Bulgarian Split Squat")
+    assert res.status == "unknown"
+    assert res.unresolved == ("Bulgarian Split Squat",)
+    assert res.primary == ()
 
 
 def test_resolve_muscles_splits_combination_entries():
@@ -431,7 +436,14 @@ def test_resolve_muscles_uses_an_injectable_lookup():
 
 
 def test_resolve_muscles_recovers_most_of_the_missing_keys():
-    """Splitting takes the 33 unmapped routine keys down to 9."""
+    """Splitting takes the unmapped routine keys down to 8.
+
+    It was 9 until `Hip Thrust` got both a slug and a details entry pulled from
+    the source database. What is left is seven composite entries — two or three
+    movements on one line, where at least one component still does not resolve —
+    plus `Bulgarian Split Squat`, which is absent from the 500-exercise source
+    altogether.
+    """
     import data
     from exercises import exercise_key
 
@@ -444,8 +456,14 @@ def test_resolve_muscles_recovers_most_of_the_missing_keys():
 
     unknown = {k for k in keys if resolve_muscles(k).status == "unknown"}
     assert len(keys) == 104
-    assert len(unknown) == 9
-    assert "Hip Thrust" in unknown
+    assert len(unknown) == 8
+    assert "Bulgarian Split Squat" in unknown
+    assert "Hip Thrust" not in unknown
+    # Everything else left over is a composite line, never a single movement.
+    assert all(
+        any(t in k for t in ("+", "SS:", "Bi-set", "Triset"))
+        for k in unknown - {"Bulgarian Split Squat"}
+    )
 
 
 # ── sets per muscle group ────────────────────────────────────────────────
@@ -474,11 +492,19 @@ def test_sets_per_muscle_group_excludes_warmups():
 
 
 def test_sets_per_muscle_group_reports_unattributed_instead_of_dropping():
-    entries = [entry(THURSDAY, "Hip Thrust", [s(100, 10)] * 3)]
+    entries = [entry(THURSDAY, "Bulgarian Split Squat", [s(100, 10)] * 3)]
     mv = sets_per_muscle_group(entries, weeks=1, today=THURSDAY)
     assert mv.by_week["2026-W33"] == {}
-    assert mv.unattributed == {"Hip Thrust": 3}
+    assert mv.unattributed == {"Bulgarian Split Squat": 3}
     assert mv.unattributed_sets == 3
+
+
+def test_hip_thrust_now_counts_towards_glutes():
+    """It used to fall into `unattributed`, so leg volume was under-counted."""
+    entries = [entry(THURSDAY, "Hip Thrust", [s(100, 10)] * 3)]
+    mv = sets_per_muscle_group(entries, weeks=1, today=THURSDAY)
+    assert mv.by_week["2026-W33"]["glutes"] == 3.0
+    assert mv.unattributed == {}
 
 
 def test_sets_per_muscle_group_flags_partial_combinations():
