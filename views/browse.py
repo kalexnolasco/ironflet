@@ -8,15 +8,7 @@ from data import EXERCISE_CATALOG, MUSCLE_GROUPS
 from exercise_details import details_for
 from exercise_images import image_for
 from storage import Storage
-from theme import (
-    ACCENT,
-    BORDER,
-    CARD_BG,
-    DIM,
-    MUTED,
-    TEXT,
-    C,
-)
+from theme import C
 from views.exercise_dialog import open_exercise_detail
 
 
@@ -36,6 +28,12 @@ class BrowseView:
             return True
         return False
 
+    def _back_to_home(self, _=None):
+        # Browse is not a bar tab any more: it is entered from Home's
+        # "Exercises" button, so without this header the only way out was Esc —
+        # a key the phone browser does not have.
+        self.page.data["navigate_to"](0)
+
     def _set_group(self, group: str | None):
         self.selected_group = group
         self.page.data["refresh_current"]()
@@ -44,10 +42,13 @@ class BrowseView:
         active = self.selected_group == group
         return ft.Container(
             content=ft.Text(
-                label, size=11, weight=ft.FontWeight.W_700, color=ACCENT if active else DIM
+                label,
+                size=11,
+                weight=ft.FontWeight.W_700,
+                color=C.accent if active else C.text_secondary,
             ),
-            bgcolor=C.accent_soft if active else CARD_BG,
-            border=ft.border.all(1, ACCENT if active else BORDER),
+            bgcolor=C.accent_soft if active else C.bg_surface,
+            border=ft.border.all(1, C.accent if active else C.border),
             border_radius=8,
             padding=ft.padding.symmetric(horizontal=12, vertical=6),
             on_click=lambda _, g=group: self._set_group(g),
@@ -70,7 +71,7 @@ class BrowseView:
             )
         else:
             thumb = ft.Container(
-                content=ft.Icon(ft.Icons.FITNESS_CENTER, color=MUTED, size=20),
+                content=ft.Icon(ft.Icons.FITNESS_CENTER, color=C.text_muted, size=20),
                 bgcolor=C.bg_sunken,
                 width=44,
                 height=44,
@@ -92,7 +93,7 @@ class BrowseView:
         )
 
         trailing = (
-            ft.Icon(ft.Icons.INFO_OUTLINE, color=ACCENT, size=16)
+            ft.Icon(ft.Icons.INFO_OUTLINE, color=C.accent, size=16)
             if has_detail
             else ft.Container(width=16)
         )
@@ -105,8 +106,8 @@ class BrowseView:
                 alignment=ft.MainAxisAlignment.START,
             ),
             padding=ft.padding.symmetric(horizontal=10, vertical=6),
-            bgcolor=CARD_BG,
-            border=ft.border.all(1, BORDER),
+            bgcolor=C.bg_surface,
+            border=ft.border.all(1, C.border),
             border_radius=10,
             margin=ft.margin.only(bottom=6),
             on_click=(lambda _, k=ex_name: open_exercise_detail(self.page, k))
@@ -136,12 +137,30 @@ class BrowseView:
 
         return ft.Column(
             [
-                ft.Text("Exercises", size=22, weight=ft.FontWeight.W_900, color=TEXT),
-                ft.Text("Tap an exercise for details", size=11, color=DIM),
+                ft.Container(
+                    content=ft.Row(
+                        [
+                            ft.Icon(ft.Icons.ARROW_BACK, color=C.accent, size=16),
+                            ft.Text("Home", color=C.accent, size=12, weight=ft.FontWeight.W_700),
+                        ],
+                        spacing=4,
+                        tight=True,
+                    ),
+                    on_click=self._back_to_home,
+                    padding=ft.padding.symmetric(vertical=6),
+                    ink=True,
+                ),
+                ft.Text("Exercises", size=22, weight=ft.FontWeight.W_900, color=C.text),
+                ft.Text("Tap an exercise for details", size=11, color=C.text_secondary),
                 ft.Container(height=8),
                 ft.Row(chips, spacing=6, wrap=True, run_spacing=6),
                 ft.Container(height=10),
-                ft.Text(f"{count} exercises", size=11, color=DIM, weight=ft.FontWeight.W_700),
+                ft.Text(
+                    f"{count} exercises",
+                    size=11,
+                    color=C.text_secondary,
+                    weight=ft.FontWeight.W_700,
+                ),
                 ft.Container(height=6),
                 *[self._exercise_row(ex) for ex in exercises],
             ],

@@ -5,13 +5,16 @@ from __future__ import annotations
 import flet as ft
 
 from data import set_active_routine
+from routine_builder import ensure_tables, sync_user_routines
 from storage import Storage
 from theme import LIGHT, C, apply_theme
 from views.browse import BrowseView
 from views.history import HistoryView
 from views.home import HomeView
+from views.nutrition_view import NutritionView
 from views.plan import PlanView
 from views.profile import ProfileView
+from views.routine_editor import RoutineEditorView
 from views.workout import WorkoutView
 
 
@@ -26,6 +29,10 @@ def main(page: ft.Page):
     page.fonts = {}
 
     store = Storage()
+    # Load user-built routines into data.ROUTINES before resolving the active
+    # one: the saved preference may well point at one of them.
+    ensure_tables(store)
+    sync_user_routines(store)
     set_active_routine(store.get_pref("routine", "cambiatufisico") or "cambiatufisico")
 
     current_tab = {"idx": 0}
@@ -36,9 +43,23 @@ def main(page: ft.Page):
     browse_view = BrowseView(page, store)
     history_view = HistoryView(page, store)
     profile_view = ProfileView(page, store)
-    view_list = [home_view, plan_view, workout_view, browse_view, history_view, profile_view]
-    # Only first 5 are represented in the nav bar; profile is reached from Home.
-    NAV_COUNT = 5
+    nutrition_view = NutritionView(page, store)
+    routines_view = RoutineEditorView(page, store)
+    view_list = [
+        home_view,
+        plan_view,
+        workout_view,
+        browse_view,
+        history_view,
+        profile_view,
+        nutrition_view,
+        routines_view,
+    ]
+    # The bar shows five of them. This indirection exists because home.py calls
+    # navigate_to(2) and navigate_to(5) by number, so view indices are frozen —
+    # NAV_TABS maps a bar slot to a view index instead of forcing them to match.
+    # Browse, Profile and Routines are reached from inside other screens.
+    NAV_TABS = (0, 1, 2, 6, 4)
 
     content_area = ft.Container(
         expand=True,
@@ -47,8 +68,8 @@ def main(page: ft.Page):
 
     def navigate_to(idx: int, refresh: bool = True):
         current_tab["idx"] = idx
-        if 0 <= idx < NAV_COUNT:
-            nav_bar.selected_index = idx
+        if idx in NAV_TABS:
+            nav_bar.selected_index = NAV_TABS.index(idx)
         v = view_list[idx]
         if refresh and hasattr(v, "on_show"):
             v.on_show()
@@ -56,7 +77,7 @@ def main(page: ft.Page):
         page.update()
 
     def on_nav_change(e):
-        navigate_to(e.control.selected_index)
+        navigate_to(NAV_TABS[e.control.selected_index])
 
     nav_bar = ft.NavigationBar(
         selected_index=0,
@@ -67,7 +88,7 @@ def main(page: ft.Page):
             ft.NavigationBarDestination(icon=ft.Icons.HOME_ROUNDED, label="Home"),
             ft.NavigationBarDestination(icon=ft.Icons.CALENDAR_MONTH, label="Plan"),
             ft.NavigationBarDestination(icon=ft.Icons.FITNESS_CENTER, label="Train"),
-            ft.NavigationBarDestination(icon=ft.Icons.SEARCH, label="Browse"),
+            ft.NavigationBarDestination(icon=ft.Icons.RESTAURANT_ROUNDED, label="Food"),
             ft.NavigationBarDestination(icon=ft.Icons.BAR_CHART_ROUNDED, label="History"),
         ],
     )
@@ -84,11 +105,17 @@ def main(page: ft.Page):
         plan_view.selected_phase_idx = None
         navigate_to(current_tab["idx"])
 
+    def edit_routine(pk: int):
+        """Jump straight into a routine, instead of landing on the library."""
+        navigate_to(7, refresh=False)
+        routines_view.open_routine(pk)
+
     page.data = {
         "navigate_to": navigate_to,
         "store": store,
         "refresh_current": lambda: navigate_to(current_tab["idx"]),
         "set_routine": set_routine,
+        "edit_routine": edit_routine,
     }
 
     def on_keyboard(e: ft.KeyboardEvent):
@@ -127,8 +154,12 @@ if __name__ == "__main__":
         ft.app(
             main,
             view=ft.AppView.WEB_BROWSER,
-            port=8550,
-            host="0.0.0.0",
+            # Both are overridable so a second instance can be started for
+            # testing without stopping the one systemd is running on 8550.
+            port=int(os.environ.get("IRONFLET_PORT", "8550")),
+            # Loopback by default: this app is served on the machine it runs on
+            # and nothing about it is meant to be reachable from the network.
+            host=os.environ.get("IRONFLET_HOST", "127.0.0.1"),
             assets_dir="assets",
         )
     else:

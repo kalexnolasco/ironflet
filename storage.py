@@ -33,7 +33,45 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
+import analytics
+from data import active_routine
+
 DEFAULT_URL = "postgresql+psycopg://entrenador@127.0.0.1:5432/entrenador"
+
+
+def weekly_session_minimum(routine=None) -> int:
+    """Sessions a week must hold to extend the streak, read off the routine.
+
+    A routine does not train the same number of days from start to finish.
+    CambiaTuFísico — the default — prescribes 3 days a week in phases 1-4
+    (weeks 1 to 10), 5 in phases 5-6 and 6 in phase 7; `push-pull-legs` and
+    `women-home` are 3-day routines throughout. So any fixed number lies in
+    some phase of some routine: the 4 that used to be hardcoded here is
+    unreachable during the first ten weeks of the default routine, which is
+    why a perfectly adherent user saw 🔥 0 and nothing else.
+
+    Grading each week against the phase it belonged to is not possible: no
+    routine start date is stored, so a past calendar week cannot be mapped
+    onto a phase. The honest fallback is the lightest phase's prescription —
+    the one number every phase of this routine can reach. Consequences,
+    stated so nobody has to guess:
+
+    * perfect adherence can never read 0, in any phase of any routine;
+    * heavier phases keep slack, which is what the old "4 of 5" was after:
+      one missed session does not erase months of consistency;
+    * deload phases, the lightest by design, stay inside the streak.
+
+    `days_by_phase` is the source, not `week_rotation`. For the three
+    CambiaTuFísico phases that rotate, the rotation trains 4 days a week off
+    3 day templates, so the template count is the lower — and therefore the
+    safe — of the two.
+
+    Falls back to 1 for a routine with no days at all (a half-built custom
+    one), because a 0 minimum would make every week of doing nothing count.
+    """
+    routine = routine or active_routine()
+    counts = [len(days) for days in routine.days_by_phase.values() if days]
+    return max(1, min(counts, default=1))
 
 
 @dataclass
@@ -346,26 +384,56 @@ class Storage:
         return self._to_entries(filas)
 
     def get_week_stats(self) -> dict:
-        desde = _hoy() - timedelta(days=7)
+        """Sessions / sets / volume over the trailing 7 days.
+
+        The keys are unchanged (`views/home.py` reads all three), but two of
+        the values used to lie:
+
+        * `sessions` counted table rows, and `entrenos` holds one row per
+          exercise, so a normal six-exercise session was rendered as
+          "6 Sessions". It now counts distinct training days, via
+          `analytics.session_count`.
+        * `sets` and `volume` counted warm-ups as work. Both now go through
+          `analytics`, which drops sets flagged `type="warmup"` — warming up
+          with the empty bar is not tonnage.
+
+        Rows dated in the future are also excluded now, so a mistyped date
+        cannot inflate the week.
+        """
+        today = _hoy()
+        since = today - timedelta(days=7)
         with self._Session() as s:
-            filas = list(s.scalars(select(Entreno).where(Entreno.fecha >= desde)))
-        listas = [f.series or [] for f in filas]
+            rows = list(
+                s.scalars(select(Entreno).where(Entreno.fecha >= since, Entreno.fecha <= today))
+            )
+        entries = self._to_entries(rows)
         return {
-            "sessions": len(listas),
-            "sets": sum(len(x) for x in listas),
-            "volume": sum(
-                (x.get("weight") or 0) * (x.get("reps") or 0) for sl in listas for x in sl
-            ),
+            "sessions": analytics.session_count(entries),
+            "sets": sum(len(analytics.working_sets(e.sets)) for e in entries),
+            "volume": analytics.total_volume(entries),
         }
 
-    def get_streak(self) -> int:
+    def get_streak(self, *, min_sessions: int | None = None) -> int:
+        """Consecutive **weeks** hitting a session minimum — weeks, not days.
+
+        The unit changed. This used to count consecutive calendar days with
+        any entry, walking back from today, which cannot describe a plan with
+        rest days: the streak reset every weekend by design, and returned 0 on
+        both rest days after a flawless Mon–Fri week.
+
+        A week now counts when it holds at least `min_sessions` distinct
+        training days, and the current, unfinished week is skipped rather than
+        failed. See `analytics.training_streak` for the full reasoning.
+
+        `min_sessions` defaults to the **active routine's** own minimum rather
+        than a fixed number — see `weekly_session_minimum` for why a fixed one
+        cannot be right. Pass it explicitly to grade against something else.
+        """
+        if min_sessions is None:
+            min_sessions = weekly_session_minimum()
         with self._Session() as s:
-            fechas = set(s.scalars(select(func.distinct(Entreno.fecha))))
-        streak, d = 0, _hoy()
-        while d in fechas:
-            streak += 1
-            d -= timedelta(days=1)
-        return streak
+            dates = list(s.scalars(select(func.distinct(Entreno.fecha))))
+        return analytics.training_streak(dates, min_sessions=min_sessions)
 
     def get_last_sets(self, exercise: str) -> list[dict] | None:
         with self._Session() as s:

@@ -21,15 +21,6 @@ from health import (
 )
 from storage import Storage
 from theme import (
-    ACCENT,
-    ACCENT2,
-    BORDER,
-    BORDER_2,
-    CARD_BG,
-    DARK_BG,
-    DIM,
-    MUTED,
-    TEXT,
     C,
     card,
     ghost_button,
@@ -74,23 +65,23 @@ class ProfileView:
         kg_field = ft.TextField(
             label="Weight (kg)",
             keyboard_type=ft.KeyboardType.NUMBER,
-            bgcolor=DARK_BG,
-            border_color=BORDER,
-            focused_border_color=ACCENT,
-            color=TEXT,
+            bgcolor=C.bg_page,
+            border_color=C.border,
+            focused_border_color=C.accent,
+            color=C.text,
             text_size=14,
             autofocus=True,
         )
         date_field = ft.TextField(
             label="Date (YYYY-MM-DD)",
             value=date.today().isoformat(),
-            bgcolor=DARK_BG,
-            border_color=BORDER,
-            focused_border_color=ACCENT,
-            color=TEXT,
+            bgcolor=C.bg_page,
+            border_color=C.border,
+            focused_border_color=C.accent,
+            color=C.text,
             text_size=14,
         )
-        err = ft.Text("", size=11, color=ACCENT2)
+        err = ft.Text("", size=11, color=C.accent_2)
 
         def save(_):
             try:
@@ -115,8 +106,8 @@ class ProfileView:
 
         dlg = ft.AlertDialog(
             modal=False,
-            bgcolor=CARD_BG,
-            title=ft.Text("Log weight", size=16, weight=ft.FontWeight.W_900, color=TEXT),
+            bgcolor=C.bg_surface,
+            title=ft.Text("Log weight", size=16, weight=ft.FontWeight.W_900, color=C.text),
             content=ft.Container(
                 content=ft.Column(
                     [kg_field, date_field, err],
@@ -130,15 +121,15 @@ class ProfileView:
                 ft.TextButton(
                     "Cancel",
                     on_click=lambda _: self.page.close(dlg),
-                    style=ft.ButtonStyle(color=DIM),
+                    style=ft.ButtonStyle(color=C.text_secondary),
                 ),
-                ft.TextButton("Save", on_click=save, style=ft.ButtonStyle(color=ACCENT)),
+                ft.TextButton("Save", on_click=save, style=ft.ButtonStyle(color=C.accent)),
             ],
             actions_alignment=ft.MainAxisAlignment.END,
         )
         self.page.open(dlg)
 
-    def _delete_weight(self, wid: str):  # la clave del pesaje es la fecha
+    def _delete_weight(self, wid: str):  # a weigh-in is keyed by its date
         self.store.delete_weight(wid)
         self.page.data["refresh_current"]()
 
@@ -151,13 +142,19 @@ class ProfileView:
         def _stat_row(label: str, value: str) -> ft.Control:
             return ft.Row(
                 [
-                    ft.Text(label, size=11, color=DIM, weight=ft.FontWeight.W_700, width=180),
-                    ft.Text(value, size=13, color=TEXT, weight=ft.FontWeight.W_900),
+                    ft.Text(
+                        label,
+                        size=11,
+                        color=C.text_secondary,
+                        weight=ft.FontWeight.W_700,
+                        width=180,
+                    ),
+                    ft.Text(value, size=13, color=C.text, weight=ft.FontWeight.W_900),
                 ],
                 alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
             )
 
-        status = ft.Text("", size=11, color=ACCENT, weight=ft.FontWeight.W_700)
+        status = ft.Text("", size=11, color=C.accent, weight=ft.FontWeight.W_700)
 
         def do_copy(_):
             self.page.set_clipboard(payload)
@@ -187,8 +184,8 @@ class ProfileView:
 
         dlg = ft.AlertDialog(
             modal=False,
-            bgcolor=CARD_BG,
-            title=ft.Text("Export backup", size=16, weight=ft.FontWeight.W_900, color=TEXT),
+            bgcolor=C.bg_surface,
+            title=ft.Text("Export backup", size=16, weight=ft.FontWeight.W_900, color=C.text),
             content=ft.Container(
                 content=body, width=320, height=280, alignment=ft.alignment.top_left
             ),
@@ -196,7 +193,7 @@ class ProfileView:
                 ft.TextButton(
                     "Close",
                     on_click=lambda _: self.page.close(dlg),
-                    style=ft.ButtonStyle(color=DIM),
+                    style=ft.ButtonStyle(color=C.text_secondary),
                 ),
             ],
             actions_alignment=ft.MainAxisAlignment.END,
@@ -210,16 +207,16 @@ class ProfileView:
             min_lines=10,
             max_lines=10,
             text_size=10,
-            bgcolor=DARK_BG,
-            border_color=BORDER,
-            focused_border_color=ACCENT,
-            color="#ddd",
+            bgcolor=C.bg_page,
+            border_color=C.border,
+            focused_border_color=C.accent,
+            color=C.text,
         )
-        status = ft.Text("", size=11, color=ACCENT2)
+        status = ft.Text("", size=11, color=C.accent_2)
         warn = ft.Text(
             "This will replace all current data.",
             size=10,
-            color=ACCENT2,
+            color=C.accent_2,
             weight=ft.FontWeight.W_700,
         )
 
@@ -244,7 +241,7 @@ class ProfileView:
                 status.value = f"Invalid backup JSON: {exc}"
                 self.page.update()
                 return
-            status.color = ACCENT
+            status.color = C.accent
             total = sum(counts.values())
             status.value = f"Backup imported ({total})"
             self.page.update()
@@ -258,8 +255,8 @@ class ProfileView:
 
         dlg = ft.AlertDialog(
             modal=False,
-            bgcolor=CARD_BG,
-            title=ft.Text("Import backup", size=16, weight=ft.FontWeight.W_900, color=TEXT),
+            bgcolor=C.bg_surface,
+            title=ft.Text("Import backup", size=16, weight=ft.FontWeight.W_900, color=C.text),
             content=ft.Container(
                 content=ft.Column(
                     [
@@ -268,7 +265,7 @@ class ProfileView:
                         ft.TextButton(
                             "Paste from clipboard",
                             on_click=paste_from_clipboard,
-                            style=ft.ButtonStyle(color=ACCENT),
+                            style=ft.ButtonStyle(color=C.accent),
                         ),
                         status,
                     ],
@@ -282,10 +279,10 @@ class ProfileView:
                 ft.TextButton(
                     "Cancel",
                     on_click=lambda _: self.page.close(dlg),
-                    style=ft.ButtonStyle(color=DIM),
+                    style=ft.ButtonStyle(color=C.text_secondary),
                 ),
                 ft.TextButton(
-                    "Replace all", on_click=do_import, style=ft.ButtonStyle(color=ACCENT)
+                    "Replace all", on_click=do_import, style=ft.ButtonStyle(color=C.accent)
                 ),
             ],
             actions_alignment=ft.MainAxisAlignment.END,
@@ -310,19 +307,21 @@ class ProfileView:
 
         dlg = ft.AlertDialog(
             modal=True,
-            bgcolor=CARD_BG,
-            title=ft.Text(title_key, size=16, weight=ft.FontWeight.W_900, color=TEXT),
+            bgcolor=C.bg_surface,
+            title=ft.Text(title_key, size=16, weight=ft.FontWeight.W_900, color=C.text),
             content=ft.Container(
-                content=ft.Text(message_key, size=12, color="#ddd", width=300),
+                content=ft.Text(message_key, size=12, color=C.text_secondary, width=300),
                 width=320,
             ),
             actions=[
                 ft.TextButton(
                     "Cancel",
                     on_click=lambda _: self.page.close(dlg),
-                    style=ft.ButtonStyle(color=DIM),
+                    style=ft.ButtonStyle(color=C.text_secondary),
                 ),
-                ft.TextButton(action_key, on_click=confirmed, style=ft.ButtonStyle(color=ACCENT2)),
+                ft.TextButton(
+                    action_key, on_click=confirmed, style=ft.ButtonStyle(color=C.accent_2)
+                ),
             ],
             actions_alignment=ft.MainAxisAlignment.END,
         )
@@ -332,10 +331,10 @@ class ProfileView:
         return ft.Container(
             content=ft.Row(
                 [
-                    ft.Icon(icon, color=ACCENT2, size=18),
+                    ft.Icon(icon, color=C.accent_2, size=18),
                     ft.Container(
                         content=ft.Text(
-                            label_key, size=12, color="#ddd", weight=ft.FontWeight.W_700
+                            label_key, size=12, color=C.text_secondary, weight=ft.FontWeight.W_700
                         ),
                         width=230,
                     ),
@@ -344,8 +343,8 @@ class ProfileView:
                 spacing=10,
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
             ),
-            bgcolor=CARD_BG,
-            border=ft.border.all(1, BORDER),
+            bgcolor=C.bg_surface,
+            border=ft.border.all(1, C.border),
             border_radius=10,
             padding=ft.padding.symmetric(horizontal=12, vertical=10),
             margin=ft.margin.only(bottom=6),
@@ -360,13 +359,13 @@ class ProfileView:
         status_label = ft.Text(
             "Installed" if installed else "Not installed  ·  ~9 MB",
             size=11,
-            color=ACCENT if installed else DIM,
+            color=C.accent if installed else C.text_secondary,
             weight=ft.FontWeight.W_700,
         )
         progress_bar = ft.ProgressBar(
-            value=1 if installed else 0, bgcolor=BORDER, color=ACCENT, bar_height=6
+            value=1 if installed else 0, bgcolor=C.border, color=C.accent, bar_height=6
         )
-        count_label = ft.Text(f"0 / {total}", size=10, color=DIM)
+        count_label = ft.Text(f"0 / {total}", size=10, color=C.text_secondary)
 
         def on_progress(done: int, tot: int):
             try:
@@ -378,7 +377,7 @@ class ProfileView:
 
         async def do_download(_):
             status_label.value = "Downloading…"
-            status_label.color = ACCENT
+            status_label.color = C.accent
             self.page.update()
             ok, err = await asset_manager.download_all(progress_cb=on_progress)
             if err == 0:
@@ -390,15 +389,15 @@ class ProfileView:
         def do_clear(_):
             asset_manager.clear_cache()
             status_label.value = "Not installed  ·  ~9 MB"
-            status_label.color = DIM
+            status_label.color = C.text_secondary
             progress_bar.value = 0
             count_label.value = f"0 / {total}"
             self.page.update()
 
         dlg = ft.AlertDialog(
             modal=False,
-            bgcolor=CARD_BG,
-            title=ft.Text("Exercise guides", size=16, weight=ft.FontWeight.W_900, color=TEXT),
+            bgcolor=C.bg_surface,
+            title=ft.Text("Exercise guides", size=16, weight=ft.FontWeight.W_900, color=C.text),
             content=ft.Container(
                 content=ft.Column(
                     [
@@ -407,7 +406,7 @@ class ProfileView:
                             "from a public fitness database (Unlicense). "
                             "Approx. 9 MB over Wi-Fi is recommended.",
                             size=11,
-                            color="#ddd",
+                            color=C.text_secondary,
                             width=300,
                         ),
                         ft.Container(height=4),
@@ -438,7 +437,7 @@ class ProfileView:
                 ft.TextButton(
                     "Close",
                     on_click=lambda _: self.page.close(dlg),
-                    style=ft.ButtonStyle(color=DIM),
+                    style=ft.ButtonStyle(color=C.text_secondary),
                 ),
             ],
             actions_alignment=ft.MainAxisAlignment.END,
@@ -453,7 +452,7 @@ class ProfileView:
                 [
                     ft.Icon(
                         ft.Icons.CLOUD_DOWNLOAD,
-                        color=ACCENT if not installed else C.text_muted,
+                        color=C.accent if not installed else C.text_muted,
                         size=18,
                     ),
                     ft.Container(
@@ -462,10 +461,10 @@ class ProfileView:
                                 ft.Text(
                                     "Exercise guides",
                                     size=12,
-                                    color="#ddd",
+                                    color=C.text_secondary,
                                     weight=ft.FontWeight.W_700,
                                 ),
-                                ft.Text(status, size=10, color=DIM),
+                                ft.Text(status, size=10, color=C.text_secondary),
                             ],
                             spacing=1,
                             tight=True,
@@ -477,8 +476,8 @@ class ProfileView:
                 spacing=10,
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
             ),
-            bgcolor=CARD_BG,
-            border=ft.border.all(1, BORDER),
+            bgcolor=C.bg_surface,
+            border=ft.border.all(1, C.border),
             border_radius=10,
             padding=ft.padding.symmetric(horizontal=12, vertical=10),
             margin=ft.margin.only(bottom=6),
@@ -528,10 +527,10 @@ class ProfileView:
             label=label,
             value=str(self._form_values.get(key, "") or ""),
             keyboard_type=keyboard,
-            bgcolor=DARK_BG,
-            border_color=BORDER,
-            focused_border_color=ACCENT,
-            color=TEXT,
+            bgcolor=C.bg_page,
+            border_color=C.border,
+            focused_border_color=C.accent,
+            color=C.text,
             text_size=14,
             height=52,
             on_change=on_change,
@@ -547,10 +546,10 @@ class ProfileView:
             label=label,
             value=current,
             options=[ft.dropdown.Option(key=v, text=lbl) for v, lbl in options],
-            bgcolor=DARK_BG,
-            border_color=BORDER,
-            focused_border_color=ACCENT,
-            color=TEXT,
+            bgcolor=C.bg_page,
+            border_color=C.border,
+            focused_border_color=C.accent,
+            color=C.text,
             text_size=14,
             on_change=on_change,
         )
@@ -560,15 +559,15 @@ class ProfileView:
         return ft.Container(
             content=ft.Column(
                 [
-                    ft.Text(label.upper(), size=9, color=MUTED, weight=ft.FontWeight.W_700),
-                    ft.Text(value, size=18, color=ACCENT, weight=ft.FontWeight.W_900),
-                    ft.Text(sub, size=10, color=DIM) if sub else ft.Container(),
+                    ft.Text(label.upper(), size=9, color=C.text_muted, weight=ft.FontWeight.W_700),
+                    ft.Text(value, size=18, color=C.accent, weight=ft.FontWeight.W_900),
+                    ft.Text(sub, size=10, color=C.text_secondary) if sub else ft.Container(),
                 ],
                 spacing=2,
                 tight=True,
             ),
-            bgcolor=DARK_BG,
-            border=ft.border.all(1, BORDER_2),
+            bgcolor=C.bg_page,
+            border=ft.border.all(1, C.border_strong),
             border_radius=10,
             padding=10,
             expand=True,
@@ -619,11 +618,16 @@ class ProfileView:
             [
                 ft.Column(
                     [
-                        ft.Text("Current weight", size=11, color=MUTED, weight=ft.FontWeight.W_700),
+                        ft.Text(
+                            "Current weight",
+                            size=11,
+                            color=C.text_muted,
+                            weight=ft.FontWeight.W_700,
+                        ),
                         ft.Text(
                             f"{latest:g} kg" if latest else "—",
                             size=24,
-                            color=TEXT,
+                            color=C.text,
                             weight=ft.FontWeight.W_900,
                         ),
                     ],
@@ -640,11 +644,11 @@ class ProfileView:
         )
 
         chart = ft.Container(
-            content=bar_chart(kgs, labels, color="#4ECDC4", height=110)
+            content=bar_chart(kgs, labels, color=C.chart_bar, height=110)
             if entries
             else ft.Text("No weight logged yet", size=11, color=C.text_muted, italic=True),
-            bgcolor=CARD_BG,
-            border=ft.border.all(1, BORDER),
+            bgcolor=C.bg_surface,
+            border=ft.border.all(1, C.border),
             border_radius=12,
             padding=12,
         )
@@ -657,7 +661,10 @@ class ProfileView:
                         [
                             ft.Container(
                                 content=ft.Text(
-                                    e["date"], size=11, color=DIM, weight=ft.FontWeight.W_700
+                                    e["date"],
+                                    size=11,
+                                    color=C.text_secondary,
+                                    weight=ft.FontWeight.W_700,
                                 ),
                                 width=110,
                             ),
@@ -665,7 +672,7 @@ class ProfileView:
                                 content=ft.Text(
                                     f"{e['kg']:g} kg",
                                     size=13,
-                                    color=TEXT,
+                                    color=C.text,
                                     weight=ft.FontWeight.W_700,
                                 ),
                                 expand=True,
@@ -681,8 +688,8 @@ class ProfileView:
                         ],
                         vertical_alignment=ft.CrossAxisAlignment.CENTER,
                     ),
-                    bgcolor=CARD_BG,
-                    border=ft.border.all(1, BORDER),
+                    bgcolor=C.bg_surface,
+                    border=ft.border.all(1, C.border),
                     border_radius=10,
                     padding=ft.padding.symmetric(horizontal=10, vertical=4),
                     margin=ft.margin.only(bottom=4),
@@ -744,8 +751,8 @@ class ProfileView:
                 ft.Container(
                     content=ft.Row(
                         [
-                            ft.Icon(ft.Icons.ARROW_BACK, color=ACCENT, size=16),
-                            ft.Text("Home", color=ACCENT, size=12, weight=ft.FontWeight.W_700),
+                            ft.Icon(ft.Icons.ARROW_BACK, color=C.accent, size=16),
+                            ft.Text("Home", color=C.accent, size=12, weight=ft.FontWeight.W_700),
                         ],
                         spacing=4,
                         tight=True,
@@ -754,7 +761,7 @@ class ProfileView:
                     padding=ft.padding.symmetric(vertical=6),
                     ink=True,
                 ),
-                ft.Text("Settings", size=18, weight=ft.FontWeight.W_900, color=TEXT),
+                ft.Text("Settings", size=18, weight=ft.FontWeight.W_900, color=C.text),
                 ft.Container(width=60),
             ],
             alignment=ft.MainAxisAlignment.SPACE_BETWEEN,

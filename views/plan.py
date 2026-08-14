@@ -1,4 +1,10 @@
-"""Plan: 7 periodized phases + detail with exercises & weekly distribution."""
+"""Plan: the phases of the active routine, and where routines are chosen.
+
+Choosing a routine is also where people go looking for "make me one of my own",
+so the way into the routine editor lives here rather than in a tab of its own:
+duplicating the built-in you already follow is the realistic first step, and it
+is offered on the built-ins themselves.
+"""
 
 from __future__ import annotations
 
@@ -9,18 +15,21 @@ from dates import weekday_label
 from exercise_details import details_for
 from exercise_images import image_for
 from exercises import exercise_key, phase_color
+from routine_builder import duplicate_builtin, is_user_routine, routine_pk
 from storage import Storage
 from theme import (
-    ACCENT,
-    BORDER,
-    CARD_BG,
-    DIM,
-    TEXT,
     C,
+    Radius,
+    Space,
     card,
     chip,
+    ghost_button,
+    muted_text,
 )
 from views.exercise_dialog import open_exercise_detail
+
+# View index owned by main.py; named so the call sites read as intent.
+VIEW_ROUTINE_EDITOR = 7
 
 
 class PlanView:
@@ -72,8 +81,8 @@ class PlanView:
                         color=phase_color(phase.id),
                         weight=ft.FontWeight.W_900,
                     ),
-                    ft.Text(phase.name, size=18, weight=ft.FontWeight.W_900, color=TEXT),
-                    ft.Text(phase.subtitle, size=11, color=DIM),
+                    ft.Text(phase.name, size=18, weight=ft.FontWeight.W_900, color=C.text),
+                    ft.Text(phase.subtitle, size=11, color=C.text_secondary),
                     ft.Row(
                         [
                             chip(phase.scheme),
@@ -85,8 +94,8 @@ class PlanView:
                 spacing=4,
                 tight=True,
             ),
-            bgcolor=CARD_BG,
-            border=ft.border.all(1, BORDER),
+            bgcolor=C.bg_surface,
+            border=ft.border.all(1, C.border),
             border_radius=14,
             padding=14,
             margin=ft.margin.only(bottom=8),
@@ -94,36 +103,110 @@ class PlanView:
             ink=True,
         )
 
-    def _routine_selector(self) -> ft.Control:
-        cur = active_routine()
+    # ── routines ─────────────────────────────────────────────
+    def _open_editor(self, pk: int | None = None):
+        """Into the routine editor, on `pk` if the host can open one directly.
+
+        `edit_routine` is an optional hook: main.py holds the view instances, so
+        only it can put the editor on a specific routine. Without it this still
+        lands on the editor's library, which lists the same routine one tap away.
+        """
+        opener = self.page.data.get("edit_routine")
+        if pk is not None and callable(opener):
+            opener(pk)
+            return
+        self.page.data["navigate_to"](VIEW_ROUTINE_EDITOR)
+
+    def _edit_active(self, _=None):
+        self._open_editor(routine_pk(active_routine().id))
+
+    def _duplicate(self, routine_id: str):
+        """Copy a built-in and open the copy. The original is untouched.
+
+        This is the honest path to owning a routine: nobody writes 24 weeks of
+        periodisation from an empty screen, they change the two exercises they
+        disagree with. `duplicate_builtin` already re-syncs `data.ROUTINES`.
+        """
+        self._open_editor(duplicate_builtin(self.store, routine_id))
+
+    def _routine_chip(self, r, active_id: str) -> ft.Control:
+        on = r.id == active_id
         set_routine = self.page.data["set_routine"]
-
-        def chip_for(r):
-            on = r.id == cur.id
-            return ft.Container(
-                content=ft.Text(
-                    r.name, size=11, weight=ft.FontWeight.W_800, color=ACCENT if on else DIM
-                ),
-                bgcolor=C.accent_soft if on else CARD_BG,
-                border=ft.border.all(1, ACCENT if on else BORDER),
-                border_radius=8,
-                padding=ft.padding.symmetric(horizontal=12, vertical=6),
-                on_click=(None if on else (lambda _, rid=r.id: set_routine(rid))),
-                ink=not on,
+        parts: list[ft.Control] = [
+            ft.Text(
+                r.name,
+                size=11,
+                weight=ft.FontWeight.W_800,
+                color=C.accent if on else C.text_secondary,
             )
+        ]
+        if not is_user_routine(r.id):
+            # The copy button sits on the template it copies. Its own on_click
+            # keeps the tap from also switching the active routine — you can
+            # fork a routine you have not adopted.
+            parts.append(
+                ft.Container(
+                    content=ft.Icon(
+                        ft.Icons.CONTENT_COPY_OUTLINED,
+                        size=13,
+                        color=C.accent if on else C.text_muted,
+                    ),
+                    on_click=lambda _, rid=r.id: self._duplicate(rid),
+                    ink=True,
+                    border_radius=Radius.sm,
+                    padding=2,
+                    tooltip=f"Duplicate '{r.name}' into an editable routine",
+                )
+            )
+        return ft.Container(
+            content=ft.Row(parts, spacing=6, tight=True),
+            bgcolor=C.accent_soft if on else C.bg_surface,
+            border=ft.border.all(1, C.accent if on else C.border),
+            border_radius=Radius.sm,
+            padding=ft.padding.symmetric(horizontal=12, vertical=6),
+            on_click=(None if on else (lambda _, rid=r.id: set_routine(rid))),
+            ink=not on,
+        )
 
-        return ft.Row([chip_for(r) for r in ROUTINES], spacing=6, wrap=True, run_spacing=6)
+    def _routine_selector(self) -> ft.Control:
+        active_id = active_routine().id
+        return ft.Row(
+            [self._routine_chip(r, active_id) for r in ROUTINES],
+            spacing=6,
+            wrap=True,
+            run_spacing=6,
+        )
+
+    def _routine_actions(self) -> ft.Control:
+        buttons: list[ft.Control] = []
+        if is_user_routine(active_routine().id):
+            buttons.append(
+                ghost_button("Edit this routine", on_click=self._edit_active, expand=True)
+            )
+        buttons.append(
+            ghost_button(
+                "My routines",
+                on_click=lambda _: self._open_editor(),
+                expand=True,
+                tooltip="Create, edit or delete your own routines",
+            )
+        )
+        return ft.Row(buttons, spacing=Space.x2)
 
     def _phase_list(self) -> ft.Control:
         routine = active_routine()
         return ft.Column(
             [
-                ft.Text("Training Plan", size=22, weight=ft.FontWeight.W_900, color=TEXT),
-                ft.Container(height=4),
+                ft.Text("Training Plan", size=22, weight=ft.FontWeight.W_900, color=C.text),
+                ft.Container(height=Space.x1),
                 self._routine_selector(),
-                ft.Container(height=8),
-                ft.Text(routine.description, size=11, color=DIM),
-                ft.Container(height=10),
+                ft.Container(height=Space.x1),
+                muted_text("Tap a copy icon to fork a built-in routine and make it yours."),
+                ft.Container(height=Space.x2),
+                self._routine_actions(),
+                ft.Container(height=Space.x3),
+                ft.Text(routine.description, size=11, color=C.text_secondary),
+                ft.Container(height=Space.x3),
                 *[self._phase_card(p, i) for i, p in enumerate(routine.phases)],
             ],
             scroll=ft.ScrollMode.AUTO,
@@ -184,7 +267,7 @@ class PlanView:
                     thumb,
                     name_widget,
                     (
-                        ft.Icon(ft.Icons.INFO_OUTLINE, color=ACCENT, size=16)
+                        ft.Icon(ft.Icons.INFO_OUTLINE, color=C.accent, size=16)
                         if has_detail
                         else ft.Container(width=16)
                     ),
@@ -208,15 +291,18 @@ class PlanView:
                         day.name,
                         size=13,
                         weight=ft.FontWeight.W_700,
-                        color=ACCENT if is_open else TEXT,
+                        color=C.accent if is_open else C.text,
                         expand=True,
                     ),
                     ft.Text(
-                        f"{len(day.exercises)}", size=11, color=DIM, weight=ft.FontWeight.W_700
+                        f"{len(day.exercises)}",
+                        size=11,
+                        color=C.text_secondary,
+                        weight=ft.FontWeight.W_700,
                     ),
                     ft.Icon(
                         ft.Icons.KEYBOARD_ARROW_UP if is_open else ft.Icons.KEYBOARD_ARROW_DOWN,
-                        color=ACCENT if is_open else DIM,
+                        color=C.accent if is_open else C.text_secondary,
                         size=18,
                     ),
                 ],
@@ -242,8 +328,8 @@ class PlanView:
             )
         return ft.Container(
             content=ft.Column(children, spacing=0, tight=True),
-            bgcolor=CARD_BG,
-            border=ft.border.all(1, ACCENT if is_open else BORDER),
+            bgcolor=C.bg_surface,
+            border=ft.border.all(1, C.accent if is_open else C.border),
             border_radius=12,
             margin=ft.margin.only(bottom=6),
             clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
@@ -256,10 +342,13 @@ class PlanView:
         active = self.subview == key
         return ft.Container(
             content=ft.Text(
-                label, size=11, weight=ft.FontWeight.W_700, color=ACCENT if active else DIM
+                label,
+                size=11,
+                weight=ft.FontWeight.W_700,
+                color=C.accent if active else C.text_secondary,
             ),
-            bgcolor=C.accent_soft if active else CARD_BG,
-            border=ft.border.all(1, ACCENT if active else BORDER),
+            bgcolor=C.accent_soft if active else C.bg_surface,
+            border=ft.border.all(1, C.accent if active else C.border),
             border_radius=8,
             padding=ft.padding.symmetric(horizontal=12, vertical=6),
             on_click=lambda _, k=key: self._set_subview(k),
@@ -276,10 +365,10 @@ class PlanView:
                         f"WK {i + 1}",
                         size=11,
                         weight=ft.FontWeight.W_800,
-                        color=ACCENT if i == self.dist_week_idx else DIM,
+                        color=C.accent if i == self.dist_week_idx else C.text_secondary,
                     ),
-                    bgcolor=C.accent_soft if i == self.dist_week_idx else CARD_BG,
-                    border=ft.border.all(1, ACCENT if i == self.dist_week_idx else BORDER),
+                    bgcolor=C.accent_soft if i == self.dist_week_idx else C.bg_surface,
+                    border=ft.border.all(1, C.accent if i == self.dist_week_idx else C.border),
                     border_radius=8,
                     padding=ft.padding.symmetric(horizontal=14, vertical=6),
                     on_click=lambda _, idx=i: self._set_dist_week(idx),
@@ -300,14 +389,14 @@ class PlanView:
                                     weekday_label(i),
                                     size=10,
                                     weight=ft.FontWeight.W_800,
-                                    color=ACCENT,
+                                    color=C.accent,
                                 ),
-                                bgcolor=BORDER,
+                                bgcolor=C.border,
                                 border_radius=6,
                                 padding=ft.padding.symmetric(horizontal=10, vertical=4),
                             ),
                             ft.Text(
-                                w, size=13, color=TEXT, weight=ft.FontWeight.W_700, expand=True
+                                w, size=13, color=C.text, weight=ft.FontWeight.W_700, expand=True
                             ),
                         ],
                         spacing=10,
@@ -340,8 +429,8 @@ class PlanView:
                 ft.Container(
                     content=ft.Row(
                         [
-                            ft.Icon(ft.Icons.ARROW_BACK, color=ACCENT, size=16),
-                            ft.Text("Phases", color=ACCENT, size=12, weight=ft.FontWeight.W_700),
+                            ft.Icon(ft.Icons.ARROW_BACK, color=C.accent, size=16),
+                            ft.Text("Phases", color=C.accent, size=12, weight=ft.FontWeight.W_700),
                         ],
                         spacing=4,
                         tight=True,
@@ -364,11 +453,11 @@ class PlanView:
                                 border_radius=6,
                                 padding=ft.padding.symmetric(horizontal=8, vertical=3),
                             ),
-                            ft.Text(f"Wk {phase.weeks}", size=11, color=DIM),
+                            ft.Text(f"Wk {phase.weeks}", size=11, color=C.text_secondary),
                         ],
                         spacing=8,
                     ),
-                    ft.Text(phase.name, size=22, weight=ft.FontWeight.W_900, color=TEXT),
+                    ft.Text(phase.name, size=22, weight=ft.FontWeight.W_900, color=C.text),
                     ft.Text(
                         phase.subtitle,
                         size=12,
@@ -376,10 +465,10 @@ class PlanView:
                         weight=ft.FontWeight.W_700,
                     ),
                     ft.Container(height=6),
-                    ft.Text(f"Sets: {phase.scheme}", size=12, color=TEXT),
+                    ft.Text(f"Sets: {phase.scheme}", size=12, color=C.text),
                     ft.Text(f"Rest: {phase.rest}", size=11, color=C.text_secondary),
                     ft.Container(height=6),
-                    ft.Text(phase.notes, size=11, color="#999"),
+                    ft.Text(phase.notes, size=11, color=C.text_muted),
                 ),
                 ft.Container(height=12),
                 ft.Row(tabs_row, spacing=6),

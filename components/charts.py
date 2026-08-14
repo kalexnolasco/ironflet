@@ -1,4 +1,4 @@
-"""Gráficos simples con ft.Container (sin dependencias externas)."""
+"""Simple charts built from ft.Container (no external dependencies)."""
 
 from __future__ import annotations
 
@@ -10,12 +10,17 @@ from theme import C
 def bar_chart(
     values: list[float],
     labels: list[str] | None = None,
-    color: str = "#FF6B35",
+    color: str | None = None,
     height: int = 120,
 ) -> ft.Control:
+    # Default is None and resolved here: a colour evaluated in the `def` would
+    # freeze whichever palette was active at import time.
+    color = color or C.chart_bar
     if not values:
+        # Reached by the default route — the detail view opens on "Est. 1RM",
+        # which is empty for bodyweight or warm-up-only exercises.
         return ft.Container(
-            content=ft.Text("Sin datos", color=C.text_muted, size=11, italic=True),
+            content=ft.Text("No data", color=C.text_muted, size=11, italic=True),
             alignment=ft.alignment.center,
             height=height,
         )

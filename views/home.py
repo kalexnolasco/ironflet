@@ -1,4 +1,16 @@
-"""Home: summary, stats, CTA, language toggle."""
+"""Home: today's summary, the week in three numbers, and the doors out.
+
+Home is also the only way into two screens that have no slot in the bottom bar:
+the exercise catalogue (Browse) and — by tapping the nutrition card — the food
+diary. A screen nobody can navigate to may as well not have been written.
+
+The numbers here are deliberately literal. The streak counts *weeks*, not days,
+and "Sessions" counts *days trained*, not table rows; both labels used to claim
+something the value did not mean. See `analytics.training_streak` for why the
+weekly definition is the honest one, and `storage.weekly_session_minimum` for
+where the weekly bar comes from — routines here train 3 to 6 days a week, so
+the bar is read off the active routine rather than fixed.
+"""
 
 from __future__ import annotations
 
@@ -7,24 +19,66 @@ from datetime import date
 import flet as ft
 
 from dates import day_name, month_name
+from nutrition import day_totals, targets_for
 from storage import Storage
 from theme import (
-    ACCENT,
-    BORDER,
-    CARD_BG,
-    MUTED,
-    TEXT,
     C,
+    Radius,
+    Space,
     card,
     chip,
+    ghost_button,
+    muted_text,
     primary_button,
     section_title,
 )
+
+# main.py owns the routing table; naming the indices here keeps the calls
+# readable and makes it obvious what breaks if that table is reordered.
+VIEW_WORKOUT = 2
+VIEW_BROWSE = 3
+VIEW_PROFILE = 5
+VIEW_NUTRITION = 6
+
+# Trailing window behind get_week_stats(); shown so the three numbers below it
+# are not read as "all time".
+STATS_WINDOW_LABEL = "Last 7 days"
 
 
 def today_display() -> str:
     d = date.today()
     return f"{day_name(d.weekday())}, {d.day} {month_name(d.month - 1)}"
+
+
+def _n(value) -> str:
+    """Whole numbers only — a summary card has no room for tenths of a gram."""
+    return f"{round(float(value or 0)):.0f}"
+
+
+def _macro_bar(current: float, target: float, color: str, over_color: str) -> ft.Control:
+    """Progress towards a daily target, using the food screen's own geometry.
+
+    `bar_flex` is imported rather than reimplemented so this bar and the ones on
+    the Food screen stay the same bar; two implementations would drift the first
+    time one of them was tuned.
+    """
+    from views.nutrition_view import bar_flex
+
+    eaten, rest, over = bar_flex(current, target)
+    segments: list[ft.Control] = []
+    if eaten:
+        segments.append(ft.Container(bgcolor=color, expand=eaten))
+    if rest:
+        segments.append(ft.Container(bgcolor=C.bg_sunken, expand=rest))
+    if over:
+        segments.append(ft.Container(bgcolor=over_color, expand=over))
+    return ft.Container(
+        content=ft.Row(segments, spacing=0),
+        height=6,
+        bgcolor=C.bg_sunken,
+        border_radius=Radius.pill,
+        clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
+    )
 
 
 class HomeView:
@@ -38,7 +92,8 @@ class HomeView:
     def handle_back(self) -> bool:
         return False
 
-    def _stat_card(self, value: str, label: str) -> ft.Container:
+    # ── small pieces ─────────────────────────────────────────
+    def _stat_card(self, value: str, label: str, tooltip: str | None = None) -> ft.Container:
         return ft.Container(
             content=ft.Column(
                 [
@@ -46,14 +101,14 @@ class HomeView:
                         value,
                         size=22,
                         weight=ft.FontWeight.W_900,
-                        color=ACCENT,
+                        color=C.accent,
                         text_align=ft.TextAlign.CENTER,
                     ),
                     ft.Text(
                         label,
                         size=11,
                         weight=ft.FontWeight.W_700,
-                        color="#cccccc",
+                        color=C.text_secondary,
                         text_align=ft.TextAlign.CENTER,
                     ),
                 ],
@@ -61,22 +116,44 @@ class HomeView:
                 alignment=ft.MainAxisAlignment.CENTER,
                 spacing=4,
             ),
-            bgcolor=CARD_BG,
-            border=ft.border.all(1, BORDER),
-            border_radius=14,
+            bgcolor=C.bg_surface,
+            border=ft.border.all(1, C.border),
+            border_radius=Radius.xl,
             padding=ft.padding.symmetric(horizontal=8, vertical=10),
             expand=True,
             height=72,
+            tooltip=tooltip,
+        )
+
+    def _streak_card(self, streak: int) -> ft.Control:
+        return card(
+            ft.Text("🔥", size=18, text_align=ft.TextAlign.CENTER),
+            ft.Text(
+                str(streak),
+                size=20,
+                weight=ft.FontWeight.W_900,
+                color=C.accent,
+                text_align=ft.TextAlign.CENTER,
+            ),
+            ft.Text(
+                "week" if streak == 1 else "weeks",
+                size=9,
+                weight=ft.FontWeight.W_700,
+                color=C.text_muted,
+                text_align=ft.TextAlign.CENTER,
+            ),
+            padding=ft.padding.symmetric(horizontal=14, vertical=8),
+            alignment=ft.alignment.center,
+            tooltip="Consecutive weeks that hit your routine's session minimum",
         )
 
     def _today_item(self, w) -> ft.Container:
-
         set_chips = [
             chip(
                 f"{s['weight']:g}kg × {s['reps']}"
                 if s.get("weight", 0) > 0
                 else f"{s['reps']} reps",
-                color=ACCENT,
+                color=C.accent,
             )
             for s in w.sets
         ]
@@ -87,12 +164,12 @@ class HomeView:
                         w.exercise,
                         size=13,
                         weight=ft.FontWeight.W_700,
-                        color=TEXT,
+                        color=C.text,
                         expand=True,
                         max_lines=1,
                         overflow=ft.TextOverflow.ELLIPSIS,
                     ),
-                    chip(w.muscle_group, color=ACCENT),
+                    chip(w.muscle_group, color=C.accent),
                 ],
                 alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
             ),
@@ -101,6 +178,96 @@ class HomeView:
             margin=ft.margin.only(bottom=6),
         )
 
+    # ── nutrition ────────────────────────────────────────────
+    def _macro_line(self, label: str, current: float, target: float, unit: str) -> ft.Control:
+        # Overshooting calories is worth a warning; overshooting protein is not,
+        # so each line says for itself what "past the target" looks like.
+        over_target = label == "Calories"
+        value = f"{_n(current)} / {_n(target)} {unit}" if target > 0 else f"{_n(current)} {unit}"
+        return ft.Column(
+            [
+                ft.Row(
+                    [
+                        ft.Text(label, size=11, weight=ft.FontWeight.W_700, color=C.text_secondary),
+                        ft.Text(value, size=11, color=C.text_muted),
+                    ],
+                    alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                ),
+                _macro_bar(
+                    current,
+                    target,
+                    C.accent if over_target else C.success,
+                    C.warning if over_target else C.success,
+                ),
+            ],
+            spacing=3,
+            tight=True,
+        )
+
+    def _nutrition_body(self, totals: dict, targets: dict, logged: bool) -> ft.Control:
+        target_kcal = float(targets.get("kcal") or 0)
+        target_protein = float(targets.get("protein") or 0)
+
+        if not logged:
+            # Zeroes against a target read as failure at 9am. An empty day is an
+            # invitation, so it gets one.
+            hint = (
+                f"Today's target: {_n(target_kcal)} kcal · {_n(target_protein)} g protein"
+                if target_kcal > 0
+                else "Log a meal to start tracking calories and protein"
+            )
+            return ft.Column(
+                [
+                    ft.Text(
+                        "Nothing logged today", size=13, weight=ft.FontWeight.W_700, color=C.text
+                    ),
+                    ft.Text(hint, size=11, color=C.text_muted),
+                ],
+                spacing=2,
+                tight=True,
+                expand=True,
+            )
+
+        return ft.Column(
+            [
+                ft.Text("Food today", size=13, weight=ft.FontWeight.W_700, color=C.text),
+                self._macro_line("Calories", float(totals.get("kcal") or 0), target_kcal, "kcal"),
+                self._macro_line("Protein", float(totals.get("protein") or 0), target_protein, "g"),
+            ],
+            spacing=Space.x2,
+            tight=True,
+            expand=True,
+        )
+
+    def _nutrition_card(self) -> ft.Control:
+        today = date.today()
+        totals = day_totals(self.store, today) or {}
+        targets = targets_for(self.store, today) or {}
+        # Entries first: an entry can legitimately be 0 kcal (black coffee), and
+        # a day with one is not an empty day. Calories are the fallback for when
+        # the meal blocks arrive without their entries.
+        logged = bool(
+            any(block.get("entries") for block in (totals.get("by_meal") or {}).values())
+            or float(totals.get("kcal") or 0) > 0
+        )
+        nav = self.page.data["navigate_to"]
+        return card(
+            ft.Row(
+                [
+                    ft.Text("🍽", size=20),
+                    self._nutrition_body(totals, targets, logged),
+                    ft.Icon(ft.Icons.CHEVRON_RIGHT, color=C.text_muted, size=18),
+                ],
+                spacing=Space.x3,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
+            padding=14,
+            on_click=lambda _: nav(VIEW_NUTRITION),
+            ink=True,
+            tooltip="Open the food diary",
+        )
+
+    # ── screen ───────────────────────────────────────────────
     def build(self) -> ft.Control:
         streak = self.store.get_streak()
         stats = self.store.get_week_stats()
@@ -109,16 +276,16 @@ class HomeView:
         vol = stats["volume"]
         vol_str = f"{vol / 1000:.1f}k" if vol >= 1000 else f"{int(vol)}"
 
-        nav_fn = self.page.data["navigate_to"]
+        nav = self.page.data["navigate_to"]
         profile_btn = ft.Container(
-            content=ft.Icon(ft.Icons.SETTINGS, color=ACCENT, size=18),
-            bgcolor=CARD_BG,
-            border=ft.border.all(1, BORDER),
-            border_radius=8,
+            content=ft.Icon(ft.Icons.SETTINGS, color=C.accent, size=18),
+            bgcolor=C.bg_surface,
+            border=ft.border.all(1, C.border),
+            border_radius=Radius.sm,
             width=34,
             height=34,
             alignment=ft.alignment.center,
-            on_click=lambda _: nav_fn(5),
+            on_click=lambda _: nav(VIEW_PROFILE),
             ink=True,
             tooltip="Settings",
         )
@@ -127,47 +294,17 @@ class HomeView:
             [
                 ft.Column(
                     [
-                        ft.Row(
-                            [
-                                ft.Text(
-                                    "IRONFLET", size=11, weight=ft.FontWeight.W_900, color=ACCENT
-                                ),
-                                ft.Container(width=8),
-                            ],
-                            vertical_alignment=ft.CrossAxisAlignment.CENTER,
-                        ),
-                        ft.Text(today_display(), size=22, weight=ft.FontWeight.W_900, color=TEXT),
+                        ft.Text("IRONFLET", size=11, weight=ft.FontWeight.W_900, color=C.accent),
+                        ft.Text(today_display(), size=22, weight=ft.FontWeight.W_900, color=C.text),
                     ],
                     spacing=2,
                     expand=True,
                 ),
-                ft.Container(
-                    content=ft.Row(
-                        [
-                            profile_btn,
-                            card(
-                                ft.Text("🔥", size=18, text_align=ft.TextAlign.CENTER),
-                                ft.Text(
-                                    str(streak),
-                                    size=20,
-                                    weight=ft.FontWeight.W_900,
-                                    color=ACCENT,
-                                    text_align=ft.TextAlign.CENTER,
-                                ),
-                                ft.Text(
-                                    "days",
-                                    size=9,
-                                    weight=ft.FontWeight.W_700,
-                                    color=MUTED,
-                                    text_align=ft.TextAlign.CENTER,
-                                ),
-                                padding=ft.padding.symmetric(horizontal=14, vertical=8),
-                                alignment=ft.alignment.center,
-                            ),
-                        ],
-                        spacing=6,
-                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
-                    ),
+                ft.Row(
+                    [profile_btn, self._streak_card(streak)],
+                    spacing=6,
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                    tight=True,
                 ),
             ],
             alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
@@ -176,19 +313,29 @@ class HomeView:
 
         stats_row = ft.Row(
             [
-                self._stat_card(str(stats["sessions"]), "Sessions"),
-                self._stat_card(str(stats["sets"]), "Sets"),
-                self._stat_card(vol_str, "Vol (kg)"),
+                # The window is named once, above the row, so the tooltips only
+                # have to say what each number counts.
+                self._stat_card(str(stats["sessions"]), "Sessions", tooltip="Days you trained"),
+                self._stat_card(str(stats["sets"]), "Sets", tooltip="Sets logged"),
+                self._stat_card(vol_str, "Vol (kg)", tooltip="Weight × reps"),
             ],
             spacing=8,
         )
 
-        nav = self.page.data["navigate_to"]
         start_btn = primary_button(
             "Start Routine",
             icon=ft.Icons.PLAY_ARROW_ROUNDED,
-            on_click=lambda _: nav(2),
+            on_click=lambda _: nav(VIEW_WORKOUT),
             expand=True,
+        )
+        # Browse lost its tab when the bar went down to five. This is now the
+        # only entrance to the catalogue, so it is a labelled button, not an icon.
+        browse_btn = ghost_button(
+            "Exercises",
+            on_click=lambda _: nav(VIEW_BROWSE),
+            width=112,
+            height=48,
+            tooltip="Browse the exercise library",
         )
 
         if today:
@@ -212,9 +359,9 @@ class HomeView:
                     horizontal_alignment=ft.CrossAxisAlignment.CENTER,
                     spacing=8,
                 ),
-                bgcolor=CARD_BG,
-                border=ft.border.all(1, BORDER),
-                border_radius=14,
+                bgcolor=C.bg_surface,
+                border=ft.border.all(1, C.border),
+                border_radius=Radius.xl,
                 padding=24,
                 alignment=ft.alignment.center,
             )
@@ -222,19 +369,23 @@ class HomeView:
         return ft.Column(
             [
                 header,
-                ft.Container(height=14),
+                ft.Container(height=Space.x4),
+                muted_text(STATS_WINDOW_LABEL),
+                ft.Container(height=Space.x1),
                 stats_row,
-                ft.Container(height=14),
-                ft.Row([start_btn]),
-                ft.Container(height=14),
+                ft.Container(height=Space.x4),
+                ft.Row([start_btn, browse_btn], spacing=8),
+                ft.Container(height=Space.x4),
+                self._nutrition_card(),
+                ft.Container(height=Space.x4),
                 section_title("Today"),
-                ft.Container(height=4),
+                ft.Container(height=Space.x1),
                 today_block,
                 ft.Container(height=18),
                 section_title("Guides"),
-                ft.Container(height=4),
+                ft.Container(height=Space.x1),
                 self._guides_row(),
-                ft.Container(height=14),
+                ft.Container(height=Space.x4),
             ],
             scroll=ft.ScrollMode.AUTO,
             horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
@@ -259,7 +410,7 @@ class HomeView:
                         ft.Text(
                             guide_title_key(gid),
                             size=11,
-                            color="#cccccc",
+                            color=C.text_secondary,
                             weight=ft.FontWeight.W_700,
                             text_align=ft.TextAlign.CENTER,
                         ),
@@ -268,9 +419,9 @@ class HomeView:
                     alignment=ft.MainAxisAlignment.CENTER,
                     spacing=4,
                 ),
-                bgcolor=CARD_BG,
-                border=ft.border.all(1, BORDER),
-                border_radius=14,
+                bgcolor=C.bg_surface,
+                border=ft.border.all(1, C.border),
+                border_radius=Radius.xl,
                 padding=ft.padding.symmetric(horizontal=8, vertical=10),
                 on_click=lambda _, g=gid: open_guide(self.page, g),
                 ink=True,

@@ -1,4 +1,4 @@
-"""Timer de descanso (async, sin threading)."""
+"""Rest timer (async, no threading)."""
 
 from __future__ import annotations
 
@@ -7,10 +7,6 @@ import asyncio
 import flet as ft
 
 from theme import C
-
-ACCENT = "#FF6B35"
-ACCENT2 = "#FF3366"
-BORDER = "#1a1a1d"
 
 
 class RestTimer:
@@ -21,19 +17,19 @@ class RestTimer:
         self.total = 0
         self._tick_id = 0
 
-        self.display = ft.Text("REST", size=14, weight=ft.FontWeight.W_800, color=ACCENT)
+        self.display = ft.Text("REST", size=14, weight=ft.FontWeight.W_800, color=C.accent)
         self.ring = ft.ProgressRing(
             width=56,
             height=56,
             stroke_width=4,
-            color=ACCENT,
-            bgcolor=BORDER,
+            color=C.accent,
+            bgcolor=C.border,
             value=0,
         )
         self.stop_btn = ft.TextButton(
             "Stop",
             on_click=lambda _: self.stop(),
-            style=ft.ButtonStyle(color=ACCENT2),
+            style=ft.ButtonStyle(color=C.accent_2),
             visible=False,
         )
 
@@ -76,15 +72,21 @@ class RestTimer:
 
     def _preset(self, label: str, secs: int) -> ft.Control:
         return ft.Container(
-            content=ft.Text(label, size=11, weight=ft.FontWeight.W_700, color="#dddddd"),
+            content=ft.Text(label, size=11, weight=ft.FontWeight.W_700, color=C.text_secondary),
             bgcolor=C.bg_sunken,
-            border=ft.border.all(1, "#242428"),
+            border=ft.border.all(1, C.border),
             border_radius=8,
             padding=ft.padding.symmetric(horizontal=10, vertical=6),
             on_click=lambda _, s=secs: self.start(s),
         )
 
     def build(self) -> ft.Control:
+        # These three controls outlive a render — they are created once in
+        # `__init__` — so their colours are re-read here to follow the palette.
+        self.display.color = C.accent
+        self.ring.color = C.accent
+        self.ring.bgcolor = C.border
+        self.stop_btn.style = ft.ButtonStyle(color=C.accent_2)
         return ft.Row(
             [
                 ft.Stack(

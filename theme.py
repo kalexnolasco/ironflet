@@ -232,17 +232,8 @@ def muted_text(text: str, size=11) -> ft.Text:
     return ft.Text(text, size=size, color=C.text_muted)
 
 
-# ── compatibility aliases ────────────────────────────────────
-# The views still name colours directly in ~50 places. These keep them working
-# while they are migrated to `C`; they resolve against LIGHT at import time.
-DARK_BG = LIGHT.bg_page
-CARD_BG = LIGHT.bg_surface
-NAV_BG = LIGHT.bg_nav
-BORDER = LIGHT.border
-BORDER_2 = LIGHT.border_strong
-ACCENT = LIGHT.accent
-ACCENT2 = LIGHT.accent_2
-MUTED = LIGHT.text_muted
-TEXT = LIGHT.text
-DIM = LIGHT.text_secondary
-CHIP_TEXT = LIGHT.text_secondary
+# The migration those aliases existed for is done: every view now reads through
+# `C`. They are gone on purpose rather than left as a courtesy — being module
+# constants bound to LIGHT at import time, any view that imported one silently
+# stopped following the active palette, which is how two dialogs ended up
+# painting a white card in dark mode.
