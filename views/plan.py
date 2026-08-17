@@ -4,17 +4,48 @@ Choosing a routine is also where people go looking for "make me one of my own",
 so the way into the routine editor lives here rather than in a tab of its own:
 duplicating the built-in you already follow is the realistic first step, and it
 is offered on the built-ins themselves.
+
+This screen also answers "what does *this* week look like", which used to be a
+tab you had to go and find. All the arithmetic is `program_week.py`'s; this file
+only renders `ProgramWeek`, and it renders every one of its four statuses
+instead of only the happy one. The unknown case is not decorated away: without a
+start date a confident "today: Chest-Biceps" is a coin flip, and training the
+wrong day is worse than being told the app cannot tell yet.
+
+`current_program_week()` runs a query, so it is called in `on_show()` and held
+on the view — `build()` renders from `self._week`. Every refresh path in main.py
+goes through `navigate_to`, which calls `on_show()` first, so the held value
+cannot go stale behind a re-render (including after the start-date dialog).
+
+`open_start_date_dialog()` is also used by views/home.py, and lives here because
+this is the program screen. It is imported rather than reimplemented for the
+same reason home.py imports `bar_flex` from the food screen: two copies of the
+one control that decides which week Alex is in would drift, and the two screens
+would then disagree about it.
 """
 
 from __future__ import annotations
 
+import contextlib
+from datetime import date, timedelta
+
 import flet as ft
 
 from data import ROUTINES, active_routine
-from dates import weekday_label
+from dates import day_name
 from exercise_details import details_for
 from exercise_images import image_for
 from exercises import exercise_key, phase_color
+from program_week import (
+    ProgramWeek,
+    StartSource,
+    WeekStatus,
+    current_program_week,
+    is_rest_label,
+    restart_date,
+    rotation_applies_to,
+    set_program_start,
+)
 from routine_builder import duplicate_builtin, is_user_routine, routine_pk
 from storage import Storage
 from theme import (
@@ -25,11 +56,157 @@ from theme import (
     chip,
     ghost_button,
     muted_text,
+    primary_button,
 )
 from views.exercise_dialog import open_exercise_detail
 
-# View index owned by main.py; named so the call sites read as intent.
+# View indices owned by main.py; named so the call sites read as intent.
+VIEW_WORKOUT = 2
 VIEW_ROUTINE_EDITOR = 7
+
+
+def week_headline(pw: ProgramWeek) -> str:
+    """`WEEK 5 OF 24`, degrading to `WEEK 5`, then to `THIS WEEK`.
+
+    `total_weeks` is 0 when no phase declares a readable range — a half-built
+    routine from the editor — and "of 0" would be worse than saying nothing.
+    """
+    if pw.week is None:
+        return "THIS WEEK"
+    return f"WEEK {pw.week} OF {pw.total_weeks}" if pw.total_weeks else f"WEEK {pw.week}"
+
+
+def next_session(pw: ProgramWeek) -> tuple[int, str] | None:
+    """The next training day left in this week, as (weekday index, label).
+
+    None once the week has nothing left. It deliberately does not roll into next
+    week: the row the rotation turns to depends on the phase that week belongs
+    to, and guessing it here is the kind of confident wrong answer these two
+    screens exist to stop making.
+    """
+    if pw.rotation is None:
+        return None
+    for i in range(((pw.today or date.today()).weekday()) + 1, len(pw.rotation)):
+        if not is_rest_label(pw.rotation[i]):
+            return i, pw.rotation[i]
+    return None
+
+
+def start_caveat(pw: ProgramWeek) -> str | None:
+    """The sentence that keeps a guessed week from reading as a fact.
+
+    `StartSource.FIRST_WORKOUT` means program_week inferred the start from the
+    earliest logged session, which is right often and not always — `entrenos`
+    has no routine column, so "first workout ever" may belong to a different
+    routine entirely. Alex should be able to see the assumption and correct it,
+    so it is printed, not hidden behind a tooltip.
+    """
+    if pw.start.certain or pw.start.day is None or not pw.start.known:
+        return None
+    return f"Assuming you started on {pw.start.day.isoformat()} — your first logged session."
+
+
+def open_start_date_dialog(
+    page: ft.Page, store: Storage, on_saved=None, initial: date | None = None
+) -> None:
+    """Ask when this routine started, and hand the answer to program_week.
+
+    A typed ISO date, like the weigh-in dialog in views/profile.py: there is no
+    DatePicker anywhere in this app and this is not the screen to introduce the
+    only one. The two shortcuts cover the realistic answers — you are filling
+    this in either in the week you started or in the one after.
+
+    "This week" is `restart_date()`, i.e. this week's Monday rather than today,
+    because a mid-week start spends a whole program week on the two or three
+    days that are left. A date Alex types is stored exactly as typed: if he
+    really did start on a Wednesday, that is the truth and program_week does the
+    Monday anchoring.
+
+    `initial` prefills the field — the caller passes it when a date already
+    exists but does not apply here, so adopting it costs one tap instead of a
+    retype from memory. `set_program_start` stamps the *active* routine onto the
+    row, which is what makes that a new start rather than a shared one.
+    """
+    monday = restart_date()
+    field = ft.TextField(
+        label="Start date (YYYY-MM-DD)",
+        value=(initial or monday).isoformat(),
+        dense=True,
+        color=C.text,
+        border_color=C.border_strong,
+        focused_border_color=C.accent,
+        label_style=ft.TextStyle(color=C.text_secondary),
+    )
+    err = ft.Text("", size=11, color=C.danger)
+
+    def fill(day: date):
+        field.value = day.isoformat()
+        err.value = ""
+        page.update()
+
+    def save(_):
+        try:
+            chosen = date.fromisoformat((field.value or "").strip())
+        except ValueError:
+            err.value = "Use YYYY-MM-DD"
+            page.update()
+            return
+        # A future date is not refused — program_week reports it as SCHEDULED
+        # and the card says "starts on …", which is a real thing to want. Only
+        # something that is not a date is refused.
+        set_program_start(store, chosen)
+        page.close(dlg)
+        if on_saved is not None:
+            on_saved()
+            return
+        with contextlib.suppress(KeyError, TypeError, AttributeError):
+            page.data["refresh_current"]()
+
+    dlg = ft.AlertDialog(
+        modal=False,
+        bgcolor=C.bg_surface,
+        title=ft.Text("Routine start date", size=16, weight=ft.FontWeight.W_900, color=C.text),
+        content=ft.Container(
+            content=ft.Column(
+                [
+                    ft.Text(
+                        "The day you started week 1 of this routine. It is what "
+                        "tells the app which week and which phase you are in.",
+                        size=11,
+                        color=C.text_secondary,
+                        width=300,
+                    ),
+                    field,
+                    ft.Row(
+                        [
+                            ghost_button("This week", on_click=lambda _: fill(monday), expand=True),
+                            ghost_button(
+                                "Last week",
+                                on_click=lambda _: fill(monday - timedelta(days=7)),
+                                expand=True,
+                            ),
+                        ],
+                        spacing=8,
+                    ),
+                    err,
+                ],
+                spacing=10,
+                tight=True,
+            ),
+            width=320,
+            height=210,
+        ),
+        actions=[
+            ft.TextButton(
+                "Cancel",
+                on_click=lambda _: page.close(dlg),
+                style=ft.ButtonStyle(color=C.text_secondary),
+            ),
+            ft.TextButton("Save", on_click=save, style=ft.ButtonStyle(color=C.accent)),
+        ],
+        actions_alignment=ft.MainAxisAlignment.END,
+    )
+    page.open(dlg)
 
 
 class PlanView:
@@ -40,9 +217,24 @@ class PlanView:
         self.subview = "exercises"  # "exercises" | "distribution"
         self.dist_week_idx = 0
         self._expanded_days: set[str] = set()
+        self._week: ProgramWeek | None = None
 
     def on_show(self):
-        pass
+        # `current_program_week` reads the history, so it is answered once per
+        # activation and held. Every re-render in main.py goes through
+        # `navigate_to`, which calls this first, so the held answer is never
+        # older than the screen showing it.
+        self._week = current_program_week(self.store)
+
+    def _program_week(self) -> ProgramWeek:
+        """The held answer, computed on demand if `on_show()` never ran.
+
+        Tests build views directly, and so does anything that renders a screen
+        without activating it.
+        """
+        if self._week is None:
+            self._week = current_program_week(self.store)
+        return self._week
 
     def handle_back(self) -> bool:
         if self.selected_phase_idx is not None:
@@ -52,11 +244,33 @@ class PlanView:
         return False
 
     # ─────────────────────────────────────────────────────────
-    def _select_phase(self, idx: int):
+    def _select_phase(self, idx: int, subview: str = "exercises"):
+        """Open a phase. On the phase you are actually in, on this week.
+
+        Opening the distribution on row 0 was fine while it was a tab you went
+        looking for; now that the week card links into it, landing on someone
+        else's week would undo the point of the card.
+        """
+        routine = active_routine()
         self.selected_phase_idx = idx
-        self.subview = "exercises"
-        self.dist_week_idx = 0
+        self.subview = subview
+        self.dist_week_idx = (
+            self._week_row_for_phase(self._program_week(), routine.phases[idx]) or 0
+        )
         self.page.data["refresh_current"]()
+
+    def _week_row_for_phase(self, pw: ProgramWeek, phase) -> int | None:
+        """The rotation row this week occupies, but only inside its own phase.
+
+        None everywhere else: "this week" is not a property of a phase you are
+        merely browsing, and marking a row in phase 3 while you are in phase 1
+        would be the wrong-day lie in a different costume. `rotation_index` is
+        already None when the rotation does not describe the phase, so this only
+        has to check that the phase is the one being looked at.
+        """
+        if pw.phase is None or pw.phase.id != phase.id:
+            return None
+        return pw.rotation_index
 
     def _back_to_list(self):
         self.selected_phase_idx = None
@@ -71,16 +285,33 @@ class PlanView:
         self.page.data["refresh_current"]()
 
     # ─────────────────────────────────────────────────────────
-    def _phase_card(self, phase, idx: int) -> ft.Container:
+    def _phase_card(self, phase, idx: int, current: bool = False) -> ft.Container:
+        header: list[ft.Control] = [
+            ft.Text(
+                f"PHASE {phase.id} · WK {phase.weeks}",
+                size=10,
+                color=phase_color(phase.id),
+                weight=ft.FontWeight.W_900,
+                expand=True,
+            )
+        ]
+        if current:
+            # The list is seven near-identical cards; without this you have to
+            # do the arithmetic yourself to find the one you are standing in.
+            header.append(
+                ft.Container(
+                    content=ft.Text(
+                        "YOU ARE HERE", size=9, weight=ft.FontWeight.W_900, color=C.on_accent
+                    ),
+                    bgcolor=C.accent,
+                    border_radius=Radius.sm,
+                    padding=ft.padding.symmetric(horizontal=8, vertical=3),
+                )
+            )
         return ft.Container(
             content=ft.Column(
                 [
-                    ft.Text(
-                        f"PHASE {phase.id} · WK {phase.weeks}",
-                        size=10,
-                        color=phase_color(phase.id),
-                        weight=ft.FontWeight.W_900,
-                    ),
+                    ft.Row(header, spacing=6, vertical_alignment=ft.CrossAxisAlignment.CENTER),
                     ft.Text(phase.name, size=18, weight=ft.FontWeight.W_900, color=C.text),
                     ft.Text(phase.subtitle, size=11, color=C.text_secondary),
                     ft.Row(
@@ -95,7 +326,7 @@ class PlanView:
                 tight=True,
             ),
             bgcolor=C.bg_surface,
-            border=ft.border.all(1, C.border),
+            border=ft.border.all(2 if current else 1, C.accent if current else C.border),
             border_radius=14,
             padding=14,
             margin=ft.margin.only(bottom=8),
@@ -193,12 +424,321 @@ class PlanView:
         )
         return ft.Row(buttons, spacing=Space.x2)
 
-    def _phase_list(self) -> ft.Control:
+    # ── this week ────────────────────────────────────────────
+    def _day_row(self, idx: int, label: str, is_today: bool = False) -> ft.Control:
+        """One weekday of a week's plan. Shared by the week card and the tab.
+
+        Flat rather than a card of its own: five stacked cards inside a card is
+        a lot of border for five words, and both places that draw these rows
+        already sit inside one.
+        """
+        rest = is_rest_label(label)
+        trailing: ft.Control = (
+            ft.Text("TODAY", size=9, weight=ft.FontWeight.W_900, color=C.accent)
+            if is_today
+            else ft.Container(width=0)
+        )
+        return ft.Container(
+            content=ft.Row(
+                [
+                    ft.Container(
+                        content=ft.Text(
+                            day_name(idx),
+                            size=10,
+                            weight=ft.FontWeight.W_800,
+                            color=C.on_accent if is_today else C.text_secondary,
+                        ),
+                        bgcolor=C.accent if is_today else C.bg_sunken,
+                        border_radius=6,
+                        padding=ft.padding.symmetric(horizontal=8, vertical=4),
+                        width=46,
+                        alignment=ft.alignment.center,
+                    ),
+                    ft.Text(
+                        label,
+                        size=13,
+                        color=C.text_muted if rest else C.text,
+                        weight=ft.FontWeight.W_500 if rest else ft.FontWeight.W_700,
+                        expand=True,
+                    ),
+                    trailing,
+                ],
+                spacing=10,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
+            bgcolor=C.accent_soft if is_today else None,
+            border_radius=8,
+            padding=ft.padding.symmetric(horizontal=6, vertical=5),
+        )
+
+    def _week_card(self, pw: ProgramWeek) -> ft.Control:
+        """The week you are in, at the top of the screen, before you ask.
+
+        This is the whole point of the change: the distribution used to be a tab
+        two taps in, so the answer to "what am I doing this week" lived where
+        nobody looks. Everything it can say is stated here, and what it cannot
+        say is stated too — the four `WeekStatus` values each get their own
+        sentence rather than collapsing into "no data".
+        """
+        if pw.status is WeekStatus.UNKNOWN:
+            return self._no_week_card(pw)
+        if pw.status is WeekStatus.SCHEDULED:
+            return self._scheduled_card(pw)
+        if pw.status is WeekStatus.FINISHED:
+            return self._finished_card(pw)
+
+        phase = pw.phase
+        if phase is None:
+            # ACTIVE with no phase: the week fell in a gap between two
+            # hand-written `Phase.weeks` ranges. Rare, and a routine-editor
+            # mistake rather than a program state — say which week it is and
+            # leave it at that.
+            return card(
+                ft.Text(week_headline(pw), size=10, weight=ft.FontWeight.W_900, color=C.accent),
+                ft.Text(
+                    "No phase covers this week", size=16, weight=ft.FontWeight.W_900, color=C.text
+                ),
+                muted_text("The phases of this routine leave a gap here. Check their week ranges."),
+                border_color=C.warning,
+                padding=12,
+            )
+
+        today_idx = (pw.today or date.today()).weekday()
+        body: list[ft.Control]
+        if pw.rotation is not None:
+            body = [
+                self._day_row(i, label, is_today=(i == today_idx))
+                for i, label in enumerate(pw.rotation)
+            ]
+        else:
+            # A known week whose phase does not pin sessions to weekdays. Naming
+            # the sessions is still worth something; dealing them out Mon-to-Fri
+            # is not — nothing in the routine prescribes that order.
+            days = active_routine().days_for_phase(phase.id)
+            body = [
+                muted_text("This phase does not fix sessions to weekdays. It prescribes:"),
+                ft.Container(height=Space.x1),
+                ft.Row([chip(d.name) for d in days], wrap=True, spacing=6, run_spacing=6),
+            ]
+
+        footer: list[ft.Control] = []
+        caveat = start_caveat(pw)
+        if caveat:
+            footer += [ft.Container(height=Space.x1), muted_text(caveat)]
+        if pw.stale:
+            footer += [ft.Container(height=Space.x1), self._stale_notice(pw)]
+
+        return card(
+            ft.Row(
+                [
+                    ft.Text(
+                        week_headline(pw),
+                        size=10,
+                        weight=ft.FontWeight.W_900,
+                        color=C.accent,
+                        expand=True,
+                    ),
+                    ft.Text(
+                        f"PHASE {phase.id}",
+                        size=10,
+                        weight=ft.FontWeight.W_900,
+                        color=phase_color(phase.id),
+                    ),
+                ],
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
+            ft.Text(phase.name, size=18, weight=ft.FontWeight.W_900, color=C.text),
+            ft.Container(height=Space.x1),
+            *body,
+            *footer,
+            border_color=C.accent,
+            padding=12,
+            on_click=lambda _: self._open_current_phase(pw),
+            ink=True,
+            tooltip="Open this phase",
+        )
+
+    def _stale_notice(self, pw: ProgramWeek) -> ft.Control:
+        """Weeks keep counting while you are away; say so, and offer the reset.
+
+        program_week deliberately never re-times the program by itself (its
+        decision 3): the number is calendar arithmetic and bending it silently
+        would make the same day report two different weeks. So the honesty is
+        here — the gap is named, and restarting is one tap and Alex's choice.
+        """
+        weeks = pw.weeks_idle
+        return ft.Column(
+            [
+                ft.Text(
+                    f"Nothing logged for {weeks} weeks. The week number keeps counting "
+                    "with the calendar, so it is ahead of your training.",
+                    size=11,
+                    color=C.warning,
+                ),
+                ft.Container(height=Space.x1),
+                ghost_button(
+                    "Restart the program this week",
+                    on_click=lambda _: self._restart_program(),
+                    expand=True,
+                ),
+            ],
+            spacing=0,
+            tight=True,
+        )
+
+    def _restart_program(self):
+        """Re-date the program to this week's Monday. Alex's call, never ours."""
+        set_program_start(self.store, restart_date())
+        self._week = None
+        self.page.data["refresh_current"]()
+
+    def _set_start_date(self, initial: date | None = None):
+        open_start_date_dialog(self.page, self.store, on_saved=self._reload, initial=initial)
+
+    def _reload(self):
+        # The dialog changed the stored date, so the held week is wrong until
+        # `on_show()` runs again. Dropping it makes the refresh recompute even
+        # if a future refresh path stops calling `on_show()`.
+        self._week = None
+        self.page.data["refresh_current"]()
+
+    def _no_week_card(self, pw: ProgramWeek) -> ft.Control:
+        """No usable start date: say so, and offer every way out there is."""
+        stale_date = pw.start.day if pw.start.source is StartSource.OTHER_ROUTINE else None
+        body = (
+            "A start date is stored, but it was saved for another routine, so it "
+            "cannot say where you are in this one. Switching routines starts a new "
+            "program."
+            if stale_date
+            else "Nothing here records when you started this routine, so the app "
+            "cannot tell which week or phase you are in — and a guessed week would "
+            "put you on the wrong session. Set the date, or just train: the first "
+            "session you log dates the routine."
+        )
+        actions: list[ft.Control] = [
+            ghost_button(
+                "Set start date",
+                on_click=lambda _, d=stale_date: self._set_start_date(d),
+                expand=True,
+            ),
+            primary_button(
+                "Start training",
+                on_click=lambda _: self.page.data["navigate_to"](VIEW_WORKOUT),
+                expand=True,
+            ),
+        ]
+        extra: list[ft.Control] = []
+        if stale_date:
+            extra = [
+                ft.Container(height=Space.x1),
+                ghost_button(
+                    f"Use {stale_date.isoformat()} here too",
+                    on_click=lambda _, d=stale_date: self._adopt_start(d),
+                    expand=True,
+                ),
+            ]
+        return card(
+            ft.Row(
+                [
+                    ft.Icon(ft.Icons.HELP_OUTLINE, color=C.warning, size=18),
+                    ft.Text(
+                        "Week unknown",
+                        size=15,
+                        weight=ft.FontWeight.W_900,
+                        color=C.text,
+                        expand=True,
+                    ),
+                ],
+                spacing=8,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
+            ft.Text(body, size=11, color=C.text_secondary),
+            ft.Container(height=Space.x1),
+            ft.Row(actions, spacing=Space.x2),
+            *extra,
+            border_color=C.warning,
+            padding=12,
+        )
+
+    def _adopt_start(self, day: date):
+        """Re-save a date stored under another routine, against this one."""
+        set_program_start(self.store, day)
+        self._reload()
+
+    def _scheduled_card(self, pw: ProgramWeek) -> ft.Control:
+        """The start date is in a future week. Not started is not unknown."""
+        day = pw.start.day
+        return card(
+            ft.Text("NOT STARTED YET", size=10, weight=ft.FontWeight.W_900, color=C.accent),
+            ft.Text("Week 1 is ahead", size=18, weight=ft.FontWeight.W_900, color=C.text),
+            ft.Text(
+                f"This routine is set to start on {day.isoformat()}. The week and the "
+                "distribution appear then."
+                if day
+                else "This routine is set to start in a later week.",
+                size=11,
+                color=C.text_secondary,
+            ),
+            ft.Container(height=Space.x1),
+            ghost_button(
+                "Change start date", on_click=lambda _: self._set_start_date(), expand=True
+            ),
+            border_color=C.border_strong,
+            padding=12,
+        )
+
+    def _finished_card(self, pw: ProgramWeek) -> ft.Control:
+        """Past the last week of the routine. A real state, not an error."""
+        return card(
+            ft.Text(week_headline(pw), size=10, weight=ft.FontWeight.W_900, color=C.accent),
+            ft.Text("Routine finished", size=18, weight=ft.FontWeight.W_900, color=C.text),
+            ft.Text(
+                f"The program runs {pw.total_weeks} weeks and this one is past the end. "
+                "Start it again from this week, or pick another routine below.",
+                size=11,
+                color=C.text_secondary,
+            ),
+            ft.Container(height=Space.x1),
+            ft.Row(
+                [
+                    ghost_button(
+                        "Set start date", on_click=lambda _: self._set_start_date(), expand=True
+                    ),
+                    primary_button(
+                        "Start again now", on_click=lambda _: self._restart_program(), expand=True
+                    ),
+                ],
+                spacing=Space.x2,
+            ),
+            border_color=C.warning,
+            padding=12,
+        )
+
+    def _open_current_phase(self, pw: ProgramWeek):
+        """From the week card into the phase it belongs to.
+
+        Onto Distribution when the phase has one: the card is a week, so the
+        screen it opens should be the same week rather than a list of exercises
+        the reader did not ask for.
+        """
         routine = active_routine()
+        phase_id = getattr(pw.phase, "id", None)
+        idx = next((i for i, p in enumerate(routine.phases) if p.id == phase_id), None)
+        if idx is None:
+            return
+        subview = "distribution" if pw.rotation_index is not None else "exercises"
+        self._select_phase(idx, subview=subview)
+
+    # ─────────────────────────────────────────────────────────
+    def _phase_list(self, pw: ProgramWeek) -> ft.Control:
+        routine = active_routine()
+        current_phase_id = getattr(pw.phase, "id", None)
         return ft.Column(
             [
                 ft.Text("Training Plan", size=22, weight=ft.FontWeight.W_900, color=C.text),
-                ft.Container(height=Space.x1),
+                ft.Container(height=Space.x2),
+                self._week_card(pw),
+                ft.Container(height=Space.x4),
                 self._routine_selector(),
                 ft.Container(height=Space.x1),
                 muted_text("Tap a copy icon to fork a built-in routine and make it yours."),
@@ -207,7 +747,10 @@ class PlanView:
                 ft.Container(height=Space.x3),
                 ft.Text(routine.description, size=11, color=C.text_secondary),
                 ft.Container(height=Space.x3),
-                *[self._phase_card(p, i) for i, p in enumerate(routine.phases)],
+                *[
+                    self._phase_card(p, i, current=(p.id == current_phase_id))
+                    for i, p in enumerate(routine.phases)
+                ],
             ],
             scroll=ft.ScrollMode.AUTO,
             horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
@@ -355,14 +898,30 @@ class PlanView:
             ink=True,
         )
 
-    def _distribution(self) -> ft.Control:
+    def _distribution(self, pw: ProgramWeek, phase) -> ft.Control:
+        """The three-week rotation, with this week marked.
+
+        Kept as a tab rather than folded into the week card: the rotation is
+        three different weeks and looking ahead to the next one is a real thing
+        to want. What it lost is the job of *also* being the only place this
+        week was written down — that is the card at the top of the screen now,
+        and this opens on the current row instead of always on the first.
+        """
         rotation = active_routine().week_rotation or []
+        here = self._week_row_for_phase(pw, phase)
         week = rotation[self.dist_week_idx] if rotation else []
+        # Today is only today on the week that is actually running.
+        today_idx = (
+            (pw.today or date.today()).weekday()
+            if here is not None and here == self.dist_week_idx
+            else None
+        )
+
         week_tabs = ft.Row(
             [
                 ft.Container(
                     content=ft.Text(
-                        f"WK {i + 1}",
+                        f"WK {i + 1} · NOW" if i == here else f"WK {i + 1}",
                         size=11,
                         weight=ft.FontWeight.W_800,
                         color=C.accent if i == self.dist_week_idx else C.text_secondary,
@@ -377,50 +936,52 @@ class PlanView:
                 for i in range(len(rotation))
             ],
             spacing=6,
+            wrap=True,
+            run_spacing=6,
         )
-        rows = []
-        for i, w in enumerate(week):
-            rows.append(
+        caption = (
+            f"Week {self.dist_week_idx + 1} of this phase. The same three days rotate "
+            "over five sessions, so each week starts on a different one."
+        )
+        return ft.Column(
+            [
+                week_tabs,
+                ft.Container(height=Space.x2),
+                muted_text(caption),
+                ft.Container(height=Space.x2),
                 card(
-                    ft.Row(
-                        [
-                            ft.Container(
-                                content=ft.Text(
-                                    weekday_label(i),
-                                    size=10,
-                                    weight=ft.FontWeight.W_800,
-                                    color=C.accent,
-                                ),
-                                bgcolor=C.border,
-                                border_radius=6,
-                                padding=ft.padding.symmetric(horizontal=10, vertical=4),
-                            ),
-                            ft.Text(
-                                w, size=13, color=C.text, weight=ft.FontWeight.W_700, expand=True
-                            ),
-                        ],
-                        spacing=10,
-                    ),
+                    *[self._day_row(i, w, is_today=(i == today_idx)) for i, w in enumerate(week)],
                     padding=10,
-                    margin=ft.margin.only(bottom=6),
-                )
-            )
-        return ft.Column([week_tabs, ft.Container(height=10), *rows], spacing=0, tight=True)
+                ),
+            ],
+            spacing=0,
+            tight=True,
+        )
 
-    def _phase_detail(self) -> ft.Control:
+    def _phase_detail(self, pw: ProgramWeek) -> ft.Control:
         idx = self.selected_phase_idx
         assert idx is not None
         routine = active_routine()
         phase = routine.phases[idx]
         days = routine.days_for_phase(phase.id)
 
+        # Was `routine.week_rotation is not None and phase.id in (1, 2, 3)`, an
+        # unexplained literal: right for CambiaTuFísico, meaningless for any
+        # other routine, and silent about why those three ids. Same answer, now
+        # derived — `rotation_applies_to` asks whether the rotation's labels
+        # name day templates this phase actually has, which is true of phases
+        # 1-3 (they share `DAYS_PHASE_1_3`) and of nothing else.
+        rotates = rotation_applies_to(phase, routine)
         tabs_row: list[ft.Control] = [self._tab_button("Exercises", "exercises")]
-        if routine.week_rotation is not None and phase.id in (1, 2, 3):
+        if rotates:
             tabs_row.append(self._tab_button("Distribution", "distribution"))
 
         body: ft.Control
-        if self.subview == "distribution":
-            body = self._distribution()
+        # `rotates` also guards the render: the subview survives a trip back to
+        # the phase list, and a distribution with no tab to leave it by is a
+        # dead end.
+        if self.subview == "distribution" and rotates:
+            body = self._distribution(pw, phase)
         else:
             body = ft.Column([self._day_tile(d) for d in days], spacing=6, tight=True)
 
@@ -454,6 +1015,18 @@ class PlanView:
                                 padding=ft.padding.symmetric(horizontal=8, vertical=3),
                             ),
                             ft.Text(f"Wk {phase.weeks}", size=11, color=C.text_secondary),
+                            *(
+                                [
+                                    ft.Text(
+                                        f"· {week_headline(pw).lower()}",
+                                        size=11,
+                                        weight=ft.FontWeight.W_800,
+                                        color=C.accent,
+                                    )
+                                ]
+                                if getattr(pw.phase, "id", None) == phase.id
+                                else []
+                            ),
                         ],
                         spacing=8,
                     ),
@@ -483,6 +1056,9 @@ class PlanView:
         )
 
     def build(self) -> ft.Control:
+        # Held, not read: `current_program_week` queries the history, and
+        # `build()` runs on every refresh. See `on_show`.
+        pw = self._program_week()
         if self.selected_phase_idx is None:
-            return self._phase_list()
-        return self._phase_detail()
+            return self._phase_list(pw)
+        return self._phase_detail(pw)

@@ -725,9 +725,6 @@ class WorkoutView:
             self._persist_draft()
             self.page.data["refresh_current"]()
 
-    def _skip(self, _):
-        self._advance()
-
     # ── Rest ──────────────────────────────────────────────────
     def _rest_seconds(self, finished_set: dict | None = None) -> int:
         """Seconds to rest after `finished_set` of the current exercise.
@@ -792,66 +789,162 @@ class WorkoutView:
                 parsed["rir"] = float(draft["rir"])
         return tag_set(parsed, draft.get(TYPE_KEY))
 
-    def _save_next(self, _):
-        if self.ex_idx in self._logged_ex:
-            # Already written to `entrenos` in this session. `save_workout`
-            # INSERTs — there is no upsert — so a second press would fork today
-            # into two rows for the same exercise, which `get_last_sets` and
-            # `detect_new_records` would both read as two separate sessions.
-            self._advance()
-            return
-        rows = self.sets
+    # ── Saving ────────────────────────────────────────────────
+    def _unsaved_exercises(self) -> list[tuple[int, str]]:
+        """Exercises holding work the user stands behind that is not in the database.
+
+        Suggestions are deliberately excluded. An untouched prefill is the
+        app's guess at what he *might* lift, and sweeping it into `entrenos`
+        on the way out would write a weight nobody performed — the exact
+        failure `_seed_sets` was built to avoid. Only rows he typed or claimed
+        count as pending work.
+
+        Used twice: to label the Finish button, and to decide what Finish has
+        to write before it is allowed to close the session.
+        """
+        self._ensure_scope()
+        keys = self._exercise_keys()
+        out: list[tuple[int, str]] = []
+        for idx in sorted(self._sets_by_ex):
+            if idx in self._logged_ex or not (0 <= idx < len(keys)):
+                continue
+            rows = self._sets_by_ex[idx]
+            if any(not self._is_suggested(r) and self._has_content(r) for r in rows):
+                out.append((idx, keys[idx]))
+        return out
+
+    def _save_exercise(self, idx: int, *, announce: bool = True) -> str:
+        """Write one exercise to `entrenos`, and nothing else. Never navigates.
+
+        The index is a parameter, not `self.ex_idx`, because Finish flushes
+        exercises that are not on screen. Returns what happened so the caller
+        can decide what to say:
+
+        - ``"logged"``   already written in this session, nothing done
+        - ``"empty"``    no numbers to write
+        - ``"unconfirmed"`` numbers on screen, but every one still a suggestion
+        - ``"saved"``    written
+
+        Storage errors are **not** swallowed: a save that silently failed and
+        reported success is how a session ends up cleared with nothing in the
+        database. The callers catch and keep the workout open instead.
+        """
+        day = self._current_day()
+        if day is None or not (0 <= idx < len(day.exercises)):
+            return "empty"
+        if idx in self._logged_ex:
+            # `save_workout` INSERTs — there is no upsert — so a second write
+            # would fork today into two rows for the same exercise, which
+            # `get_last_sets` and `detect_new_records` both read as two
+            # separate sessions. Refusing is the honest answer; the button
+            # says "Saved" rather than pretending there is still work to do.
+            return "logged"
+        rows = self._sets_by_ex.get(idx) or []
         valid = [s for s in rows if not self._is_suggested(s) and self._has_content(s)]
-        pending = [s for s in rows if self._is_suggested(s) and self._has_content(s)]
-        if not valid and pending:
+        if not valid:
+            pending = any(self._is_suggested(s) and self._has_content(s) for s in rows)
+            return "unconfirmed" if pending else "empty"
+
+        key = exercise_key(day.exercises[idx])  # canonical EN name, no brackets/star
+        sets_parsed = [self._parse_set(s) for s in valid]
+        entry = WorkoutEntry(
+            date=date.today().isoformat(),
+            exercise=key,
+            muscle_group=day.name,
+            phase=self.phase_id,
+            sets=sets_parsed,
+        )
+        # Read the history *before* writing: a record is only a record against
+        # what came before, and a list that already contains this entry can
+        # never be beaten by it.
+        previous: list[WorkoutEntry] = []
+        with contextlib.suppress(Exception):
+            previous = self.store.get_exercise_history(key, limit=_PR_HISTORY_LIMIT)
+
+        self.store.save_workout(entry)
+        self.completed.append({"exercise": key, "sets": sets_parsed})
+        self._logged_ex.add(idx)
+        # The rows are in the database now, so the copy kept here is only a
+        # record of what was sent. Dropping the suggestion flags stops the
+        # "not confirmed" banner from reappearing on the way back.
+        for row in valid:
+            row.pop(_SUGGESTED_KEY, None)
+
+        if announce:
+            # The sets are already in the database: a missing congratulation
+            # must never cost the user their log, so nothing here may raise.
+            with contextlib.suppress(Exception):
+                self._announce_records(previous, entry)
+        return "saved"
+
+    def _save(self, _):
+        """The Save button. It writes this exercise and stays put.
+
+        Save used to be `Save → Next`, one control doing two jobs, and on the
+        last exercise a third — it ended the session. Splitting them is what
+        Alex asked for: moving on is Next's job and closing the session is
+        Finish's, and neither is a side effect of writing a set down.
+
+        Nothing is lost by not advancing: the rows live in `_sets_by_ex` and
+        in the draft, so an exercise left unsaved is still there at Finish
+        time, which is where `_unsaved_exercises` picks it up.
+        """
+        rows = self.sets  # the property seeds this exercise's rows if needed
+        try:
+            status = self._save_exercise(self.ex_idx)
+        except Exception:
+            self._toast("Could not save — check the connection.", ft.Icons.ERROR_OUTLINE, C.danger)
+            return
+        if status == "unconfirmed":
             # Everything on screen is still a suggestion. Saving nothing while
             # the fields are full of numbers reads as a bug and silently loses
-            # the exercise, so say what is missing instead of advancing.
+            # the exercise, so say what is missing.
             self._toast(
                 "Nothing confirmed yet — tap a set number, or Confirm all.",
                 ft.Icons.INFO_OUTLINE,
                 C.warning,
             )
             return
-        if valid:
-            raw = self._current_exercise_raw()
-            key = exercise_key(raw)  # canonical EN name, no brackets/star
-            day = self._current_day()
-            day_name_raw = day.name if day else ""
-            sets_parsed = [self._parse_set(s) for s in valid]
-            entry = WorkoutEntry(
-                date=date.today().isoformat(),
-                exercise=key,
-                muscle_group=day_name_raw,
-                phase=self.phase_id,
-                sets=sets_parsed,
+        if status == "empty":
+            self._toast(
+                "Nothing to save yet — fill in a set first.",
+                ft.Icons.INFO_OUTLINE,
+                C.warning,
             )
-            # Read the history *before* writing: a record is only a record
-            # against what came before, and a list that already contains this
-            # entry can never be beaten by it.
-            previous: list[WorkoutEntry] = []
-            with contextlib.suppress(Exception):
-                previous = self.store.get_exercise_history(key, limit=_PR_HISTORY_LIMIT)
+            return
+        if status == "logged":
+            # Reached by tapping the "Saved" pill. A dead control that eats the
+            # tap is worse than one that explains itself.
+            self._toast(
+                "Already saved in this session — it cannot be logged twice.",
+                ft.Icons.CHECK_CIRCLE,
+                C.success,
+            )
+            return
+        # Rest between exercises counts too — except after the last one, where
+        # the next thing to happen is Finish.
+        if not self._is_last_exercise():
+            last_done = next((r for r in reversed(rows) if self._has_content(r)), None)
+            self._start_rest(last_done)
+        self._persist_draft()
+        self.page.data["refresh_current"]()
 
-            self.store.save_workout(entry)
-            self.completed.append({"exercise": key, "sets": sets_parsed})
-            self._logged_ex.add(self.ex_idx)
-            # The rows are in the database now, so the copy kept here is only a
-            # record of what was sent. Dropping the suggestion flags stops the
-            # "not confirmed" banner from reappearing on the way back.
-            for row in valid:
-                row.pop(_SUGGESTED_KEY, None)
+    def _flush_unsaved(self) -> tuple[int, bool]:
+        """Write every exercise still holding pending work. Returns (count, ok).
 
-            # The set is already in the database: a missing congratulation must
-            # never cost the user their log, so nothing here may raise.
-            with contextlib.suppress(Exception):
-                self._announce_records(previous, entry)
-
-            # Rest between exercises counts too — but not after the last one,
-            # where `_advance` finishes the session and stops the clock.
-            if not self._is_last_exercise():
-                self._start_rest(sets_parsed[-1])
-        self._advance()
+        `ok` is False the moment a write fails. The caller must then leave the
+        session open: finishing would clear the draft and take everything that
+        did not make it into the database with it — precisely the loss the
+        persistent draft exists to prevent.
+        """
+        saved = 0
+        for idx, _key in self._unsaved_exercises():
+            try:
+                if self._save_exercise(idx, announce=False) == "saved":
+                    saved += 1
+            except Exception:
+                return saved, False
+        return saved, True
 
     def _announce_records(self, history: list, entry: WorkoutEntry):
         """A PR is the reward that keeps people logging. Discreet: one bar."""
@@ -884,20 +977,100 @@ class WorkoutView:
         total = len(day.exercises) if day else 0
         return self.ex_idx + 1 >= total
 
-    def _advance(self):
-        if self._is_last_exercise():
-            self.finished = True
-            self.timer.stop()
-            self._stop_session_timer()
-            # Everything in this session is already in `entrenos`. A draft left
-            # behind would resurrect a finished workout on the next visit to
-            # the Train tab — and offer to log it a second time.
-            self._clear_draft()
-        else:
-            # No blanking here either: the next exercise seeds its own rows the
-            # first time it is shown, and keeps them if we come back.
-            self.ex_idx += 1
-            self._persist_draft()
+    # ── Finishing: on screen from the first exercise ──────────
+    def _ask_finish(self, _):
+        """Confirm before closing the session.
+
+        Finish used to be unreachable until the last exercise, which is what
+        Alex hit: the session ends when he is done, not when the app has
+        walked him through every row of the plan. So it is now on screen from
+        exercise 1 — and that makes it a destructive control one tap away from
+        Save, because it stops the clock and clears the draft.
+
+        Hence the dialog, and hence its most important job: naming the
+        exercises that are typed but not yet written, and writing them. The
+        rest of this view spends a lot of effort never losing a number; an
+        always-visible exit that dropped them would give it all back.
+        """
+        unsaved = self._unsaved_exercises()
+        logged = len(self.completed)
+        dlg = ft.AlertDialog(modal=True)
+
+        def close(_=None):
+            self.page.close(dlg)
+
+        def confirm(_):
+            self.page.close(dlg)
+            self._confirm_finish()
+
+        lines: list[ft.Control] = [
+            ft.Text(
+                f"{logged} exercise{'' if logged == 1 else 's'} logged · "
+                f"{self._format_elapsed(self._session_elapsed_s())}",
+                size=12,
+                color=C.text_secondary,
+            )
+        ]
+        if unsaved:
+            lines.append(ft.Container(height=6))
+            lines.append(
+                ft.Text(
+                    "These have sets you have not saved yet. They will be "
+                    "written to your history now:",
+                    size=12,
+                    color=C.warning,
+                    weight=ft.FontWeight.W_700,
+                )
+            )
+            lines.append(
+                ft.Text(
+                    " · ".join(name for _idx, name in unsaved),
+                    size=12,
+                    color=C.text,
+                )
+            )
+
+        dlg.title = ft.Text(
+            "Finish this session?", size=16, weight=ft.FontWeight.W_900, color=C.text
+        )
+        dlg.content = ft.Column(lines, spacing=2, tight=True)
+        dlg.actions = [
+            ghost_button("Keep training", on_click=close),
+            primary_button("Save & finish" if unsaved else "Finish", on_click=confirm),
+        ]
+        dlg.actions_alignment = ft.MainAxisAlignment.END
+        dlg.bgcolor = C.bg_surface
+        self.page.open(dlg)
+
+    def _confirm_finish(self):
+        saved, ok = self._flush_unsaved()
+        if not ok:
+            # Some of it did not make it. Closing now would clear the draft and
+            # lose the rest, so the session stays exactly where it is and the
+            # user can try Finish again.
+            self._toast(
+                "Could not save everything — the session stays open.",
+                ft.Icons.ERROR_OUTLINE,
+                C.danger,
+            )
+            self.page.data["refresh_current"]()
+            return
+        if saved:
+            self._toast(
+                f"Saved {saved} more exercise{'' if saved == 1 else 's'}.",
+                ft.Icons.CHECK_CIRCLE,
+                C.success,
+            )
+        self._finish_session()
+
+    def _finish_session(self):
+        self.finished = True
+        self.timer.stop()
+        self._stop_session_timer()
+        # Everything in this session is already in `entrenos`. A draft left
+        # behind would resurrect a finished workout on the next visit to the
+        # Train tab — and offer to log it a second time.
+        self._clear_draft()
         self.page.data["refresh_current"]()
 
     def _finish(self, _):
@@ -1200,21 +1373,37 @@ class WorkoutView:
             )
         duration_txt = self._format_elapsed(self._session_elapsed_s())
 
+        # Finish is reachable from the first exercise now, so a session can end
+        # with nothing written — a wrong day picked, a warm-up cut short.
+        # Confetti over an empty log is a lie, and the count read
+        # "1 exercises logged" either way.
+        logged = len(self.completed)
+        if logged:
+            hero = "🎉"
+            title = "Session Complete!"
+            subtitle = f"{logged} exercise{'' if logged == 1 else 's'} logged"
+            subtitle_color = C.accent
+        else:
+            hero = "👋"
+            title = "Session closed"
+            subtitle = "Nothing logged this time"
+            subtitle_color = C.text_muted
+
         return ft.Column(
             [
                 ft.Container(height=20),
-                ft.Text("🎉", size=56, text_align=ft.TextAlign.CENTER),
+                ft.Text(hero, size=56, text_align=ft.TextAlign.CENTER),
                 ft.Text(
-                    "Session Complete!",
+                    title,
                     size=22,
                     weight=ft.FontWeight.W_900,
                     color=C.text,
                     text_align=ft.TextAlign.CENTER,
                 ),
                 ft.Text(
-                    f"{len(self.completed)} exercises logged",
+                    subtitle,
                     size=13,
-                    color=C.accent,
+                    color=subtitle_color,
                     weight=ft.FontWeight.W_700,
                     text_align=ft.TextAlign.CENTER,
                 ),
@@ -1246,6 +1435,26 @@ class WorkoutView:
         )
 
     # ── Render: active exercise ───────────────────────────────
+    def _step_button(self, icon: str, tooltip: str, on_click, *, enabled: bool) -> ft.Control:
+        """A square arrow flanking Save. Fixed width, so Save keeps the rest.
+
+        Disabled means **no handler at all**, not a greyed one: a Flet
+        `Container` with `ink=True` ripples under the finger whether or not
+        anything happens, and a ripple that does nothing reads as a tap that
+        was missed rather than one that was refused.
+        """
+        return ft.Container(
+            content=ft.Icon(icon, size=22, color=C.accent if enabled else C.text_muted),
+            width=52,
+            height=48,
+            border=ft.border.all(1, C.border_strong if enabled else C.border),
+            border_radius=Radius.md,
+            alignment=ft.alignment.center,
+            tooltip=tooltip if enabled else None,
+            on_click=on_click if enabled else None,
+            ink=enabled,
+        )
+
     def _set_row(self, i: int, s: dict, last_ref: dict | None) -> ft.Control:
         placeholder_w = _num_text(last_ref.get("weight")) if last_ref else "kg"
         placeholder_r = _num_text(last_ref.get("reps")) if last_ref else "reps"
@@ -1625,19 +1834,119 @@ class WorkoutView:
             drag_interval=100,
         )
 
+        # ── Actions ──
+        # Three jobs, three controls, and the frequent one gets the width.
+        #
+        #   [ ‹ ] [        Save        ] [ › ]
+        #            [ Finish session ]
+        #
+        # What was here before was `[ Skip ] [ Save → Next / Save → Finish ]`:
+        # two buttons for four different actions, and no way to end the session
+        # before the last exercise. Save now only saves; the arrows only move;
+        # Finish only finishes and is on screen the whole time.
+        #
+        # "Skip" is gone rather than kept as a third button, because with Save
+        # no longer advancing it *is* Next — `_skip` was `_advance()`, i.e.
+        # "move on without writing anything", which is exactly what the right
+        # arrow does. Two buttons for one action is how you press the wrong one.
+        # It also keeps the swipe gesture (`_go_next_exercise`) from being the
+        # only affordance for stepping backwards.
         if already_logged:
-            # Nothing left to write for this exercise, and `_save_next` would
-            # refuse anyway. Saying "Next" is honest; saying "Save" twice is
-            # how you end up with two rows for one exercise on one day.
-            save_label = "Next" if self.ex_idx + 1 < total else "Finish"
+            # `_save_exercise` refuses a second write — `save_workout` INSERTs —
+            # so this reads as state, not as an offer. It stays tappable so the
+            # tap gets an explanation instead of being swallowed.
+            save_slot: ft.Control = ft.Container(
+                content=ft.Row(
+                    [
+                        ft.Icon(ft.Icons.CHECK_CIRCLE, size=16, color=C.success),
+                        ft.Text("Saved", size=14, weight=ft.FontWeight.W_800, color=C.success),
+                    ],
+                    spacing=6,
+                    tight=True,
+                    alignment=ft.MainAxisAlignment.CENTER,
+                ),
+                border=ft.border.all(1, C.success),
+                border_radius=Radius.lg,
+                height=48,
+                alignment=ft.alignment.center,
+                expand=True,
+                on_click=self._save,
+                ink=True,
+            )
         else:
-            save_label = "Save → Next" if self.ex_idx + 1 < total else "Save → Finish"
+            save_slot = primary_button(
+                "Save",
+                icon=ft.Icons.CHECK_ROUNDED,
+                on_click=self._save,
+                expand=True,
+                height=48,
+            )
+
+        unsaved = self._unsaved_exercises()
+        day_complete = total > 0 and len(self._logged_ex) >= total
+        if unsaved:
+            # The count is the point Alex was making — "con ello ya nos
+            # daríamos cuenta". What has not been written is visible before he
+            # commits to leaving, not discovered afterwards in History.
+            finish_tint = C.warning
+            finish_label = f"Finish session · {len(unsaved)} unsaved"
+        elif day_complete:
+            # Save is spent and both arrows are dead: Finish is the only live
+            # control on the screen, so it stops being the quiet one.
+            finish_tint = C.accent
+            finish_label = "Finish session"
+        else:
+            finish_tint = C.text_secondary
+            finish_label = "Finish session"
+
         action_row = ft.Row(
             [
-                ghost_button("Skip", on_click=self._skip, expand=True),
-                primary_button(save_label, on_click=self._save_next, expand=True),
+                self._step_button(
+                    ft.Icons.CHEVRON_LEFT,
+                    "Previous exercise",
+                    lambda _: self._go_prev_exercise(),
+                    enabled=self.ex_idx > 0,
+                ),
+                save_slot,
+                self._step_button(
+                    ft.Icons.CHEVRON_RIGHT,
+                    "Next exercise",
+                    lambda _: self._go_next_exercise(),
+                    enabled=self.ex_idx + 1 < total,
+                ),
             ],
             spacing=8,
+        )
+        # Its own row, centred and narrower than Save: it ends the session, so
+        # it must be findable at a glance and awkward to hit by accident. The
+        # confirmation in `_ask_finish` is the real guard; this is the first one.
+        finish_row = ft.Row(
+            [
+                ft.Container(
+                    content=ft.Row(
+                        [
+                            ft.Icon(ft.Icons.FLAG_ROUNDED, size=15, color=finish_tint),
+                            ft.Text(
+                                finish_label,
+                                size=12,
+                                weight=ft.FontWeight.W_700,
+                                color=finish_tint,
+                            ),
+                        ],
+                        spacing=6,
+                        tight=True,
+                        alignment=ft.MainAxisAlignment.CENTER,
+                    ),
+                    border=ft.border.all(1, finish_tint),
+                    border_radius=Radius.md,
+                    padding=ft.padding.symmetric(horizontal=18, vertical=10),
+                    alignment=ft.alignment.center,
+                    tooltip="End the session — anything unsaved is written first",
+                    on_click=self._ask_finish,
+                    ink=True,
+                )
+            ],
+            alignment=ft.MainAxisAlignment.CENTER,
         )
 
         session_label = ft.Text(
@@ -1694,6 +2003,8 @@ class WorkoutView:
                 swipeable_card,
                 ft.Container(height=12),
                 action_row,
+                ft.Container(height=8),
+                finish_row,
             ],
             scroll=ft.ScrollMode.AUTO,
             horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
