@@ -55,10 +55,27 @@ sección, no una edición del pasado.
   verificados por tests. Ninguna vista escribe ya un color.
 - La app escucha en **127.0.0.1** por defecto (`IRONFLET_HOST`, `IRONFLET_PORT`).
 - Splash a `#F4F6F8`, acorde al tema claro.
-- 8 rutinas (antes 7) y 87 nombres de ejercicio con imagen y ficha.
+- De 7 rutinas a **4**: entra Recomp PPL+UL y salen las cuatro de mujer
+  (ver *Retirado*). 87 nombres de ejercicio con imagen y ficha.
 - De 88 a **340 tests**.
 
 ### Retirado
+- **Las cuatro rutinas de mujer** (`women-fitness`, `women-home`,
+  `women-strength`, `women-volume`) **y la guía "Women Fitness"**. IronFlet
+  nació como tracker genérico, pero tiene un solo usuario y es Alex: mantener
+  ocho rutinas de las que nunca se abren cuatro sólo alarga la lista de la
+  pestaña *Plan* y da cuatro sitios más donde una rutina puede quedarse
+  desactualizada. La app pasa a ser suya. Quedan CambiaTuFísico, Upper/Lower,
+  Push/Pull/Legs y Recomp PPL+UL, que es la que sigue de verdad y la que lee
+  el entrenador de Telegram.
+  - El contrato de `exercise_key()` se estrecha en consecuencia: de 282
+    cadenas / 104 claves a **219 cadenas / 100 claves**. Los 28 ejercicios que
+    escribe el bot siguen existiendo en las cuatro rutinas que quedan, así que
+    el historial compartido no se parte.
+  - Sólo cuatro ejercicios dejan de estar prescritos por rutina alguna
+    (`HIIT Intervals`, `Hyperextensions`, `Leg Raises`, `Triceps Kickback`) y
+    los cuatro siguen en `EXERCISE_CATALOG`: se pueden buscar en *Ejercicios*
+    y meter en una rutina propia desde el editor. No se pierde nada.
 - `README.en.md` y `README.es.md`: eran el par bilingüe de un selector de
   idioma que ya no existe. `README.md` (castellano, para el dueño del sistema)
   y `CLAUDE.md` (técnico) los sustituyen. Siguen en el historial de git.

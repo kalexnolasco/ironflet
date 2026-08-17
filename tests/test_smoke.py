@@ -53,8 +53,15 @@ def store():
     from storage import Base
 
     almacen = Storage(url)
-    Base.metadata.drop_all(almacen._engine)
     Base.metadata.create_all(almacen._engine)
+    # Vaciar filas, NO `drop_all`. La base de test se comparte, y tirar las
+    # tablas se las quita a cualquier otro pytest que esté a media consulta:
+    # revienta con UndefinedTable en ficheros que no tienen nada que ver con
+    # el cambio que se está probando. Costó cinco tiradas rojas distintas
+    # localizarlo. En orden inverso de dependencias, para respetar las FK.
+    with almacen._engine.begin() as con:
+        for tabla in reversed(Base.metadata.sorted_tables):
+            con.execute(tabla.delete())
     return almacen
 
 

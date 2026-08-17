@@ -145,17 +145,18 @@ None of them import Flet or open a database on import: plain data in, plain data
 
 **`set_types.py`** — `SetType` (`warmup` / `normal` / `drop` / `failure`), stored under the optional `"type"` key, plus automatic rest. `parse_set_type`, `set_type_of`, `counts_as_work`, `working_sets`, `warmup_sets`, `count_by_type`, `tag_set`, `label_for`, `next_set_type`; rest via `parse_prescribed_rest`, `rest_seconds`, `rest_seconds_for_phase`, `format_rest`, `is_compound`. Two rules: **absent `"type"` means normal** (every pre-existing row, and everything the bot writes, has no type and is real work), and **only warm-ups are discounted** — a drop set and a set to failure are work; the label says *how*, not *whether*. Rest defaults (`REST_COMPOUND_S = 180`, `REST_ISOLATION_S = 90`) must match `../agente/entrenador/sesion_viva.py::descanso_de`; `tests/test_set_types.py` loads the coach's constants and compares, so a divergence fails a test instead of showing Alex two different rests.
 
-**`routine_builder.py`** — user-created routines in the database, so Alex can write one instead of only reading `data.py`'s eight constants. `new_draft`, `draft_from_builtin`, `load_draft`, `save_draft`, `delete_routine`, `duplicate_builtin` / `duplicate_user_routine` / `duplicate_routine`, `list_user_drafts`, `list_user_routines`, `sync_user_routines`, plus `parse_exercise` / `format_exercise` / `canonical_name`. The design point: `_materialize()` does **not** wrap rows in a lookalike — it builds real `data.Routine` / `data.Phase` / `data.TrainingDay` dataclasses, so a stored routine *is* a `Routine` and no view can tell the difference. `sync_user_routines()` splices them into `data.ROUTINES` by **slice assignment**, not rebinding, because `views/plan.py` does `from data import ROUTINES` and holds a reference to that list object. Stored routines get ids namespaced `user:<pk>` (`is_user_routine`, `routine_pk`).
+**`routine_builder.py`** — user-created routines in the database, so Alex can write one instead of only reading `data.py`'s four constants. `new_draft`, `draft_from_builtin`, `load_draft`, `save_draft`, `delete_routine`, `duplicate_builtin` / `duplicate_user_routine` / `duplicate_routine`, `list_user_drafts`, `list_user_routines`, `sync_user_routines`, plus `parse_exercise` / `format_exercise` / `canonical_name`. The design point: `_materialize()` does **not** wrap rows in a lookalike — it builds real `data.Routine` / `data.Phase` / `data.TrainingDay` dataclasses, so a stored routine *is* a `Routine` and no view can tell the difference. `sync_user_routines()` splices them into `data.ROUTINES` by **slice assignment**, not rebinding, because `views/plan.py` does `from data import ROUTINES` and holds a reference to that list object. Stored routines get ids namespaced `user:<pk>` (`is_user_routine`, `routine_pk`).
 
 ### Routines & static program data
 
-`data.py` exposes `ROUTINES: list[Routine]` — each `Routine` bundles its own `phases`, `days_by_phase` and (optionally) `week_rotation`. The active routine is a module-level global set via `set_active_routine(rid)`; views call `active_routine()`. Eight are shipped as constants, and `sync_user_routines()` appends any stored ones:
+`data.py` exposes `ROUTINES: list[Routine]` — each `Routine` bundles its own `phases`, `days_by_phase` and (optionally) `week_rotation`. The active routine is a module-level global set via `set_active_routine(rid)`; views call `active_routine()`. Four are shipped as constants, and `sync_user_routines()` appends any stored ones:
 
 - `"cambiatufisico"` — 7-phase/24-week periodized (default). The only one with `week_rotation`.
 - `"upper-lower"` — 4-day split, 2 phases, 12 weeks.
 - `"push-pull-legs"` — 6-day split, 2 phases, 12 weeks.
 - `"recomp-ppl-ul"` — 5-day PPL + Upper/Lower, 3 phases, 6 weeks. Lean bulk; the routine the Telegram coach follows.
-- `"women-fitness"`, `"women-home"`, `"women-strength"`, `"women-volume"`.
+
+There were eight until 0.2.0, when the four `women-*` routines went: this is a single-user app and Alex is the user. That is what moved the key counts below. Only four exercises stopped being prescribed by any routine — `HIIT Intervals`, `Hyperextensions`, `Leg Raises` and `Triceps Kickback` — and all four are still in `EXERCISE_CATALOG`, so Browse and the routine editor still offer them.
 
 Exercise strings in `days_by_phase` can carry trailing `[scheme]` brackets (`"Squat [5×12,10,8,8,8]"`) and tag brackets like `[comp]` or `[triple drop]`, plus a trailing `*`. `exercises.exercise_key()` strips all of it to produce the DB key. Plan's "Distribution" tab renders only when the active routine has a `week_rotation` **and** the selected phase id is in `(1, 2, 3)`.
 
@@ -167,12 +168,12 @@ When adding a routine: append to `ROUTINES`, keep exercise names spelled exactly
 
 Why it matters:
 
-- **282 routine strings across the eight routines collapse into exactly 104 keys.** That collapse *is* the progression: `Squat [4×8-10]` in phase 2 and `Squat [5×5]` in phase 6 are the same exercise and must aggregate into one history.
+- **219 distinct routine strings across the four routines collapse into exactly 100 keys.** That collapse *is* the progression: `Squat [4×8-10]` in phase 2 and `Squat [5×5]` in phase 6 are the same exercise and must aggregate into one history.
 - **The Telegram coach writes the same column.** Its 28 exercises in `../agente/entrenador/entrenos.py` (`EJERCICIOS`, via `a_canonico()`) all resolve to keys this function produces.
 
 If the normalisation drifts, **nothing raises**. Rows simply stop matching: the app writes one key, the bot another, and the history the whole plan depends on quietly splits in two.
 
-`tests/test_exercise_key.py` freezes it — `CADENAS_ESPERADAS = 282`, `CLAVES_ESPERADAS = 104`, idempotence, no leftover brackets or `*`, and a cross-repo check that every bot exercise exists in the app's routines (reading the bot's file with `ast`, never importing it, so production `.env` credentials stay out of the pytest process). Treat a failure there as a data-integrity incident, not a formatting nit.
+`tests/test_exercise_key.py` freezes it — `CADENAS_ESPERADAS = 219`, `CLAVES_ESPERADAS = 100`, idempotence, no leftover brackets or `*`, and a cross-repo check that every bot exercise exists in the app's routines (reading the bot's file with `ast`, never importing it, so production `.env` credentials stay out of the pytest process). Treat a failure there as a data-integrity incident, not a formatting nit.
 
 ### Theme
 
@@ -192,7 +193,7 @@ If the normalisation drifts, **nothing raises**. Rows simply stop matching: the 
 - `components/timer.py` — `RestTimer` uses `page.run_task` with a `_tick_id` generation counter to cancel stale loops when restarted (no threads).
 - `components/charts.py` — `bar_chart` composed purely from `ft.Container` heights; deliberately avoids external plotting deps.
 - `health.py` — age, BMI, BMR, TDEE, protein target. All inputs optional; returns `None` on missing/invalid input.
-- `guides.py` — in-app reference tips (training, nutrition, women-fitness), rendered by `views/guide_dialog.py`.
+- `guides.py` — in-app reference tips (training, nutrition), rendered by `views/guide_dialog.py`. `views/home.py` builds one card per entry, so adding or dropping a guide needs no layout change.
 - `exercise_details.py` — per-exercise metadata; `analytics.resolve_muscles()` reads it to attribute sets to muscle groups.
 
 ### Exercise images

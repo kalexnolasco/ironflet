@@ -7,9 +7,10 @@
 ![Acceso](https://img.shields.io/badge/127.0.0.1%3A8550-solo%20este%20PC-lightgrey?style=for-the-badge)
 ![Flet](https://img.shields.io/badge/Flet-0.28.3-7F52FF?style=for-the-badge)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-17-4169E1?style=for-the-badge&logo=postgresql&logoColor=white)
-![Tests](https://img.shields.io/badge/tests-340-2f9e44?style=for-the-badge)
+![Android](https://img.shields.io/badge/APK-73%20MB%20·%20SQLite-3DDC84?style=for-the-badge&logo=android&logoColor=white)
+![Tests](https://img.shields.io/badge/tests-538-2f9e44?style=for-the-badge)
 
-**Donde apuntas lo que levantas y lo que comes. La misma base de datos que usa el entrenador de Telegram: lo que escribes aquí lo ve él al instante, y al revés.**
+**Donde apuntas lo que levantas y lo que comes. En el PC comparte base con el entrenador de Telegram: lo que escribes aquí lo ve él al instante, y al revés. Y ahora también se compila como APK, con su propia base en el móvil y el PC apagado.**
 
 </div>
 
@@ -108,7 +109,122 @@ Si no carga, mira primero si el servicio está vivo (más abajo, "Arrancar, para
 
 ### Abrirla desde el móvil
 
-**Hoy no se puede, y es a propósito.** La app escucha solo en `127.0.0.1`, o sea, solo acepta conexiones desde este mismo ordenador. Desde el móvil no llegas ni estando en tu wifi.
+Hay **dos caminos distintos**, y conviene no confundirlos porque los datos no van al mismo sitio:
+
+| | **La APK** (app instalada) | **El navegador del móvil** (modo web) |
+|---|---|---|
+| ¿Necesita el PC encendido? | **No** | Sí, y estar en la misma wifi |
+| ¿Dónde viven los datos? | En el propio móvil, en SQLite | En PostgreSQL del PC |
+| ¿Los ve el bot de Telegram? | **No**, son una isla | Sí, es la misma base |
+| Para qué sirve | Entrenar en el gimnasio sin cobertura | Usarla desde el sofá |
+
+Lo que pediste —una app que funcione con el PC apagado— es **la APK**. Está explicada justo debajo. El modo web por wifi sigue existiendo y se explica después.
+
+---
+
+## 📱 La APK: IronFlet en el móvil, sin PC
+
+### Cómo funciona por dentro
+
+En el móvil no hay PostgreSQL ni lo puede haber, así que la app usa **SQLite**: un único fichero, `ironflet.db`, en el almacenamiento privado de la app. No hay servidor, no hay red, no hay contenedor. Se abre el fichero y ya.
+
+La app decide sola qué base usar, en este orden (**el primero que exista gana**):
+
+1. La URL que se le pase por código.
+2. La variable `DATABASE_URL`.
+3. **SQLite**, si detecta que está corriendo en Android.
+4. PostgreSQL (lo de siempre, en el PC).
+
+Que `DATABASE_URL` mande **por encima** de la detección de Android es deliberado: el servicio `ironflet-web` la trae escrita en su fichero de systemd, así que **este PC nunca se va a pasar a SQLite por accidente** y nunca se va a desconectar en silencio de la base que comparte con el bot.
+
+Android se detecta preguntándole al propio intérprete de Python si fue compilado para Android, no mirando variables de entorno. Eso importa porque hay una variable (`FLET_APP_STORAGE_DATA`) que *parece* la señal buena y **no lo es**: Flet también la exporta en escritorio, así que usarla habría pasado tu PC a un SQLite vacío la primera vez que lanzaras `flet run`, sin ningún error, solo con el historial en blanco.
+
+### Cómo pasas los datos de un lado a otro
+
+**No hay sincronización.** El móvil y el PC son dos bases separadas y nadie las mezcla solo. Lo que hay es un **backup en un fichero JSON** que exporta y se importa a mano. Ese fichero lleva las **12 tablas**: entrenos, pesos, perfil, preferencias, las cuatro de comida y las cuatro de rutinas.
+
+El viaje típico, del PC al móvil nuevo:
+
+1. En el PC, exportar → sale un `.json`.
+2. Pasarlo al móvil como quieras (cable, Drive, Telegram, correo).
+3. En el móvil, importar y confirmar.
+
+Dos cosas que conviene tener claras antes de tocar el botón:
+
+- **Importar con "borrar" puesto vacía las 12 tablas** y deja solo lo del fichero. En un móvil recién estrenado da igual (no hay nada que perder), pero en uno con datos sí.
+- **Las imágenes de los ejercicios no viajan en el backup.** Son ~9 MB que se descargan aparte, desde la propia app, cuando tengas wifi. Es a propósito: meterlas en la APK la engordaría para algo que se baja una vez.
+
+> **⚠️ Ojo, esto todavía no está terminado.** El motor de backup de 12 tablas (`backup.py`) está hecho y probado, y la pantalla que lo usa (`views/data_view.py`) también. Pero **esa pantalla aún no está enganchada al menú**: `main.py` no la registra. Mientras tanto, el único backup al que se llega desde la app es el viejo de **Settings → Backup**, que exporta **4 tablas de 12** y **se deja la comida y tus rutinas sin avisar de nada**. Hasta que se enganche, para una copia completa usa `pg_dump` (más abajo).
+
+### Qué necesitas para compilar la APK
+
+**Buenas noticias: en este PC ya está todo, y la APK ya se ha construido de verdad.** No hace falta que instales nada.
+
+`flet build apk` **se instala solo lo que le falta** la primera vez. En este ordenador se descargó y dejó puesto:
+
+| Qué | Dónde quedó | Cuánto ocupa (medido) |
+|---|---|---|
+| Flutter 3.29.2 | `~/flutter/3.29.2` | 1,6 GB |
+| JDK 17.0.13 | `~/java/17.0.13+11` | 316 MB |
+| Android SDK (platform-tools, platforms 31/33/34/35, build-tools 34, NDK 25, CMake) | `~/Android/sdk` | 2,7 GB |
+| Paquetes de Dart/Flutter | `~/.pub-cache` | 704 MB |
+| Caché de Gradle | `~/.gradle` | 3,9 GB |
+
+**Unos 9,1 GB en total**, todo fuera del repositorio. Si algún día necesitas el disco, se puede borrar entero y se vuelve a descargar solo en la siguiente compilación.
+
+No hace falta Android Studio. `flutter doctor` se queja de que falta el *Linux toolchain* (clang, cmake, ninja, pkg-config), pero **eso solo afecta a compilar para escritorio Linux**, no a la APK. La APK se construyó con esa queja presente.
+
+### El comando
+
+```bash
+cd /home/wdna/Documents/Personal/plan-recomposicion/ironflet && .venv/bin/flet build apk
+```
+
+Si ese comando falla con *"no se ha encontrado el fichero requerido"*, no es cosa de Flet: es que los lanzadores del entorno virtual siguen apuntando a la ruta antigua del proyecto (ver "Cuando algo va mal"). Rodeo mientras tanto:
+
+```bash
+cd /home/wdna/Documents/Personal/plan-recomposicion/ironflet && .venv/bin/python -c "from flet.cli import main; main()" build apk
+```
+
+Tarda unos **7 minutos** la primera vez (se baja NDK y CMake) y ~2 las siguientes. La APK sale en:
+
+```
+build/apk/app-release.apk
+```
+
+Pesa **73 MB**. Se instala copiándola al móvil y abriéndola; Android pedirá permiso para instalar de orígenes desconocidos porque no viene de la Play Store.
+
+### Dos cosas que hubo que arreglar para que la APK saliera
+
+Merece la pena que estén escritas, porque si alguien las deshace la APK deja de compilar y el error no dice por qué.
+
+**1. `psycopg` y `flet[all]` ya no son dependencias fijas.** `flet build apk` lee la lista de dependencias del `pyproject.toml` y **se las instala al móvil**. Ahí había tres cosas que en Android no existen:
+
+- `psycopg[binary]` — el driver de PostgreSQL, que es un binario compilado. No hay versión para Android.
+- `flet[all]` → arrastra `watchdog`, que tampoco tiene versión para Android. **Este era el que rompía la compilación**, con el mensaje `No matching distribution found for watchdog`.
+- `flet[all]` → arrastra además `uvicorn[standard]` (`uvloop`, `httptools`, `watchfiles`), tres binarios más del servidor web que el móvil no usa.
+
+Ahora la lista fija es solo `flet` y `sqlalchemy`, y lo demás vive en dos extras (`web` y `postgres`) que el PC sí instala. Quitar `psycopg` del móvil es seguro porque SQLAlchemy solo carga el driver **cuando la URL lo pide**, y en el móvil la URL es de SQLite. El `sqlite3` va dentro del propio Python, así que el móvil no necesita driver ninguno.
+
+**2. La APK se estaba llevando el entorno virtual entero.** Flet empaqueta *toda la carpeta del proyecto*, y lo único que excluye por su cuenta es `build/`. Resultado: la primera APK que salió pesaba **237 MB**, de los cuales **154 MB eran el `.venv` de este PC** — con `psycopg`, `libpq`, `watchdog`, `uvloop` y un montón de binarios `x86_64` que un móvil ARM ni siquiera puede cargar. También se colaba el `.git` entero.
+
+Se arregló con una lista de exclusiones en `pyproject.toml`. El resultado, medido:
+
+| | Antes | Ahora |
+|---|---|---|
+| APK | 237 MB | **73 MB** |
+| Código Python empaquetado | 174,6 MB | **0,8 MB** |
+| Ficheros dentro | 10.252 | **47** |
+
+Esa lista compara **rutas exactas, no comodines**. Por eso están escritos uno a uno los `__pycache__` de cada carpeta: poner solo `__pycache__` excluiría el de la raíz y colaría los otros cuatro. **Si añades una carpeta de código nueva, hay que añadir su `__pycache__` a mano.**
+
+Lo que queda de los 73 MB es Flutter y el Python embebido para **tres arquitecturas** (`arm64-v8a`, `armeabi-v7a`, `x86_64`). Si algún día molesta el tamaño, `flet build apk --split-per-abi` saca una APK por arquitectura y la de tu móvil bajaría a la mitad larga.
+
+---
+
+### Abrirla desde el móvil por wifi (modo web, con el PC encendido)
+
+Esto es lo otro: usar la app del PC desde el navegador del móvil. **Por defecto no se puede, y es a propósito.** La app escucha solo en `127.0.0.1`, o sea, solo acepta conexiones desde este mismo ordenador. Desde el móvil no llegas ni estando en tu wifi.
 
 Se puede cambiar, pero conviene que sepas exactamente qué estás aceptando.
 
@@ -167,7 +283,9 @@ Hay **tres pantallas más** que no tienen pestaña propia y se abren desde dentr
 - **Settings** (perfil, peso, copias de seguridad, borrar datos) → el icono del engranaje ⚙️ arriba a la derecha en Home.
 - **Routines** (el editor de rutinas) → desde Plan, editando o duplicando una rutina.
 
-Vienen **8 rutinas ya hechas**: CambiaTuFísico (7 fases, la de por defecto), Upper/Lower, Push/Pull/Legs, Recomp PPL+UL (la que sigue el entrenador de Telegram) y cuatro de Women. Hay **68 ejercicios con ficha** explicada y **86 con imagen**.
+Vienen **4 rutinas ya hechas**: CambiaTuFísico (7 fases, la de por defecto), Upper/Lower, Push/Pull/Legs y Recomp PPL+UL (la que sigue el entrenador de Telegram). Hay **68 ejercicios con ficha** explicada y **86 con imagen**.
+
+> Antes eran ocho: las cuatro `Women` se quitaron en la 0.2.0 porque esta app la usas solo tú. Los cuatro ejercicios que ya no prescribe ninguna rutina (`HIIT Intervals`, `Hyperextensions`, `Leg Raises` y `Triceps Kickback`) siguen en el catálogo, así que los tienes disponibles en Browse y en el editor de rutinas.
 
 ---
 
@@ -189,7 +307,7 @@ El resumen de lo que llevas hoy también aparece en Home, y el bot de Telegram l
 
 ### 🏗 Editor de rutinas (pantalla "Routines")
 
-Ya no estás atado a las 8 rutinas que vienen de fábrica. Puedes:
+Ya no estás atado a las 4 rutinas que vienen de fábrica. Puedes:
 
 - Crear una rutina desde cero.
 - **Duplicar una de las de fábrica** y tocarla a tu gusto (la original no se toca nunca).
@@ -413,7 +531,22 @@ systemctl --user start ironflet-web entrenador-bot entrenador-panel
 
 ### La copia desde dentro de la app
 
-En **Settings → Backup** hay un "Export backup" que saca un JSON con perfil, preferencias, entrenos y pesos. Sirve para llevarte el historial de entrenamiento, pero **no incluye la comida, ni las rutinas que te hayas hecho, ni nada del bot**. Para tenerlo todo, usa `pg_dump`.
+Aquí hay que distinguir **lo que ya funciona** de **lo que todavía no se puede tocar**, porque ahora mismo conviven dos backups distintos y el que está a la vista es el malo.
+
+**Lo que ves hoy en Settings → Backup** saca un JSON con perfil, preferencias, entrenos y pesos: **4 tablas de 12**. Se deja fuera, sin decírtelo:
+
+- el catálogo de alimentos y sus raciones,
+- **el diario de comidas entero**,
+- los objetivos de macros,
+- **las rutinas que te hayas construido tú**.
+
+Comprobado midiéndolo sobre una base de prueba: ese backup exporta `workouts`, `weights`, `profile` y `prefs`, y nada más. Si haces esa copia y la restauras encima, la comida y tus rutinas **desaparecen sin un aviso**.
+
+**Lo que ya está escrito y probado pero aún no se puede usar**: `backup.py` hace el export/import de las **12 tablas** (formato versión 3, y sigue leyendo los ficheros viejos de la versión 2), y `views/data_view.py` es la pantalla que lo maneja, con vista previa y doble confirmación antes de borrar nada. Falta un paso: **registrar esa pantalla en `main.py`** para que se pueda llegar a ella.
+
+He verificado el motor de punta a punta: llené una base SQLite con las 12 tablas (119 filas), exporté a fichero, importé en una base vacía y comparé **tabla por tabla y columna por columna**. No se pierde ni cambia nada, y el documento reexportado sale idéntico al original.
+
+**Mientras tanto: para una copia completa, usa `pg_dump`** (arriba). No uses el botón de Settings creyendo que te lo lleva todo.
 
 ---
 
@@ -455,6 +588,28 @@ journalctl --user -u entrenador-bot -n 60 --no-pager
 journalctl --user -u ironflet-web --since "10 min ago" --no-pager | grep -i error
 ```
 
+**`.venv/bin/flet` (o `pytest`, o `ruff`) dice "no se ha encontrado el fichero requerido".** El fichero está ahí, no te has vuelto loco. Lo que pasa es que el proyecto se movió de sitio y esos lanzadores llevan escrita **la ruta vieja** en la primera línea:
+
+```bash
+head -1 .venv/bin/flet
+# #!/home/wdna/git/ironflet-final/.venv/bin/python   <- ya no existe
+```
+
+Son **14 ficheros** de `.venv/bin/` los que están así. El rodeo, que funciona siempre, es llamar al módulo en vez del lanzador:
+
+```bash
+.venv/bin/python -m pytest -q
+.venv/bin/python -c "from flet.cli import main; main()" build apk
+```
+
+Y el arreglo de verdad es rehacer el entorno:
+
+```bash
+cd /home/wdna/Documents/Personal/plan-recomposicion/ironflet && rm -rf .venv && make deps
+```
+
+Acuérdate de que `make deps` hace las dos cosas en el orden que importa (`uv sync` y *después* CanvasKit); si haces solo `uv sync`, la app se queda sin las imágenes de CanvasKit y se las pide a Google, que en un gimnasio sin cobertura falla.
+
 ---
 
 ## Comprobar que todo sigue en pie
@@ -465,15 +620,22 @@ Antes de dar por buena cualquier cosa que hayas tocado:
 cd /home/wdna/Documents/Personal/plan-recomposicion/ironflet && make test
 ```
 
-Son **340 pruebas** y tardan unos segundos. Comprueban las métricas, la nutrición, el editor de rutinas, los tipos de serie, el contraste de los colores y que la clave con la que se guardan los ejercicios sigue coincidiendo con la que usa el bot.
+Son **538 pruebas** y tardan unos 20 segundos. Comprueban las métricas, la nutrición, el editor de rutinas, los tipos de serie, el contraste de los colores, el backup completo de las 12 tablas, que la app funciona igual sobre SQLite que sobre PostgreSQL, y que la clave con la que se guardan los ejercicios sigue coincidiendo con la que usa el bot.
 
-**Cuidado con una cosa:** unas 100 de esas pruebas necesitan la base de datos y, si tu terminal no tiene `DATABASE_URL`, se **saltan en silencio** — verás `238 passed, 102 skipped` y parecerá que todo va bien sin haber probado nada de nutrición. Para ejecutarlas todas de verdad:
+**Cuidado con una cosa:** una buena parte necesita la base de datos y, si tu terminal no tiene `DATABASE_URL`, se **saltan en silencio** — verás un montón de `skipped` y parecerá que todo va bien sin haber probado nada de nutrición. Juzga la ejecución por el número de saltos, no por el de aprobados. Para ejecutarlas todas de verdad:
 
 ```bash
 cd /home/wdna/Documents/Personal/plan-recomposicion/ironflet && export $(grep '^DATABASE_URL=' ../agente/.env | xargs) && make test
 ```
 
-Tiene que decir **`340 passed`**. Esas pruebas trabajan contra una base aparte (`entrenador_test`), nunca contra tus datos.
+Tiene que decir **`538 passed`**. Esas pruebas trabajan contra una base aparte (`entrenador_test`), nunca contra tus datos.
+
+**No lances dos veces las pruebas a la vez.** Todas comparten la misma base `entrenador_test` y se pisan entre ellas: verás fallos raros e inconstantes en nutrición y rutinas que no tienen nada que ver con tu cambio. Si necesitas una ejecución aislada, dale su propia base:
+
+```bash
+docker exec entrenador-postgres psql -U entrenador -d postgres -c "CREATE DATABASE ironflet_scratch OWNER entrenador;"
+TEST_DATABASE_URL="postgresql+psycopg://entrenador:LA_CONTRASEÑA@127.0.0.1:5432/ironflet_scratch" .venv/bin/python -m pytest -q
+```
 
 Todo a la vez (formato del código + pruebas), que es lo mismo que se ejecuta en CI:
 
