@@ -56,7 +56,7 @@ routine is selected.
 **2. The week runs Monday to Sunday, anchored to the calendar, not to the
 start date.** Program week 1 is the Mon-Sun week *containing* the start date,
 and the counter ticks over every Monday. The rotation rows in `data.py` are
-five weekday columns — `views/plan.py` labels them with `dates.weekday_label`,
+five weekday columns — `views/plan.py` labels them with `dates.day_name`,
 Mon to Fri, with the Rest day sitting on Wednesday. A week anchored to the
 start date would put column 0 on whatever weekday Alex began, so a Thursday
 start would prescribe the Monday session on Thursday and the Rest day on
@@ -95,9 +95,10 @@ Re-timing the program is Alex's decision, taken once, explicitly; it is not
 something this module does behind his back on every render.
 
 **4. Which phases the rotation applies to, without a magic tuple.**
-`views/plan.py` gates the Distribution tab on `phase.id in (1, 2, 3)`. That is
-correct for `cambiatufisico` and meaningless for anything else, including a
-routine Alex builds in the editor. `rotation_applies_to()` asks the structural
+`views/plan.py` used to gate the Distribution tab on `phase.id in (1, 2, 3)`
+— correct for `cambiatufisico` and meaningless for anything else, including a
+routine Alex builds in the editor. It calls `rotation_applies_to()` now, which
+asks the structural
 question instead: do the labels in the rotation rows name the day templates
 this phase actually has? Phases 1-3 share `DAYS_PHASE_1_3`, whose days are
 `Chest - Biceps` / `Back - Triceps` / `Shoulder - Leg`, and the rotation says

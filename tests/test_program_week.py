@@ -75,6 +75,12 @@ def day_of(week: int, weekday: int = 0) -> date:
     return START + timedelta(weeks=week - 1, days=weekday)
 
 
+# Colour of a synthetic Phase. Never rendered — fixtures build day
+# templates, not screens — but a literal hex in the tree invites a copy
+# into a view, where the palette tests would fail it.
+PHASE_COLOR_FIXTURE = "#000000"
+
+
 def routine(rid: str) -> Routine:
     """Look a shipped routine up by id, never by index: `sync_user_routines()`
     splices stored routines into `ROUTINES` and other test files call it."""
@@ -205,7 +211,7 @@ def test_total_weeks_is_zero_when_no_phase_parses():
         id="broken",
         name="Broken",
         description="",
-        phases=[Phase(1, "later", "N", "S", "#000", "", "", "", "low")],
+        phases=[Phase(1, "later", "N", "S", PHASE_COLOR_FIXTURE, "", "", "", "low")],
         days_by_phase={1: [TrainingDay("Day 1", ["Squat"])]},
     )
     assert total_program_weeks(broken) == 0
@@ -472,8 +478,11 @@ def test_rotation_index_is_program_anchored_but_still_opens_each_phase_on_row_ze
 
 
 def test_rotation_applies_exactly_to_the_phases_the_plan_view_hardcodes():
-    """`views/plan.py` gates on `phase.id in (1, 2, 3)`. Derived here from the
-    day templates instead, and the two must agree."""
+    """The tuple `views/plan.py` used to hardcode, kept here as the oracle.
+
+    The view derives this from the day templates now. Comparing against the
+    literal tuple on purpose: if the derivation ever drifts for the routine it
+    was written against, this is what catches it."""
     r = routine(CTF)
     for phase in r.phases:
         assert rotation_applies_to(phase, r) is (phase.id in (1, 2, 3)), phase.id
