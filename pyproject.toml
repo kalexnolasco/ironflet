@@ -29,17 +29,57 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Topic :: Software Development :: User Interfaces",
 ]
+# THIS LIST IS THE ANDROID BUILD LIST. Keep it pure-Python.
+#
+# `flet build apk` does not install the desktop venv onto the phone. It reads
+# `[project] dependencies` verbatim and pip-installs those names into the APK's
+# bundled site-packages, targeting Android/arm64-v8a against pypi.flet.dev.
+# Verified in flet_cli/commands/build.py:1746 — `[tool.flet.android.dependencies]`
+# only ever EXTENDS this list, it cannot subtract from it. So anything that has
+# no Android wheel has to live in an extra below, not here.
+#
+# Two things used to be here and both broke `flet build apk` outright:
+#
+#   flet[all]  -> flet-cli -> watchdog<5,>=4, which publishes no Android wheel.
+#                 Observed failure: "Could not find a version that satisfies the
+#                 requirement watchdog<5.0.0,>=4.0.0 (from versions: none)".
+#                 flet[all] also drags in flet-web -> uvicorn[standard], i.e.
+#                 uvloop/httptools/watchfiles — three more C extensions with no
+#                 Android wheels — plus flet-desktop-light, which is a Linux
+#                 desktop binary the phone has no use for.
+#   psycopg[binary] -> a precompiled libpq. Wheels exist only for glibc/macOS/
+#                 Windows; on Android pip would fall back to building libpq
+#                 from source and the build dies.
+#
+# Dropping psycopg from the phone is safe because SQLAlchemy imports the DBAPI
+# lazily, inside create_engine(), and storage.create_db_engine() only reaches
+# the Postgres branch when the resolved URL asks for it. On Android the URL
+# resolves to SQLite, so psycopg is never imported. sqlite3 is in the stdlib
+# CPython that serious-python embeds, so the phone needs no driver at all.
 dependencies = [
-    # flet[all], not plain flet: the web mode needs flet-web, and without the
-    # extra declared here a bare `uv sync` uninstalls it and takes the
-    # vendored CanvasKit with it. Web is the only mode actually deployed.
-    "flet[all]>=0.25,<0.30",
+    "flet>=0.25,<0.30",
     "sqlalchemy>=2.0",
-    "psycopg[binary]>=3.2",
 ]
 
+[project.optional-dependencies]
+# Desktop/web only. `flet[all]` carries flet-web, which the deployed web mode
+# needs; without it a bare `uv sync` uninstalls flet_web and takes the vendored
+# CanvasKit with it (see scripts/vendor_canvaskit.py and `make deps`).
+web = ["flet[all]>=0.25,<0.30"]
+# Desktop/web only. The PostgreSQL driver for the shared database the Telegram
+# bot also writes. The phone uses SQLite and must never see this.
+postgres = ["psycopg[binary]>=3.2"]
+
 [dependency-groups]
+# The two extras are repeated here rather than referenced as `ironflet[web,
+# postgres]` so that `make deps` and CI keep working unchanged with a plain
+# `uv sync --group dev`. Both are required for a real test run: the PostgreSQL
+# half of the suite (test_storage_metrics.py, test_nutrition.py, the Postgres
+# half of test_sqlite_backend.py) needs a live server, and dropping flet[all]
+# from the dev environment would break web mode on this machine.
 dev = [
+    "flet[all]>=0.25,<0.30",
+    "psycopg[binary]>=3.2",
     "ruff>=0.7",
     "pytest>=8",
     "pytest-asyncio>=0.24",
@@ -55,6 +95,45 @@ Releases = "https://github.com/kalexnolasco/ironflet/releases"
 
 [tool.flet]
 app.module = "main"
+
+# WHAT DOES NOT GET COPIED INTO THE APK.
+#
+# `flet build` hands the *whole project directory* to serious_python, which
+# copies it wholesale into `app.zip` inside the APK. Its only built-in
+# exclusion is "build". Without the list below the APK came out at 237 MB,
+# of which 154 MB was this machine's `.venv` — psycopg, libpq, watchdog,
+# uvloop and a pile of `*.cpython-311-x86_64-linux-gnu.so`, i.e. desktop x86
+# binaries that an ARM phone cannot even load. `.git` rode along too.
+#
+# Matching is EXACT RELATIVE PATHS, not globs
+# (serious_python bin/package_command.dart:461 does
+# `excludeList.contains(path.relative(entity.path, from: rootDir))`, walking
+# recursively). That is why every nested `__pycache__` is spelled out: listing
+# plain "__pycache__" would only drop the one at the repo root and silently
+# ship the other four. A new package directory needs its `__pycache__` added
+# here by hand.
+#
+# `assets/exercises` is excluded on purpose and is NOT an oversight: those
+# 9.2 MB are downloaded at runtime by asset_manager.py, which on Android reads
+# them from `FLET_APP_STORAGE_DATA/assets/exercises` — a different, writable
+# path that the bundled copy never satisfies. Shipping them would be dead
+# weight the app cannot read, and would also make the APK size depend on
+# whether whoever built it happened to have run the downloader first.
+app.exclude = [
+    ".venv",
+    ".git",
+    ".github",
+    ".pytest_cache",
+    ".ruff_cache",
+    "assets/exercises",
+    "tests",
+    "uv.lock",
+    "__pycache__",
+    "components/__pycache__",
+    "scripts/__pycache__",
+    "tests/__pycache__",
+    "views/__pycache__",
+]
 
 # Must match theme.py: LIGHT.bg_page / DARK.bg_page. LIGHT is the default
 # palette, so a splash painted in the dark background flashed black before the

@@ -9,6 +9,7 @@ from routine_builder import ensure_tables, sync_user_routines
 from storage import Storage
 from theme import LIGHT, C, apply_theme
 from views.browse import BrowseView
+from views.data_view import DataView
 from views.history import HistoryView
 from views.home import HomeView
 from views.nutrition_view import NutritionView
@@ -45,6 +46,7 @@ def main(page: ft.Page):
     profile_view = ProfileView(page, store)
     nutrition_view = NutritionView(page, store)
     routines_view = RoutineEditorView(page, store)
+    data_view = DataView(page, store)
     view_list = [
         home_view,
         plan_view,
@@ -54,6 +56,7 @@ def main(page: ft.Page):
         profile_view,
         nutrition_view,
         routines_view,
+        data_view,
     ]
     # The bar shows five of them. This indirection exists because home.py calls
     # navigate_to(2) and navigate_to(5) by number, so view indices are frozen —

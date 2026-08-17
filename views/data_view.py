@@ -1,0 +1,1027 @@
+"""Data: file-based backup export/import, plus the exercise image cache.
+
+Backup used to be a clipboard round-trip (`views/profile.py`): dump JSON, tap
+"Copy", paste it somewhere. That is unusable on the phone this app is being
+built for — a few months of training is hundreds of KiB, Android clipboards
+truncate large payloads without saying so, and there is nowhere to paste it to
+anyway. This screen writes and reads a real `.json` file through `backup.py`,
+which covers all twelve tables (the clipboard path covered four).
+
+Two platform facts shape the whole design, both checked against Flet 0.28's
+`FilePicker`:
+
+* `save_file()` opens the *native* save dialog. On desktop that dialog exists
+  and hands back a real filesystem path we can write to. On Android it is a
+  Storage Access Framework sheet at best and a no-op at worst — Flet's Python
+  API cannot pass the bytes down, so the plugin has nothing to write, and
+  `on_result` may never fire. Therefore this screen **always writes its own
+  copy into app storage first** and only then opens the picker. Nobody is ever
+  left with a dialog that quietly did nothing and no file anywhere.
+* `pick_files()` returns `path=None` in web mode — the browser gives a name and
+  a size and expects an upload. That is reported on screen instead of crashing
+  on `open(None)`.
+
+Anything that can fail here (a full disk, a truncated file, a database that is
+not reachable) surfaces in the status banner at the top of the screen. On a
+phone nobody watches a console, so a swallowed exception and silent data loss
+are the same event.
+"""
+
+from __future__ import annotations
+
+import contextlib
+import os
+from datetime import datetime
+from pathlib import Path
+
+import flet as ft
+
+import asset_manager
+import backup
+from backup import BACKUP_VERSION, BackupError, export_all, import_all
+from storage import Storage
+from theme import C, card, ghost_button, muted_text, primary_button, section_title
+
+# Display order and grouping of `backup.TABLES`. Keys not listed here still get
+# rendered — `ordered_counts()` appends them under "Other" — so a table added to
+# backup.py appears on screen even before anyone updates this tuple.
+TABLE_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("Training", ("workouts", "weights", "profile", "prefs")),
+    ("Nutrition", ("foods", "servings", "food_log", "nutrition_targets")),
+    ("Routines", ("routines", "routine_phases", "routine_days", "routine_exercises")),
+)
+
+TABLE_LABELS = {
+    "workouts": "Workouts",
+    "weights": "Body weight",
+    "profile": "Profile",
+    "prefs": "Preferences",
+    "foods": "Foods",
+    "servings": "Servings",
+    "food_log": "Food diary",
+    "nutrition_targets": "Nutrition targets",
+    "routines": "Routines",
+    "routine_phases": "Routine phases",
+    "routine_days": "Routine days",
+    "routine_exercises": "Routine exercises",
+}
+
+# Tables whose entire content is one row: printing "5" for a profile that has
+# five columns would be nonsense.
+SINGLE_ROW_KEYS = frozenset({"profile"})
+
+IMAGE_BUNDLE_LABEL = "≈9 MB"
+
+
+# ── document counting ────────────────────────────────────────
+
+# Every table `count_document` below actually knows how to find in a document.
+# A thirteenth table appearing in `backup.TABLES` would otherwise be reported as
+# a permanent zero on the one screen whose job is to show what a backup covers —
+# which is precisely the bug that made the v2 backup lose the food diary in
+# silence. `UNCOUNTED_TABLES` puts that on screen instead of hiding it.
+COUNTED_TABLES = frozenset(
+    {
+        "workouts",
+        "weights",
+        "profile",
+        "prefs",
+        "foods",
+        "servings",
+        "food_log",
+        "nutrition_targets",
+        "routines",
+        "routine_phases",
+        "routine_days",
+        "routine_exercises",
+    }
+)
+UNCOUNTED_TABLES = tuple(t for t in backup.TABLES if t not in COUNTED_TABLES)
+
+
+def _grouped_keys() -> tuple[str, ...]:
+    return tuple(key for _group, keys in TABLE_GROUPS for key in keys)
+
+
+def count_document(data: dict) -> dict[str, int]:
+    """Rows per table for a backup document, keyed like `backup.TABLES`.
+
+    The document is *nested* — servings live inside their food, days inside
+    their phase — precisely so no primary key has to travel. That nesting is
+    invisible to a user deciding whether to overwrite their phone, so it is
+    flattened back into the twelve counts the importer will report.
+
+    Tolerant by construction: a v2 document has no `nutrition` or `routines`
+    section at all, and a truncated one may have a string where a list belongs.
+    Neither may stop the preview from rendering — the preview is what warns the
+    user *before* the wipe, so it has to survive worse input than the importer.
+    """
+    counts = dict.fromkeys(backup.TABLES, 0)
+    if not isinstance(data, dict):
+        return counts
+
+    def rows(value) -> list:
+        return value if isinstance(value, list) else []
+
+    counts["workouts"] = len(rows(data.get("workouts")))
+    counts["weights"] = len(rows(data.get("weights")))
+    counts["prefs"] = len(data["prefs"]) if isinstance(data.get("prefs"), dict) else 0
+
+    profile = data.get("profile")
+    if isinstance(profile, dict):
+        # A profile of empty strings is what `_export_profile` writes when the
+        # row does not exist. Reporting it as 1 would promise data that is not
+        # there.
+        counts["profile"] = 1 if any(v not in (None, "", 0, 0.0) for v in profile.values()) else 0
+
+    nutrition = data.get("nutrition")
+    if isinstance(nutrition, dict):
+        foods = rows(nutrition.get("foods"))
+        counts["foods"] = len(foods)
+        counts["servings"] = sum(len(rows(f.get("servings"))) for f in foods if isinstance(f, dict))
+        counts["food_log"] = len(rows(nutrition.get("food_log")))
+        # The document spells it "targets"; the importer counts it under
+        # "nutrition_targets", which is the table name. Both are right in their
+        # own file — this is the one place they meet.
+        counts["nutrition_targets"] = len(rows(nutrition.get("targets")))
+
+    routines = rows(data.get("routines"))
+    counts["routines"] = len(routines)
+    for routine in routines:
+        if not isinstance(routine, dict):
+            continue
+        phases = rows(routine.get("phases"))
+        counts["routine_phases"] += len(phases)
+        for phase in phases:
+            if not isinstance(phase, dict):
+                continue
+            days = rows(phase.get("days"))
+            counts["routine_days"] += len(days)
+            for day in days:
+                if isinstance(day, dict):
+                    counts["routine_exercises"] += len(rows(day.get("exercises")))
+    return counts
+
+
+def ordered_counts(counts: dict[str, int]) -> list[tuple[str, str, int]]:
+    """`(group, key, count)` in display order, unknown tables last under Other.
+
+    Driven by the counts dict rather than a hardcoded list, so a thirteenth
+    table appearing in `backup.TABLES` shows up here without an edit.
+    """
+    known = _grouped_keys()
+    out = [
+        (group, key, int(counts.get(key) or 0))
+        for group, keys in TABLE_GROUPS
+        for key in keys
+        if key in counts
+    ]
+    out += [("Other", k, int(counts[k] or 0)) for k in sorted(counts) if k not in known]
+    return out
+
+
+def label_of(key: str) -> str:
+    return TABLE_LABELS.get(key, key.replace("_", " ").capitalize())
+
+
+def display_count(key: str, n: int) -> str:
+    return ("✓" if n else "—") if key in SINGLE_ROW_KEYS else str(n)
+
+
+def format_size(num_bytes: int) -> str:
+    if num_bytes < 1024:
+        return f"{num_bytes} B"
+    kib = num_bytes / 1024
+    return f"{kib:.1f} KiB" if kib < 1024 else f"{kib / 1024:.1f} MiB"
+
+
+def format_timestamp(data: dict) -> str:
+    """When the document was written, from whichever stamp it carries.
+
+    v3 writes both `exported_at_iso` (localised, for humans) and `exported_at`
+    (epoch float, for code); v2 wrote only the float. Never raises: a corrupt
+    stamp must not hide the counts the user is here to read.
+    """
+    iso = data.get("exported_at_iso")
+    if isinstance(iso, str) and iso:
+        with contextlib.suppress(ValueError):
+            # `fromisoformat` before 3.11 chokes on a trailing Z.
+            return datetime.fromisoformat(iso.replace("Z", "+00:00")).strftime("%Y-%m-%d %H:%M")
+        return iso
+    stamp = data.get("exported_at")
+    if isinstance(stamp, (int, float)) and not isinstance(stamp, bool):
+        with contextlib.suppress(ValueError, OSError, OverflowError):
+            return datetime.fromtimestamp(float(stamp)).strftime("%Y-%m-%d %H:%M")
+    return "unknown"
+
+
+def backup_dir() -> Path:
+    """Where this screen keeps its own copy of every export.
+
+    `FLET_APP_STORAGE_DATA` is the per-app directory Flet sets on Android and
+    iOS, and the only place a packaged app can always write. Unset on desktop
+    and web, where the working directory is used. Deliberately *not* under
+    `assets/`, unlike the exercise frames: a backup must never be reachable
+    over HTTP when the app runs in web mode.
+    """
+    base = os.environ.get("FLET_APP_STORAGE_DATA") or os.getcwd()
+    d = Path(base) / "backups"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+class DataView:
+    """Backup screen. State lives on the instance; `build()` renders from it."""
+
+    def __init__(self, page: ft.Page, store: Storage):
+        self.page = page
+        self.store = store
+
+        # Snapshot of the database, refreshed by on_show().
+        self._counts: dict[str, int] = dict.fromkeys(backup.TABLES, 0)
+        self._counts_bytes = 0
+        self._counts_error: str | None = None
+
+        # (level, message), level in {"info", "success", "error"}. On the
+        # instance so it survives the rebuild an action triggers: an error the
+        # user never sees is, to them, an error that did not happen.
+        self._status: tuple[str, str] | None = None
+
+        # Bytes waiting for the save dialog to name a destination.
+        self._pending_export: bytes | None = None
+        self._last_export: Path | None = None
+
+        self._dialog: ft.AlertDialog | None = None
+
+        self._dl_running = False
+        self._dl_done = 0
+        self._dl_total = 0
+        self._progress: ft.ProgressBar | None = None
+        self._progress_label: ft.Text | None = None
+
+        # One picker per direction. Sharing a single control would let a stale
+        # `on_result` from a cancelled save be read as an open.
+        self._save_picker = ft.FilePicker(on_result=self._on_save_result)
+        self._open_picker = ft.FilePicker(on_result=self._on_open_result)
+
+    # ── view contract ────────────────────────────────────────
+    def on_show(self):
+        self._attach_pickers()
+        self._load_counts()  # deliberately does NOT clear self._status
+
+    def handle_back(self) -> bool:
+        # A dialog on top of us eats the back press first, or Android's back
+        # button would leave the confirm dialog floating over another screen.
+        if self._dialog is not None:
+            self._close_dialog()
+            return True
+        self.page.data["navigate_to"](5)  # Profile, where this screen is entered from
+        return True
+
+    def build(self) -> ft.Control:
+        self._attach_pickers()
+        children: list[ft.Control] = [self._header(), ft.Container(height=8)]
+        banner = self._status_banner()
+        if banner is not None:
+            children += [banner, ft.Container(height=10)]
+        children += [
+            self._current_data_card(),
+            ft.Container(height=10),
+            self._export_card(),
+            ft.Container(height=10),
+            self._import_card(),
+            ft.Container(height=10),
+            self._images_card(),
+            ft.Container(height=16),
+        ]
+        return ft.Column(
+            children,
+            scroll=ft.ScrollMode.AUTO,
+            horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+            expand=True,
+            spacing=0,
+            tight=True,
+        )
+
+    # ── plumbing ─────────────────────────────────────────────
+    def _attach_pickers(self):
+        """Pickers must sit in `page.overlay` to exist on the Flutter side.
+
+        Done here instead of in `main.py` so the feature stays in one file, and
+        guarded by a membership test because `build()` runs on every refresh and
+        the same control cannot be added twice.
+
+        The `page.update()` is the load-bearing part: appending to the overlay
+        only registers the control on the *next* update, and calling
+        `save_file()` before that raises "FilePicker Control must be added to
+        the page first" — which the user would read as "this device has no save
+        dialog". Pushing it immediately means the picker is live before any
+        button on this screen can be tapped.
+        """
+        overlay = getattr(self.page, "overlay", None)
+        if overlay is None:
+            return
+        added = False
+        try:
+            for picker in (self._save_picker, self._open_picker):
+                if picker not in overlay:
+                    overlay.append(picker)
+                    added = True
+        except (AttributeError, TypeError):
+            return  # a test double for `page` need not behave like a list
+        if added:
+            with contextlib.suppress(Exception):
+                self.page.update()
+
+    def _set_status(self, level: str, message: str):
+        self._status = (level, message)
+
+    def _refresh(self):
+        with contextlib.suppress(KeyError, TypeError, AttributeError):
+            self.page.data["refresh_current"]()
+
+    def _close_dialog(self):
+        if self._dialog is not None:
+            self.page.close(self._dialog)
+            self._dialog = None
+
+    def _load_counts(self):
+        """Count the live database by exporting it.
+
+        Counting through `export_all` means the "on device" column and the "in
+        file" column come out of the same function, so they cannot disagree
+        about what a row is. It does serialise everything to measure the size —
+        see `pendiente`: a cheap `backup.counts(store)` would avoid that.
+        """
+        try:
+            dump = export_all(self.store)
+            self._counts = count_document(dump)
+            self._counts_bytes = len(backup.dumps(dump).encode("utf-8"))
+            self._counts_error = None
+        except Exception as exc:  # database down, driver missing, anything
+            self._counts = dict.fromkeys(backup.TABLES, 0)
+            self._counts_bytes = 0
+            self._counts_error = str(exc)
+
+    # ── export ───────────────────────────────────────────────
+    def _export(self, _=None):
+        try:
+            dump = export_all(self.store)
+            payload = backup.dumps(dump).encode("utf-8")
+        except Exception as exc:
+            self._set_status("error", f"Could not read the database: {exc}")
+            self._refresh()
+            return
+
+        name = backup.default_filename()
+        # Write our copy BEFORE opening the dialog: on Android the dialog may
+        # never come back, and this way the backup exists regardless and the
+        # user is told exactly where it is.
+        local_error: str | None = None
+        try:
+            local = backup_dir() / name
+            local.write_bytes(payload)
+            self._last_export = local
+        except OSError as exc:
+            self._last_export = None
+            local_error = str(exc)
+
+        self._pending_export = payload
+        # Count the dump just taken, not the cached snapshot: the Telegram coach
+        # writes to the same database and may have added rows since on_show().
+        rows = sum(count_document(dump).values())
+
+        if local_error:
+            self._set_status(
+                "error",
+                f"Could not write to app storage ({local_error}). "
+                "Pick a destination in the dialog to save the backup.",
+            )
+        else:
+            self._set_status(
+                "success",
+                f"{rows} rows · {format_size(len(payload))} saved to {self._last_export}. "
+                "Choose a destination to keep a second copy.",
+            )
+        self._refresh()
+
+        try:
+            self._save_picker.save_file(
+                dialog_title="Save IronFlet backup",
+                file_name=name,
+                file_type=ft.FilePickerFileType.CUSTOM,
+                allowed_extensions=["json"],
+            )
+        except Exception as exc:
+            # A platform with no native save dialog can throw here. The copy
+            # above already landed, so this is a downgrade, not a failure.
+            if not local_error:
+                self._set_status(
+                    "info",
+                    f"Backup saved to {self._last_export}. This device has no save dialog ({exc}).",
+                )
+                self._refresh()
+
+    def _on_save_result(self, e: ft.FilePickerResultEvent):
+        payload = self._pending_export
+        self._pending_export = None
+        if not e.path:
+            # Cancelled, or a platform that silently declines. Not an error:
+            # the app-storage copy written before the dialog is intact.
+            if self._last_export:
+                self._set_status("info", f"No second copy made. Backup kept at {self._last_export}")
+            else:
+                self._set_status("error", "Export cancelled and no copy could be written.")
+            self._refresh()
+            return
+        if payload is None:
+            self._set_status("error", "Nothing left to write — run Export again.")
+            self._refresh()
+            return
+
+        target = Path(e.path)
+        # GTK and some Windows dialogs return literally what was typed,
+        # extension filter or not. A backup called "june" still imports, but it
+        # is invisible to a ".json" filter on the way back in.
+        if target.suffix.lower() != ".json":
+            target = target.with_suffix(".json")
+        try:
+            target.write_bytes(payload)
+        except OSError as exc:
+            self._set_status("error", f"Could not write {target.name}: {exc}")
+        else:
+            self._set_status("success", f"Backup saved to {target}")
+        self._refresh()
+
+    # ── import ───────────────────────────────────────────────
+    def _pick_import(self, _=None):
+        try:
+            # ANY, not CUSTOM + ["json"]: Android turns the extension filter
+            # into MIME types, and `.json` frequently maps to nothing — leaving
+            # the user in a picker where every file is greyed out. The content
+            # check below is the one that actually matters anyway.
+            self._open_picker.pick_files(
+                dialog_title="Open IronFlet backup",
+                allow_multiple=False,
+                file_type=ft.FilePickerFileType.ANY,
+            )
+        except Exception as exc:
+            self._set_status("error", f"Could not open the file picker: {exc}")
+            self._refresh()
+
+    def _on_open_result(self, e: ft.FilePickerResultEvent):
+        files = e.files or []
+        if not files:
+            self._set_status("info", "Import cancelled. Nothing was changed.")
+            self._refresh()
+            return
+        picked = files[0]
+        if not picked.path:
+            # Web mode: the browser gives a name and a size but never a path;
+            # the bytes would have to be uploaded. Say so rather than fail on
+            # open(None).
+            self._set_status(
+                "error",
+                "This build cannot read a file the browser picked. "
+                "Import from the Android or desktop app.",
+            )
+            self._refresh()
+            return
+
+        try:
+            raw = Path(picked.path).read_bytes()
+            data = backup.loads(raw)  # BackupError on truncated/corrupt JSON
+        except (OSError, BackupError) as exc:
+            self._set_status("error", f"Could not read {picked.name}: {exc}")
+            self._refresh()
+            return
+
+        self._open_import_preview(picked.name, len(raw), data)
+
+    def _import_blocker(self, data: dict) -> str | None:
+        """Reasons to refuse before showing a button that wipes the database.
+
+        `import_all` validates far more thoroughly and does it before writing
+        anything, so this is not the safety net — it is the difference between
+        "IronFlet said no" and letting the user arm a destructive action that
+        was never going to work.
+        """
+        app_id = data.get("app")
+        if app_id not in backup.ACCEPTED_APPS:
+            return f"This file was written by '{app_id or 'something else'}', not IronFlet."
+        try:
+            version = int(data.get("version") or 0)
+        except (TypeError, ValueError):
+            return "This backup has no readable version number."
+        if version > BACKUP_VERSION:
+            return (
+                f"Backup format v{version} is newer than this app understands "
+                f"(v{BACKUP_VERSION}). Update IronFlet first."
+            )
+        if not any(count_document(data).values()):
+            return "This backup contains no data."
+        return None
+
+    def _open_import_preview(self, filename: str, size_bytes: int, data: dict):
+        """Show what the file holds, what it replaces, and make the user say yes.
+
+        Two steps on purpose — read the comparison, then tick the acknowledgement
+        — because `wipe=True` deletes every row in the database, and one mistap
+        on a phone must not be able to do that.
+        """
+        file_counts = count_document(data)
+        blocker = self._import_blocker(data)
+        losing = sum(self._counts.values())
+
+        rows: list[ft.Control] = [
+            ft.Row(
+                [
+                    ft.Text("", width=132),
+                    ft.Text(
+                        "IN FILE",
+                        size=9,
+                        width=54,
+                        color=C.text_muted,
+                        weight=ft.FontWeight.W_800,
+                        text_align=ft.TextAlign.RIGHT,
+                    ),
+                    ft.Text(
+                        "ON DEVICE",
+                        size=9,
+                        width=64,
+                        color=C.text_muted,
+                        weight=ft.FontWeight.W_800,
+                        text_align=ft.TextAlign.RIGHT,
+                    ),
+                ],
+                spacing=4,
+            )
+        ]
+        seen: set[str] = set()
+        for group, key, in_file in ordered_counts(file_counts):
+            if group not in seen:
+                seen.add(group)
+                rows.append(ft.Container(height=5))
+                rows.append(
+                    ft.Text(group.upper(), size=9, color=C.text_muted, weight=ft.FontWeight.W_800)
+                )
+            on_device = int(self._counts.get(key) or 0)
+            rows.append(
+                ft.Row(
+                    [
+                        ft.Text(label_of(key), size=11, color=C.text_secondary, width=132),
+                        ft.Text(
+                            display_count(key, in_file),
+                            size=12,
+                            width=54,
+                            color=C.text if in_file else C.text_muted,
+                            weight=ft.FontWeight.W_800,
+                            text_align=ft.TextAlign.RIGHT,
+                        ),
+                        # Red is not decoration here: this column is what the
+                        # import deletes.
+                        ft.Text(
+                            display_count(key, on_device),
+                            size=12,
+                            width=64,
+                            color=C.danger if on_device else C.text_muted,
+                            weight=ft.FontWeight.W_800,
+                            text_align=ft.TextAlign.RIGHT,
+                        ),
+                    ],
+                    spacing=4,
+                )
+            )
+
+        # Both the button and the acknowledgement say what this particular
+        # import will do. "Erase" over an empty database is a lie the user
+        # learns to click through, and then it is not a warning any more.
+        confirm = ft.TextButton(
+            "Erase and import" if losing else "Import",
+            disabled=True,
+            style=ft.ButtonStyle(color=C.danger if losing else C.accent),
+            on_click=lambda _: self._do_import(data),
+        )
+
+        def toggle(e):
+            confirm.disabled = not bool(e.control.value)
+            self.page.update()
+
+        ack = ft.Checkbox(
+            label=(
+                "I understand the data on this device will be deleted"
+                if losing
+                else "Restore this backup onto this device"
+            ),
+            value=False,
+            on_change=toggle,
+            label_style=ft.TextStyle(size=11, color=C.text_secondary),
+            fill_color=C.danger if losing else C.accent,
+            check_color=C.on_accent,
+        )
+
+        header = ft.Column(
+            [
+                ft.Text(
+                    filename,
+                    size=12,
+                    color=C.text,
+                    weight=ft.FontWeight.W_800,
+                    max_lines=2,
+                    overflow=ft.TextOverflow.ELLIPSIS,
+                ),
+                muted_text(
+                    f"Exported {format_timestamp(data)}"
+                    f"  ·  v{data.get('version', '?')}"
+                    f"  ·  {data.get('engine', '?')}"
+                    f"  ·  {format_size(size_bytes)}",
+                    size=10,
+                ),
+            ],
+            spacing=2,
+            tight=True,
+        )
+
+        body: list[ft.Control] = [header, ft.Container(height=6)]
+        if blocker:
+            body += [
+                ft.Container(
+                    content=ft.Text(blocker, size=12, color=C.danger, weight=ft.FontWeight.W_700),
+                    bgcolor=C.bg_sunken,
+                    border=ft.border.all(1, C.danger),
+                    border_radius=8,
+                    padding=10,
+                ),
+                ft.Container(height=6),
+            ]
+        body += rows
+        if not blocker:
+            # Restoring onto a fresh phone is the main use case and destroys
+            # nothing. Shouting "there is no undo" at an empty database trains
+            # the user to tap past the warning that does matter.
+            if losing:
+                tone = C.danger
+                warning = (
+                    f"Importing deletes the {losing} row{'' if losing == 1 else 's'} on this "
+                    "device and replaces them with the file. There is no undo."
+                )
+            else:
+                tone = C.warning
+                warning = (
+                    "This device has no data yet, so nothing is lost — the file's "
+                    "contents are written in as they are."
+                )
+            body += [
+                ft.Container(height=10),
+                ft.Container(
+                    content=ft.Row(
+                        [
+                            ft.Icon(ft.Icons.WARNING_AMBER_ROUNDED, color=tone, size=18),
+                            ft.Text(
+                                warning,
+                                size=11,
+                                color=tone,
+                                weight=ft.FontWeight.W_700,
+                                expand=True,
+                            ),
+                        ],
+                        spacing=8,
+                        vertical_alignment=ft.CrossAxisAlignment.START,
+                    ),
+                    bgcolor=C.bg_sunken,
+                    border=ft.border.all(1, tone),
+                    border_radius=8,
+                    padding=10,
+                ),
+                ft.Container(height=4),
+                ack,
+            ]
+
+        dlg = ft.AlertDialog(
+            modal=True,  # a wipe is not something to dismiss by tapping outside
+            bgcolor=C.bg_surface,
+            title=ft.Text("Import backup", size=16, weight=ft.FontWeight.W_900, color=C.text),
+            content=ft.Container(
+                content=ft.Column(body, spacing=2, tight=True, scroll=ft.ScrollMode.AUTO),
+                width=330,
+                height=400,
+            ),
+            actions=[
+                ft.TextButton(
+                    "Cancel",
+                    on_click=lambda _: self._cancel_import(),
+                    style=ft.ButtonStyle(color=C.text_secondary),
+                ),
+                *([] if blocker else [confirm]),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+        self._dialog = dlg
+        self.page.open(dlg)
+
+    def _cancel_import(self):
+        self._close_dialog()
+        self._set_status("info", "Import cancelled. Nothing was changed.")
+        self._refresh()
+
+    def _do_import(self, data: dict):
+        self._close_dialog()
+        try:
+            counts = import_all(self.store, data, wipe=True)
+        except BackupError as exc:
+            # backup.py parses the whole document before it opens a session, and
+            # keeps the wipe inside the write transaction — so "nothing was
+            # replaced" is a promise the module makes, not optimism here.
+            self._set_status("error", f"Import refused, nothing was replaced: {exc}")
+            self._refresh()
+            return
+        except Exception as exc:
+            self._set_status("error", f"Import failed, nothing was replaced: {exc}")
+            self._refresh()
+            return
+
+        # import_all() already re-synced data.ROUTINES and the active routine
+        # pref; re-doing it here would only risk disagreeing with it.
+        self._set_status("success", f"Restored {backup.summary_line(counts)}.")
+        self._load_counts()
+        self._refresh()
+
+    # ── exercise images ──────────────────────────────────────
+    def _on_dl_progress(self, done: int, total: int):
+        self._dl_done, self._dl_total = done, total or 0
+        bar, label = self._progress, self._progress_label
+        if bar is None or label is None:
+            return
+        bar.value = (done / total) if total else 0
+        label.value = f"{done} / {total}"
+        # The view may have been rebuilt or navigated away from mid-download.
+        # Progress is cosmetic and must never take the download task with it.
+        with contextlib.suppress(Exception):
+            self.page.update()
+
+    async def _download_images(self, _=None):
+        if self._dl_running:
+            return
+        self._dl_running = True
+        self._dl_done = 0
+        self._dl_total = asset_manager.total_file_count()
+        self._set_status("info", f"Downloading exercise images ({IMAGE_BUNDLE_LABEL})…")
+        self._refresh()
+        try:
+            ok, failed = await asset_manager.download_all(progress_cb=self._on_dl_progress)
+        except Exception as exc:
+            self._dl_running = False
+            self._set_status("error", f"Image download failed: {exc}")
+            self._refresh()
+            return
+        self._dl_running = False
+        if ok and not failed:
+            self._set_status("success", f"{ok} exercise images installed.")
+        elif ok:
+            self._set_status("error", f"Partial download: {ok} saved, {failed} missing. Retry.")
+        else:
+            # download_all swallows network errors and returns (0, total).
+            self._set_status("error", "Download failed. Check the connection and retry.")
+        self._refresh()
+
+    def _clear_images(self, _=None):
+        try:
+            asset_manager.clear_cache()
+        except OSError as exc:
+            self._set_status("error", f"Could not clear the image cache: {exc}")
+        else:
+            self._dl_done = 0
+            self._set_status("info", f"Exercise images removed ({IMAGE_BUNDLE_LABEL} freed).")
+        self._refresh()
+
+    # ── sections ─────────────────────────────────────────────
+    def _header(self) -> ft.Control:
+        return ft.Column(
+            [
+                ft.Container(
+                    content=ft.Row(
+                        [
+                            ft.Icon(ft.Icons.ARROW_BACK, color=C.accent, size=16),
+                            ft.Text("Profile", color=C.accent, size=12, weight=ft.FontWeight.W_700),
+                        ],
+                        spacing=4,
+                        tight=True,
+                    ),
+                    on_click=lambda _: self.page.data["navigate_to"](5),
+                    padding=ft.padding.symmetric(vertical=6),
+                    ink=True,
+                ),
+                ft.Text("Backup & data", size=22, weight=ft.FontWeight.W_900, color=C.text),
+                ft.Text(
+                    "Move everything between your phone and your computer.",
+                    size=11,
+                    color=C.text_secondary,
+                ),
+            ],
+            spacing=2,
+            tight=True,
+        )
+
+    def _status_banner(self) -> ft.Control | None:
+        if self._status is None:
+            return None
+        level, message = self._status
+        tone = {"error": C.danger, "success": C.success}.get(level, C.text_secondary)
+        icon = {
+            "error": ft.Icons.ERROR_OUTLINE,
+            "success": ft.Icons.CHECK_CIRCLE_OUTLINE,
+        }.get(level, ft.Icons.INFO_OUTLINE)
+        return ft.Container(
+            content=ft.Row(
+                [
+                    ft.Icon(icon, color=tone, size=18),
+                    ft.Text(
+                        message,
+                        size=11,
+                        color=tone,
+                        weight=ft.FontWeight.W_700,
+                        expand=True,
+                        selectable=True,  # so a path can be copied off the screen
+                    ),
+                    ft.Container(
+                        content=ft.Icon(ft.Icons.CLOSE, color=C.text_muted, size=14),
+                        on_click=lambda _: self._dismiss_status(),
+                        padding=4,
+                        ink=True,
+                    ),
+                ],
+                spacing=8,
+                vertical_alignment=ft.CrossAxisAlignment.START,
+            ),
+            bgcolor=C.bg_surface,
+            border=ft.border.all(1, tone),
+            border_radius=10,
+            padding=10,
+        )
+
+    def _dismiss_status(self):
+        self._status = None
+        self._refresh()
+
+    def _current_data_card(self) -> ft.Control:
+        if self._counts_error:
+            return card(
+                section_title("On this device"),
+                ft.Text(
+                    f"The database could not be read: {self._counts_error}",
+                    size=11,
+                    color=C.danger,
+                    weight=ft.FontWeight.W_700,
+                ),
+                muted_text("Export and import stay unavailable until it responds.", size=10),
+                border_color=C.danger,
+            )
+
+        rows: list[ft.Control] = []
+        current_group: str | None = None
+        for group, key, value in ordered_counts(self._counts):
+            if group != current_group:
+                current_group = group
+                rows.append(ft.Container(height=6))
+                rows.append(
+                    ft.Text(group.upper(), size=9, color=C.text_muted, weight=ft.FontWeight.W_800)
+                )
+            rows.append(
+                ft.Row(
+                    [
+                        ft.Text(label_of(key), size=11, color=C.text_secondary, expand=True),
+                        ft.Text(
+                            display_count(key, value),
+                            size=12,
+                            color=C.text if value else C.text_muted,
+                            weight=ft.FontWeight.W_800,
+                        ),
+                    ],
+                    alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                )
+            )
+
+        if UNCOUNTED_TABLES:
+            # backup.py grew a table this screen cannot read out of a document.
+            # Both columns would show 0 for it forever, so say so out loud.
+            rows.append(ft.Container(height=6))
+            rows.append(
+                ft.Text(
+                    "Not counted on this screen: " + ", ".join(UNCOUNTED_TABLES),
+                    size=10,
+                    color=C.warning,
+                    weight=ft.FontWeight.W_700,
+                )
+            )
+
+        return card(
+            ft.Row(
+                [
+                    section_title("On this device"),
+                    ft.Text(
+                        f"{sum(self._counts.values())} rows · {format_size(self._counts_bytes)}",
+                        size=10,
+                        color=C.text_muted,
+                        weight=ft.FontWeight.W_700,
+                    ),
+                ],
+                alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+            ),
+            muted_text(f"Every one of the {len(self._counts)} tables a backup carries.", size=10),
+            *rows,
+        )
+
+    def _export_card(self) -> ft.Control:
+        children: list[ft.Control] = [
+            section_title("Export"),
+            ft.Text(
+                "The file is written to this app's storage first, then you pick where "
+                "to copy it. If no dialog opens, this device has no folder picker — "
+                "the copy in app storage is still a complete backup.",
+                size=11,
+                color=C.text_secondary,
+            ),
+        ]
+        if self._last_export is not None:
+            children += [
+                ft.Container(height=4),
+                ft.Text("Last export", size=9, color=C.text_muted, weight=ft.FontWeight.W_800),
+                ft.Text(
+                    str(self._last_export),
+                    size=10,
+                    color=C.text_secondary,
+                    selectable=True,
+                    max_lines=3,
+                ),
+            ]
+        children += [
+            ft.Container(height=8),
+            primary_button(
+                "Export to file", icon=ft.Icons.SAVE_ALT, on_click=self._export, expand=True
+            ),
+        ]
+        return card(*children)
+
+    def _import_card(self) -> ft.Control:
+        return card(
+            section_title("Import"),
+            ft.Text(
+                "Restores a backup file. You see what it holds and what it replaces "
+                "before anything is touched.",
+                size=11,
+                color=C.text_secondary,
+            ),
+            ft.Container(height=8),
+            ghost_button("Choose backup file…", on_click=self._pick_import, expand=True),
+        )
+
+    def _images_card(self) -> ft.Control:
+        installed = asset_manager.is_installed()
+        total = self._dl_total or asset_manager.total_file_count()
+        done_fraction = (self._dl_done / total) if total else 0
+        self._progress = ft.ProgressBar(
+            value=1 if (installed and not self._dl_running) else done_fraction,
+            bgcolor=C.border,
+            color=C.accent,
+            bar_height=6,
+        )
+        self._progress_label = ft.Text(
+            f"{self._dl_done} / {total}" if self._dl_running else "",
+            size=10,
+            color=C.text_secondary,
+        )
+        if installed:
+            state, tone = "Installed", C.success
+        elif self._dl_running:
+            state, tone = "Downloading…", C.accent
+        else:
+            state, tone = f"Not installed · {IMAGE_BUNDLE_LABEL}", C.text_secondary
+
+        buttons: list[ft.Control] = []
+        if installed:
+            buttons.append(ghost_button("Remove", on_click=self._clear_images, expand=True))
+        buttons.append(
+            primary_button(
+                "Re-download" if installed else "Download",
+                icon=ft.Icons.CLOUD_DOWNLOAD,
+                on_click=self._download_images,
+                expand=True,
+            )
+        )
+
+        return card(
+            section_title("Exercise images"),
+            ft.Text(
+                "Photos are not shipped inside the app — they download once "
+                f"({IMAGE_BUNDLE_LABEL}), so use Wi-Fi. They are not part of a backup: "
+                "download them again on a new device.",
+                size=11,
+                color=C.text_secondary,
+            ),
+            ft.Container(height=6),
+            ft.Text(state, size=11, color=tone, weight=ft.FontWeight.W_700),
+            self._progress,
+            self._progress_label,
+            ft.Container(height=6),
+            ft.Row(buttons, spacing=8),
+        )

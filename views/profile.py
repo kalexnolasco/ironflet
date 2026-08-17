@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from datetime import date
 
 import flet as ft
@@ -134,166 +133,21 @@ class ProfileView:
         self.page.data["refresh_current"]()
 
     # ── backup / restore ─────────────────────────────────────
-    def _open_export(self):
-        dump = self.store.export_all()
-        payload = json.dumps(dump, indent=2, ensure_ascii=False, sort_keys=True)
-        size_kb = len(payload.encode("utf-8")) / 1024
+    def _open_backup(self, _=None):
+        """Send the user to the real backup screen (view 8).
 
-        def _stat_row(label: str, value: str) -> ft.Control:
-            return ft.Row(
-                [
-                    ft.Text(
-                        label,
-                        size=11,
-                        color=C.text_secondary,
-                        weight=ft.FontWeight.W_700,
-                        width=180,
-                    ),
-                    ft.Text(value, size=13, color=C.text, weight=ft.FontWeight.W_900),
-                ],
-                alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-            )
-
-        status = ft.Text("", size=11, color=C.accent, weight=ft.FontWeight.W_700)
-
-        def do_copy(_):
-            self.page.set_clipboard(payload)
-            status.value = "Copied!"
-            self.page.update()
-
-        body = ft.Column(
-            [
-                _stat_row("Workouts", str(len(dump.get("workouts") or []))),
-                _stat_row("Weight entries", str(len(dump.get("weights") or []))),
-                _stat_row("Preferences", str(len(dump.get("prefs") or {}))),
-                _stat_row("Profile", "✓" if (dump.get("profile") or {}).get("name") else "—"),
-                _stat_row("Size", f"{size_kb:.1f} KiB"),
-                ft.Container(height=6),
-                primary_button(
-                    "Copy to clipboard",
-                    icon=ft.Icons.CONTENT_COPY,
-                    on_click=do_copy,
-                    expand=True,
-                ),
-                status,
-            ],
-            spacing=10,
-            tight=True,
-            width=300,
-        )
-
-        dlg = ft.AlertDialog(
-            modal=False,
-            bgcolor=C.bg_surface,
-            title=ft.Text("Export backup", size=16, weight=ft.FontWeight.W_900, color=C.text),
-            content=ft.Container(
-                content=body, width=320, height=280, alignment=ft.alignment.top_left
-            ),
-            actions=[
-                ft.TextButton(
-                    "Close",
-                    on_click=lambda _: self.page.close(dlg),
-                    style=ft.ButtonStyle(color=C.text_secondary),
-                ),
-            ],
-            actions_alignment=ft.MainAxisAlignment.END,
-        )
-        self.page.open(dlg)
-
-    def _open_import(self):
-        paste = ft.TextField(
-            hint_text="Paste backup JSON below",
-            multiline=True,
-            min_lines=10,
-            max_lines=10,
-            text_size=10,
-            bgcolor=C.bg_page,
-            border_color=C.border,
-            focused_border_color=C.accent,
-            color=C.text,
-        )
-        status = ft.Text("", size=11, color=C.accent_2)
-        warn = ft.Text(
-            "This will replace all current data.",
-            size=10,
-            color=C.accent_2,
-            weight=ft.FontWeight.W_700,
-        )
-
-        def paste_from_clipboard(_):
-            try:
-                val = self.page.get_clipboard() or ""
-            except Exception:
-                val = ""
-            paste.value = val
-            self.page.update()
-
-        def do_import(_):
-            raw = (paste.value or "").strip()
-            if not raw:
-                status.value = "Invalid backup JSON"
-                self.page.update()
-                return
-            try:
-                data = json.loads(raw)
-                counts = self.store.import_all(data, wipe=True)
-            except Exception as exc:  # json error OR ValueError from import
-                status.value = f"Invalid backup JSON: {exc}"
-                self.page.update()
-                return
-            status.color = C.accent
-            total = sum(counts.values())
-            status.value = f"Backup imported ({total})"
-            self.page.update()
-            # brief pause then close + refresh
-            self.page.close(dlg)
-            # reload the routine from the new prefs
-            from data import set_active_routine
-
-            set_active_routine(self.store.get_pref("routine", "cambiatufisico") or "cambiatufisico")
-            self.page.data["refresh_current"]()
-
-        dlg = ft.AlertDialog(
-            modal=False,
-            bgcolor=C.bg_surface,
-            title=ft.Text("Import backup", size=16, weight=ft.FontWeight.W_900, color=C.text),
-            content=ft.Container(
-                content=ft.Column(
-                    [
-                        warn,
-                        paste,
-                        ft.TextButton(
-                            "Paste from clipboard",
-                            on_click=paste_from_clipboard,
-                            style=ft.ButtonStyle(color=C.accent),
-                        ),
-                        status,
-                    ],
-                    spacing=8,
-                    tight=True,
-                ),
-                width=340,
-                height=360,
-            ),
-            actions=[
-                ft.TextButton(
-                    "Cancel",
-                    on_click=lambda _: self.page.close(dlg),
-                    style=ft.ButtonStyle(color=C.text_secondary),
-                ),
-                ft.TextButton(
-                    "Replace all", on_click=do_import, style=ft.ButtonStyle(color=C.accent)
-                ),
-            ],
-            actions_alignment=ft.MainAxisAlignment.END,
-        )
-        self.page.open(dlg)
+        The clipboard dialogs that used to live here only covered four of the
+        twelve tables: pasting an old dump back in with wipe=True silently
+        deleted every food log and user routine. A JSON with months of training
+        in it does not fit in a clipboard on a phone either. DataView exports
+        and imports all twelve to a file, so this is the only backup path left.
+        """
+        self.page.data["navigate_to"](8)
 
     def _backup_section(self) -> ft.Control:
         return ft.Row(
             [
-                ghost_button("Export", on_click=lambda _: self._open_export(), expand=True),
-                ghost_button("Import", on_click=lambda _: self._open_import(), expand=True),
+                ghost_button("Backup & restore", on_click=self._open_backup, expand=True),
             ],
             spacing=8,
         )
