@@ -36,11 +36,36 @@ from theme import (
     ghost_button,
     primary_button,
 )
+from workout_draft import DraftStore, WorkoutDraft, is_blank_row
 
 #: `get_exercise_history` keeps the last 20 sessions by default. A record has to
 #: beat *everything*, so ask for the whole history of the exercise — otherwise a
 #: best from 21 sessions ago is forgotten and the app invents a PR.
 _PR_HISTORY_LIMIT = 100_000
+
+#: A row seeded from the previous session carries this key until the user
+#: vouches for it. **Present means "suggested, not lifted yet"; absent means
+#: confirmed.** Absent-is-confirmed is the safe default for `_blank_set()` — a
+#: row typed from scratch is by definition the user's own — and it keeps every
+#: pre-existing code path correct without extra bookkeeping.
+#:
+#: It never reaches the database: `_parse_set` builds a fresh dict out of
+#: weight/reps/rir/type and copies nothing else.
+_SUGGESTED_KEY = "_suggested"
+
+
+def _num_text(value) -> str:
+    """A stored number as the text a field shows — `82.5` → "82.5", `80.0` → "80".
+
+    Three programs write `entrenos.series`, so the value may not be a number at
+    all; `:g` on a string is a crashed screen. Anything unusable becomes an
+    empty field, which is exactly what the user should see.
+    """
+    if isinstance(value, bool) or value is None:
+        return ""
+    if isinstance(value, (int, float)):
+        return f"{value:g}"
+    return str(value).strip()
 
 
 def _set_type_color(set_type: SetType) -> str:
@@ -62,14 +87,46 @@ class WorkoutView:
     def __init__(self, page: ft.Page, store: Storage):
         self.page = page
         self.store = store
-        self.timer = RestTimer(page)
+        # The store is handed over rather than left to `RestTimer._store_ref()`
+        # to dig out of `page.data`: this view already holds it, and the timer
+        # needs it to know whether the rest alert is muted. The alert itself —
+        # sound, haptics, the ten-second warning — is entirely `timer.py`'s;
+        # this view only decides *when* a rest starts.
+        self.timer = RestTimer(page, store)
+        #: Owns the write policy for the draft (coalesced while typing,
+        #: immediate on a tap) and every rule about when a draft is too old or
+        #: no longer fits the routine. Never raises at this caller.
+        self._drafts = DraftStore(store)
 
         self.phase_id: int = 0
         self.day_idx: int = -1
         self.ex_idx: int = 0
-        self.sets: list[dict[str, str]] = [self._blank_set()]
+        # Draft rows are kept PER EXERCISE. One shared `self.sets` list was the
+        # bug behind "I changed exercise and it reset": stepping to the next
+        # movement threw the half-typed rows on the floor, unsaved and without
+        # a word. `sets` below is now a window onto this buffer.
+        self._sets_by_ex: dict[int, list[dict[str, str]]] = {}
+        # Last session per exercise, memoised. Two reasons, not one: it halves
+        # the database round-trips per render, and it pins what "LAST SESSION"
+        # means for the whole workout — without it, walking back to an exercise
+        # already logged today would show *today* as its own previous session.
+        self._last_sets_cache: dict[int, list[dict] | None] = {}
+        # Exercise indexes already written to `entrenos` in this session.
+        # `save_workout` INSERTs, it does not upsert, so a second press on an
+        # exercise already logged would fork today's history into two rows.
+        self._logged_ex: set[int] = set()
+        # (routine, phase, day) the buffer describes. `main.set_routine()`
+        # rewrites `phase_id`/`day_idx` on this instance from the outside, so
+        # the buffer has to be able to notice on its own that it now belongs to
+        # a different workout — see `_ensure_scope`.
+        self._scope: tuple = ()
         self.completed: list[dict] = []
         self.finished: bool = False
+        # Going back is now *screen* navigation, not a state reset: while these
+        # are True the workout underneath stays fully intact, `day_idx` and
+        # `phase_id` included, so walking out and back in costs nothing.
+        self.show_day_list: bool = False
+        self.show_phase_list: bool = False
 
         # Image animation state (frame-swap loop)
         self._anim_tick_id: int = 0
@@ -83,25 +140,52 @@ class WorkoutView:
         self._session_label: ft.Text | None = None
 
     def on_show(self):
-        pass
+        """Pick an interrupted workout back up.
+
+        The session used to live in memory only: a page reload, the phone going
+        to sleep or a `systemctl restart` lost it whole. The draft is written on
+        every state change and this is where it comes back — but only when
+        nothing is already open here, because live state always beats a
+        snapshot of itself.
+        """
+        if self.phase_id or self.day_idx >= 0 or self.completed or self.finished:
+            return
+        self._restore_draft()
 
     def handle_back(self) -> bool:
+        """Unwind one screen. It must never cost a single logged number.
+
+        On Android this fires on an edge swipe nobody meant, and Esc on the
+        desktop is one key away from everything. It used to wipe `ex_idx` and
+        `completed` — the whole day's progress — on the way out of a workout.
+        Now every step only changes *screen*: the workout state stays put and
+        is waiting, on the same exercise, when the user walks back in.
+        Abandoning a session is `_ask_discard`, an explicit button behind a
+        confirmation, and nothing else.
+        """
         if self.finished:
             self._reset()
             self.page.data["refresh_current"]()
             return True
-        if self.day_idx >= 0:
-            self.day_idx = -1
-            self.ex_idx = 0
-            self.completed = []
-            self._stop_session_timer()
+        if self._on_exercise_screen():
+            self.show_day_list = True
+            self._persist_draft()
             self.page.data["refresh_current"]()
             return True
-        if self.phase_id > 0:
-            self.phase_id = 0
+        if self.phase_id > 0 and not self.show_phase_list:
+            self.show_phase_list = True
             self.page.data["refresh_current"]()
             return True
         return False
+
+    def _on_exercise_screen(self) -> bool:
+        return (
+            self.phase_id > 0
+            and self.day_idx >= 0
+            and not self.show_day_list
+            and not self.show_phase_list
+            and not self.finished
+        )
 
     # ── State helpers ─────────────────────────────────────────
     @staticmethod
@@ -114,18 +198,322 @@ class WorkoutView:
         """
         return {"weight": "", "reps": "", "rir": "", TYPE_KEY: SetType.NORMAL.value}
 
+    # ── Per-exercise draft rows ───────────────────────────────
+    def _current_scope(self) -> tuple:
+        return (active_routine().id, self.phase_id, self.day_idx)
+
+    def _ensure_scope(self):
+        """Drop the buffer as soon as it stops describing this workout.
+
+        `main.set_routine()` rewrites `phase_id` / `day_idx` / `ex_idx` on this
+        instance directly, without going through any method here. A buffer that
+        only ever reset itself from inside this class would survive that and
+        hand one program's exercise 3 the rows typed for another's.
+        """
+        scope = self._current_scope()
+        if scope != self._scope:
+            self._scope = scope
+            self._sets_by_ex = {}
+            self._last_sets_cache = {}
+            self._logged_ex = set()
+
+    @property
+    def sets(self) -> list[dict[str, str]]:
+        """Draft rows of the exercise currently on screen.
+
+        Reads *and* writes land in `_sets_by_ex`, so leaving an exercise and
+        coming back finds the rows exactly as they were left. Every caller that
+        used to treat `self.sets` as a plain list still works unchanged.
+        """
+        self._ensure_scope()
+        rows = self._sets_by_ex.get(self.ex_idx)
+        if rows is None:
+            rows = self._seed_sets(self.ex_idx)
+            self._sets_by_ex[self.ex_idx] = rows
+        return rows
+
+    @sets.setter
+    def sets(self, rows: list[dict[str, str]]):
+        self._ensure_scope()
+        self._sets_by_ex[self.ex_idx] = list(rows)
+
+    def _last_sets(self, ex_idx: int) -> list[dict] | None:
+        """Previous session of exercise `ex_idx`, read once per workout."""
+        if ex_idx in self._last_sets_cache:
+            return self._last_sets_cache[ex_idx]
+        day = self._current_day()
+        if not day or not (0 <= ex_idx < len(day.exercises)):
+            return None
+        key = exercise_key(day.exercises[ex_idx])
+        last = None
+        # A database hiccup must degrade to "first time, no history", not to a
+        # blank screen in the middle of a set.
+        with contextlib.suppress(Exception):
+            last = self.store.get_last_sets(key)
+        self._last_sets_cache[ex_idx] = last
+        return last
+
+    def _seed_sets(self, ex_idx: int) -> list[dict[str, str]]:
+        """Opening rows for an exercise: last session's, marked as suggestions.
+
+        Alex's actual complaint was retyping numbers the screen was already
+        showing him — they sat in `hint_text`, a grey placeholder you can read
+        but not keep. Hevy and Strong both answer this the same way and so does
+        this: the previous session is written into the fields, rendered muted,
+        and does **not** count as logged until he vouches for it, by editing a
+        field or tapping the set number.
+
+        That last half is the whole point. A prefilled field nobody reviews
+        writes a weight he never lifted into `entrenos`, and `analytics`
+        happily turns it into a personal record — a corrupted history and a
+        fake PR are a worse bug than the typing this saves. So: zero taps to
+        *see* last time's numbers, one tap to claim them, and never a number
+        logged that he did not touch.
+        """
+        last = self._last_sets(ex_idx)
+        if not last:
+            return [self._blank_set()]
+        rows: list[dict[str, str]] = []
+        for one in last:
+            row = self._blank_set()
+            row["weight"] = _num_text(one.get("weight"))
+            row["reps"] = _num_text(one.get("reps"))
+            row["rir"] = _num_text(one.get("rir"))
+            # The type belongs to the plan, not to the performance: a session
+            # that opened with two warm-ups opens with two warm-ups again.
+            row[TYPE_KEY] = set_type_of(one).value
+            row[_SUGGESTED_KEY] = "1"
+            rows.append(row)
+        return rows
+
+    @staticmethod
+    def _is_suggested(row: dict) -> bool:
+        return bool(row.get(_SUGGESTED_KEY))
+
+    def _has_content(self, row: dict) -> bool:
+        return bool(row.get("weight") or row.get("reps"))
+
+    def _confirm_row(self, i: int) -> bool:
+        """Promote a suggestion to a set the user stands behind."""
+        rows = self.sets
+        if 0 <= i < len(rows) and self._is_suggested(rows[i]):
+            rows[i].pop(_SUGGESTED_KEY, None)
+            return True
+        return False
+
+    def _pending_count(self) -> int:
+        return sum(1 for r in self.sets if self._is_suggested(r) and self._has_content(r))
+
+    def _workout_in_progress(self) -> bool:
+        """True when there is something on this screen worth protecting.
+
+        Suggestions do not count: they are the app's guess, not the user's
+        work, and throwing away a guess costs nobody anything.
+        """
+        self._ensure_scope()
+        if self.day_idx < 0 or self.finished:
+            return False
+        if self.completed or self.ex_idx > 0:
+            return True
+        return any(
+            not self._is_suggested(r) and self._has_content(r)
+            for rows in self._sets_by_ex.values()
+            for r in rows
+        )
+
     def _reset(self):
         self.phase_id = 0
         self.day_idx = -1
         self.ex_idx = 0
-        self.sets = [self._blank_set()]
+        self._scope = ()
+        self._sets_by_ex = {}
+        self._last_sets_cache = {}
+        self._logged_ex = set()
         self.completed = []
         self.finished = False
+        self.show_day_list = False
+        self.show_phase_list = False
         self.timer.stop()
         self._stop_session_timer()
+        # Whatever brought us here — finishing, or an explicit discard — the
+        # session is over. A draft left behind would resurrect it on the next
+        # visit to the Train tab.
+        self._clear_draft()
+
+    # ── Draft (survives a reload, a sleeping phone, a restart) ─
+    def _exercise_keys(self) -> list[str]:
+        """Canonical keys of the current day, in order — the draft's own index.
+
+        `workout_draft` stores half-written rows **by exercise name**, not by
+        position, so editing the routine cannot move Alex's bench weights onto
+        a squat. This view thinks in positions, so this list is the translation
+        between the two, and it is the only place that does it.
+        """
+        day = self._current_day()
+        return [exercise_key(x) for x in day.exercises] if day else []
+
+    def _rows_for_draft(self, rows: list[dict[str, str]]) -> list[dict[str, str]]:
+        """Screen rows → rows worth persisting.
+
+        A suggestion is written out as an **empty placeholder**, never as its
+        numbers. `workout_draft.normalize_row` keeps only weight/reps/rir/type,
+        so a suggested row put in the draft would come back on restore
+        indistinguishable from one the user confirmed — a weight nobody lifted,
+        one tap away from the history and from a fake PR. The placeholder still
+        holds the *slot*, so the row count survives and the suggestion is built
+        again from the database, where it came from in the first place.
+        """
+        out: list[dict[str, str]] = []
+        for row in rows:
+            if self._is_suggested(row):
+                placeholder = self._blank_set()
+                placeholder[TYPE_KEY] = row.get(TYPE_KEY, SetType.NORMAL.value)
+                out.append(placeholder)
+            else:
+                out.append({k: v for k, v in row.items() if k != _SUGGESTED_KEY})
+        return out
+
+    def _rows_from_draft(self, rows: list[dict], ex_idx: int) -> list[dict[str, str]]:
+        """Persisted rows → screen rows, suggestions rebuilt from storage.
+
+        The inverse of `_rows_for_draft`: anything with a number in it is the
+        user's and comes back confirmed; an empty slot is re-offered as this
+        session's suggestion, so a restored screen looks exactly like the one
+        he left without a single unreviewed number having survived the trip.
+        """
+        seeded = self._seed_sets(ex_idx)
+        out: list[dict[str, str]] = []
+        for i, row in enumerate(rows):
+            clean = {str(k): str(v) for k, v in row.items() if k != _SUGGESTED_KEY}
+            if self._has_content(clean):
+                out.append(clean)
+            elif i < len(seeded) and self._is_suggested(seeded[i]):
+                out.append(dict(seeded[i]))
+            else:
+                out.append(clean or self._blank_set())
+        return out or [self._blank_set()]
+
+    def _build_draft(self) -> WorkoutDraft | None:
+        day = self._current_day()
+        keys = self._exercise_keys()
+        if day is None or not (0 <= self.ex_idx < len(keys)):
+            return None
+        pending: dict[str, list[dict[str, str]]] = {}
+        for idx, rows in self._sets_by_ex.items():
+            if not (0 <= idx < len(keys)):
+                continue
+            kept = self._rows_for_draft(rows)
+            # An exercise showing nothing but suggestions has no user input to
+            # restore; leaving it out keeps the payload small and stops an
+            # untouched day from resurfacing as a "workout in progress".
+            if any(not is_blank_row(r) for r in kept):
+                pending[keys[idx]] = kept
+        return WorkoutDraft(
+            routine_id=active_routine().id,
+            phase_id=self.phase_id,
+            day_idx=self.day_idx,
+            day_name=day.name,
+            ex_idx=self.ex_idx,
+            exercise=keys[self.ex_idx],
+            pending=pending,
+            completed=self.completed,
+            started_at=self.session_started_at,
+        )
+
+    def _persist_draft(self, *, force: bool = True):
+        """Checkpoint the session.
+
+        `force=True` for anything the user experiences as an action — a set
+        added, an exercise changed, a save. `force=False` for keystrokes, which
+        `DraftStore` coalesces so typing "127.5" is not five UPDATEs.
+        """
+        if self.finished or self.phase_id <= 0 or self.day_idx < 0:
+            return
+        draft = self._build_draft()
+        if draft is None:
+            return
+        # `DraftStore` already swallows storage errors; this covers the rest.
+        # A draft that fails to save must never cost the user the tap he just
+        # made — it is a safety net under the session, not the session.
+        with contextlib.suppress(Exception):
+            self._drafts.save(draft, force=force)
+
+    def _clear_draft(self):
+        with contextlib.suppress(Exception):
+            self._drafts.clear()
+
+    def _restore_draft(self):
+        """Rebuild the session from the draft.
+
+        `DraftStore.load` has already refused anything expired, corrupt, of a
+        foreign version or no longer fitting the routine, and has re-pointed
+        what survived by name. The bounds are still re-checked here: this side
+        is the one that indexes with them, and an `IndexError` on the Train tab
+        is a dead screen.
+        """
+        draft = None
+        with contextlib.suppress(Exception):
+            draft = self._drafts.load()
+        if draft is None:
+            return
+        days = active_routine().days_for_phase(draft.phase_id)
+        if not (0 <= draft.day_idx < len(days)):
+            return
+
+        self.phase_id = draft.phase_id
+        self.day_idx = draft.day_idx
+        self.finished = False
+        self.show_phase_list = False
+        self.show_day_list = False
+        # Set the scope by hand: `_ensure_scope` would otherwise notice the
+        # change and wipe the buffer we are about to fill.
+        self._scope = self._current_scope()
+        self._sets_by_ex = {}
+        self._last_sets_cache = {}
+        self._logged_ex = set()
+
+        keys = self._exercise_keys()
+        if not (0 <= draft.ex_idx < len(keys)):
+            self._reset()
+            return
+        self.ex_idx = draft.ex_idx
+        for idx, key in enumerate(keys):
+            rows = draft.pending.get(key)
+            if rows:
+                self._sets_by_ex[idx] = self._rows_from_draft(rows, idx)
+        self.completed = [c for c in draft.completed if isinstance(c, dict)]
+        # Which exercises are already in `entrenos` is derived, not stored:
+        # `completed` carries the keys, and matching them back to positions
+        # cannot go stale the way a saved index can.
+        done = {c.get("exercise") for c in self.completed}
+        self._logged_ex = {i for i, k in enumerate(keys) if k in done}
+
+        if draft.started_at:
+            self._resume_session_timer(float(draft.started_at))
+        else:
+            self._start_session_timer()
+
+        if draft.dropped:
+            # Rows that belonged to an exercise no longer in this day. Silently
+            # losing them would look like the bug this whole change is about.
+            with contextlib.suppress(Exception):
+                self._toast(
+                    f"Resumed. Dropped sets for: {', '.join(draft.dropped)}",
+                    ft.Icons.INFO_OUTLINE,
+                    C.warning,
+                )
 
     def _start_session_timer(self):
-        self.session_started_at = time.time()
+        self._resume_session_timer(time.time())
+
+    def _resume_session_timer(self, started_at: float):
+        """Restart the ticking clock from a start instant that already passed.
+
+        A restored session shows the time since the user actually began, not
+        since the app came back — the chronometer is what tells him whether he
+        has been in the gym forty minutes or two hours.
+        """
+        self.session_started_at = started_at
         self.session_ended_at = None
         self._session_tick_id += 1
         self.page.run_task(self._session_tick_loop, self._session_tick_id)
@@ -161,9 +549,13 @@ class WorkoutView:
                 return
 
     def _go_prev_exercise(self):
+        # No `self.sets = [blank]` here any more. Both of these used to throw
+        # the rows on the floor, which is literally what Alex reported: a swipe
+        # — and this one fires on an accidental drag — erased what he had
+        # typed, unsaved and unannounced. The rows now live per exercise.
         if self.ex_idx > 0:
             self.ex_idx -= 1
-            self.sets = [self._blank_set()]
+            self._persist_draft()
             self.page.data["refresh_current"]()
 
     def _go_next_exercise(self):
@@ -171,7 +563,7 @@ class WorkoutView:
         total = len(day.exercises) if day else 0
         if self.ex_idx + 1 < total:
             self.ex_idx += 1
-            self.sets = [self._blank_set()]
+            self._persist_draft()
             self.page.data["refresh_current"]()
 
     def _current_day(self):
@@ -195,48 +587,143 @@ class WorkoutView:
 
     # ── Actions ───────────────────────────────────────────────
     def _select_phase(self, pid: int):
+        if pid == self.phase_id and self._workout_in_progress():
+            # Re-picking the phase you are already training in is navigation,
+            # not a restart. Wiping here is how the back gesture used to eat
+            # the day: you left the exercise screen and came back through the
+            # front door, and the front door reset everything.
+            self.show_phase_list = False
+            self.show_day_list = True
+            self.page.data["refresh_current"]()
+            return
+        if self._workout_in_progress():
+            self._ask_discard(lambda: self._start_phase(pid))
+            return
+        self._start_phase(pid)
+
+    def _start_phase(self, pid: int):
         self.phase_id = pid
         self.day_idx = -1
         self.ex_idx = 0
         self.completed = []
         self.finished = False
+        self.show_phase_list = False
+        self.show_day_list = False
+        self._ensure_scope()
         self.page.data["refresh_current"]()
 
     def _select_day(self, idx: int):
+        if idx == self.day_idx and self._workout_in_progress():
+            self._resume_day()
+            return
+        if self._workout_in_progress():
+            self._ask_discard(lambda: self._start_day(idx))
+            return
+        self._start_day(idx)
+
+    def _resume_day(self):
+        """Walk back into the workout already open on this day."""
+        self.show_day_list = False
+        self.show_phase_list = False
+        self.finished = False
+        # The clock kept running while the day list was on screen — the user
+        # never left the gym — so it is only restarted if it was stopped.
+        if self.session_started_at is None:
+            self._start_session_timer()
+        elif self.session_ended_at is not None:
+            self._resume_session_timer(self.session_started_at)
+        self._persist_draft()
+        self.page.data["refresh_current"]()
+
+    def _start_day(self, idx: int):
         self.day_idx = idx
         self.ex_idx = 0
-        self.sets = [self._blank_set()]
         self.completed = []
         self.finished = False
+        self.show_day_list = False
+        self.show_phase_list = False
+        # A fresh day gets a fresh buffer, and `_ensure_scope` will not see the
+        # change on its own when the same day is restarted.
+        self._scope = self._current_scope()
+        self._sets_by_ex = {}
+        self._last_sets_cache = {}
+        self._logged_ex = set()
         # A countdown left over from the previous session has nothing to do
         # with this one.
         self.timer.stop()
         if idx >= 0:
             self._start_session_timer()
+            self._persist_draft()
         else:
             self._stop_session_timer()
+            self._clear_draft()
         self.page.data["refresh_current"]()
 
     def _add_set(self, _):
         # Adding a row means the previous one is done — that is the moment the
         # rest starts, and the only one the user signals without extra taps.
+        # It also vouches for a suggestion still sitting in that row: nobody
+        # moves on to set 3 without having done set 2.
         last = self.sets[-1]
-        if last.get("weight") or last.get("reps"):
+        self._confirm_row(len(self.sets) - 1)
+        if self._has_content(last):
             self._start_rest(last)
         self.sets.append(self._blank_set())
+        self._persist_draft()
         self.page.data["refresh_current"]()
 
     def _remove_set(self, i: int):
         if len(self.sets) > 1:
             self.sets.pop(i)
+            self._persist_draft()
             self.page.data["refresh_current"]()
 
     def _update_set(self, i: int, field: str, value: str):
-        self.sets[i][field] = value
+        rows = self.sets
+        if not (0 <= i < len(rows)):
+            return
+        rows[i][field] = value
+        # Typing *is* the review. A number the user just changed is his, so the
+        # row stops being a suggestion the moment he touches it — that is what
+        # makes "same weight, one more rep" cost exactly one edit.
+        rows[i].pop(_SUGGESTED_KEY, None)
+        # Unforced: this fires once per character, and `DraftStore` coalesces
+        # it to at most one write every few seconds. Without it, a phone that
+        # sleeps with the keyboard open loses the number being typed.
+        self._persist_draft(force=False)
 
     def _cycle_set_type(self, i: int):
+        # Deliberately does not confirm the row: relabelling a set as a warm-up
+        # says nothing about whether that weight was lifted.
         self.sets[i][TYPE_KEY] = next_set_type(self.sets[i].get(TYPE_KEY)).value
+        self._persist_draft()
         self.page.data["refresh_current"]()
+
+    def _confirm_set(self, i: int):
+        """Claim a suggested row: 'yes, that is what I just did.'
+
+        One-way on purpose. Un-confirming would be a silent way to drop a set
+        the user typed himself; the row's own X button is the explicit way.
+        """
+        if self._confirm_row(i):
+            # Confirming carries exactly the news `_add_set` carries — that set
+            # is over — so the rest starts here too, at no extra tap.
+            self._start_rest(self.sets[i])
+            self._persist_draft()
+            self.page.data["refresh_current"]()
+
+    def _confirm_all(self, _):
+        """One tap for "same as last time" — the case Alex was retyping."""
+        changed = False
+        for row in self.sets:
+            if self._is_suggested(row) and self._has_content(row):
+                row.pop(_SUGGESTED_KEY, None)
+                changed = True
+        if changed:
+            # No rest timer here on purpose: this is a bulk transcription of
+            # sets already done, not the signal that one has just ended.
+            self._persist_draft()
+            self.page.data["refresh_current"]()
 
     def _skip(self, _):
         self._advance()
@@ -260,6 +747,27 @@ class WorkoutView:
         # RestTimer.start() bumps its own `_tick_id`, which kills the previous
         # countdown — so restarting is safe and never stacks loops.
         self.timer.start(self._rest_seconds(finished_set))
+
+    def _toast(self, message: str, icon: str, color: str):
+        self.page.open(
+            ft.SnackBar(
+                content=ft.Row(
+                    [
+                        ft.Icon(icon, color=color, size=16),
+                        ft.Text(
+                            message,
+                            size=12,
+                            color=C.text,
+                            weight=ft.FontWeight.W_700,
+                            expand=True,
+                        ),
+                    ],
+                    spacing=8,
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                ),
+                bgcolor=C.bg_surface,
+            )
+        )
 
     def _parse_set(self, draft: dict) -> dict:
         """Draft row → the dict stored in `entrenos.series`.
@@ -285,7 +793,26 @@ class WorkoutView:
         return tag_set(parsed, draft.get(TYPE_KEY))
 
     def _save_next(self, _):
-        valid = [s for s in self.sets if s.get("weight") or s.get("reps")]
+        if self.ex_idx in self._logged_ex:
+            # Already written to `entrenos` in this session. `save_workout`
+            # INSERTs — there is no upsert — so a second press would fork today
+            # into two rows for the same exercise, which `get_last_sets` and
+            # `detect_new_records` would both read as two separate sessions.
+            self._advance()
+            return
+        rows = self.sets
+        valid = [s for s in rows if not self._is_suggested(s) and self._has_content(s)]
+        pending = [s for s in rows if self._is_suggested(s) and self._has_content(s)]
+        if not valid and pending:
+            # Everything on screen is still a suggestion. Saving nothing while
+            # the fields are full of numbers reads as a bug and silently loses
+            # the exercise, so say what is missing instead of advancing.
+            self._toast(
+                "Nothing confirmed yet — tap a set number, or Confirm all.",
+                ft.Icons.INFO_OUTLINE,
+                C.warning,
+            )
+            return
         if valid:
             raw = self._current_exercise_raw()
             key = exercise_key(raw)  # canonical EN name, no brackets/star
@@ -308,6 +835,12 @@ class WorkoutView:
 
             self.store.save_workout(entry)
             self.completed.append({"exercise": key, "sets": sets_parsed})
+            self._logged_ex.add(self.ex_idx)
+            # The rows are in the database now, so the copy kept here is only a
+            # record of what was sent. Dropping the suggestion flags stops the
+            # "not confirmed" banner from reappearing on the way back.
+            for row in valid:
+                row.pop(_SUGGESTED_KEY, None)
 
             # The set is already in the database: a missing congratulation must
             # never cost the user their log, so nothing here may raise.
@@ -356,15 +889,74 @@ class WorkoutView:
             self.finished = True
             self.timer.stop()
             self._stop_session_timer()
+            # Everything in this session is already in `entrenos`. A draft left
+            # behind would resurrect a finished workout on the next visit to
+            # the Train tab — and offer to log it a second time.
+            self._clear_draft()
         else:
+            # No blanking here either: the next exercise seeds its own rows the
+            # first time it is shown, and keeps them if we come back.
             self.ex_idx += 1
-            self.sets = [self._blank_set()]
+            self._persist_draft()
         self.page.data["refresh_current"]()
 
     def _finish(self, _):
         self._reset()
         nav = self.page.data["navigate_to"]
         nav(0)
+
+    # ── Abandoning a workout: explicit, and only here ─────────
+    def _ask_discard(self, then):
+        """Confirm before throwing a live workout away.
+
+        This is the *only* path that discards one. Everything else — back,
+        Esc, an edge swipe, re-picking the phase — is navigation now. The
+        callback runs on Yes and nothing happens on No, which is what an
+        accidental tap deserves.
+        """
+        dlg = ft.AlertDialog(modal=True)
+
+        def close(_=None):
+            self.page.close(dlg)
+
+        def confirm(_):
+            self.page.close(dlg)
+            self._discard_workout()
+            then()
+
+        dlg.title = ft.Text(
+            "Discard this workout?", size=16, weight=ft.FontWeight.W_900, color=C.text
+        )
+        dlg.content = ft.Text(
+            "Sets you already saved stay in your history. Anything typed and "
+            "not saved yet will be lost.",
+            size=12,
+            color=C.text_secondary,
+        )
+        dlg.actions = [
+            ghost_button("Keep training", on_click=close),
+            primary_button("Discard", on_click=confirm),
+        ]
+        dlg.actions_alignment = ft.MainAxisAlignment.END
+        dlg.bgcolor = C.bg_surface
+        self.page.open(dlg)
+
+    def _discard_workout(self):
+        """Drop the in-flight session. Saved sets are untouched — they are
+        already rows in `entrenos` and this app does not delete history."""
+        self.day_idx = -1
+        self.ex_idx = 0
+        self._scope = ()
+        self._sets_by_ex = {}
+        self._last_sets_cache = {}
+        self._logged_ex = set()
+        self.completed = []
+        self.finished = False
+        self.timer.stop()
+        self._stop_session_timer()
+        self.session_started_at = None
+        self.session_ended_at = None
+        self._clear_draft()
 
     # ── Render: phase select ──────────────────────────────────
     def _render_phase_select(self) -> ft.Control:
@@ -380,6 +972,10 @@ class WorkoutView:
                 ),
                 ft.Text("Choose your current phase", size=11, color=C.text_muted),
                 ft.Container(height=10),
+                # Backing all the way out of a live workout must not hide it:
+                # without this the only way back would be to re-pick the phase
+                # and hope, which is exactly the guesswork this change removes.
+                self._in_progress_banner(),
                 *[
                     ft.Container(
                         content=ft.Column(
@@ -424,9 +1020,13 @@ class WorkoutView:
         days = active_routine().days_for_phase(phase.id)
         return ft.Column(
             [
-                self._back_btn("Phases", lambda _: self._select_phase(0)),
+                # Not `_select_phase(0)`: that is a *state* change and it used
+                # to drag the open workout down with it. Showing the phase list
+                # is a screen, and `phase_id` stays where it is.
+                self._back_btn("Phases", lambda _: self._show_phases()),
                 ft.Text(phase.name, size=22, weight=ft.FontWeight.W_900, color=C.text),
                 ft.Container(height=10),
+                self._in_progress_banner(),
                 *[
                     ft.Container(
                         content=ft.Row(
@@ -472,6 +1072,73 @@ class WorkoutView:
             expand=True,
             tight=True,
             spacing=0,
+        )
+
+    def _show_phases(self):
+        self.show_phase_list = True
+        self.page.data["refresh_current"]()
+
+    def _in_progress_banner(self) -> ft.Control:
+        """ "You have a workout open" — the way back in, and the way out.
+
+        The only exit from a live session, and it asks first. Without this the
+        day list would be a dead end: tapping the day you are already training
+        resumes it, and nothing on screen would say why.
+        """
+        if not self._workout_in_progress():
+            return ft.Container()
+        days = active_routine().days_for_phase(self.phase_id)
+        name = days[self.day_idx].name if 0 <= self.day_idx < len(days) else "Workout"
+        done = len(self.completed)
+        detail = f"{done} logged · {self._format_elapsed(self._session_elapsed_s())}"
+        return ft.Container(
+            content=ft.Column(
+                [
+                    ft.Row(
+                        [
+                            ft.Icon(ft.Icons.PLAY_CIRCLE_FILL_ROUNDED, color=C.accent, size=18),
+                            ft.Column(
+                                [
+                                    ft.Text(
+                                        f"In progress · {name}",
+                                        size=13,
+                                        weight=ft.FontWeight.W_900,
+                                        color=C.text,
+                                    ),
+                                    ft.Text(detail, size=11, color=C.text_secondary),
+                                ],
+                                spacing=1,
+                                expand=True,
+                            ),
+                        ],
+                        spacing=8,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                    ),
+                    ft.Row(
+                        [
+                            ghost_button(
+                                "Discard",
+                                on_click=lambda _: self._ask_discard(
+                                    lambda: self.page.data["refresh_current"]()
+                                ),
+                                expand=True,
+                            ),
+                            primary_button(
+                                "Resume",
+                                on_click=lambda _: self._resume_day(),
+                                expand=True,
+                            ),
+                        ],
+                        spacing=8,
+                    ),
+                ],
+                spacing=10,
+            ),
+            bgcolor=C.accent_soft,
+            border=ft.border.all(1, C.accent),
+            border_radius=12,
+            padding=12,
+            margin=ft.margin.only(bottom=12),
         )
 
     # ── Render: finished ──────────────────────────────────────
@@ -580,22 +1247,60 @@ class WorkoutView:
 
     # ── Render: active exercise ───────────────────────────────
     def _set_row(self, i: int, s: dict, last_ref: dict | None) -> ft.Control:
-        placeholder_w = str(last_ref["weight"]) if last_ref else "kg"
-        placeholder_r = str(last_ref["reps"]) if last_ref else "reps"
+        placeholder_w = _num_text(last_ref.get("weight")) if last_ref else "kg"
+        placeholder_r = _num_text(last_ref.get("reps")) if last_ref else "reps"
+        # A suggested row is last session's numbers, not this session's work.
+        # It reads muted and hollow on purpose: the confirmed rows around it
+        # are the ones in full ink, so which is which is a glance, not a
+        # reading exercise.
+        suggested = self._is_suggested(s)
+        field_color = C.text_muted if suggested else C.text
+        field_border = C.border if suggested else C.border_strong
+
+        def fields() -> list[ft.TextField]:
+            return [w_field, r_field, rir_field]
+
+        def touched(idx: int, field: str, value: str):
+            """A keystroke: store it and, the first time, un-suggest the row.
+
+            The restyle is done in place instead of through
+            `refresh_current()`: rebuilding the tree under a keyboard steals
+            the focus and the caret, mid-number.
+            """
+            was_suggested = self._is_suggested(s)
+            self._update_set(idx, field, value)
+            if not was_suggested:
+                return
+            for f in fields():
+                f.color = C.text
+                f.border_color = C.border_strong
+            num_text.color = confirmed_number_color
+            with contextlib.suppress(Exception):
+                for f in fields():
+                    f.update()
+                num_badge.update()
+
+        def blurred(_):
+            # The cheapest honest moment to checkpoint: the field lost focus,
+            # so the number in it is finished. Saving on every keystroke would
+            # hammer the database for nothing.
+            self._persist_draft()
+
         w_field = ft.TextField(
             value=s.get("weight", ""),
             hint_text=placeholder_w,
             keyboard_type=ft.KeyboardType.NUMBER,
             text_align=ft.TextAlign.CENTER,
             bgcolor=C.bg_page,
-            border_color=C.border,
+            border_color=field_border,
             focused_border_color=C.accent,
-            color=C.text,
+            color=field_color,
             text_size=14,
             height=40,
             content_padding=ft.padding.symmetric(horizontal=6, vertical=8),
             expand=True,
-            on_change=lambda e, idx=i: self._update_set(idx, "weight", e.control.value),
+            on_change=lambda e, idx=i: touched(idx, "weight", e.control.value),
+            on_blur=blurred,
         )
         r_field = ft.TextField(
             value=s.get("reps", ""),
@@ -603,30 +1308,32 @@ class WorkoutView:
             keyboard_type=ft.KeyboardType.NUMBER,
             text_align=ft.TextAlign.CENTER,
             bgcolor=C.bg_page,
-            border_color=C.border,
+            border_color=field_border,
             focused_border_color=C.accent,
-            color=C.text,
+            color=field_color,
             text_size=14,
             height=40,
             content_padding=ft.padding.symmetric(horizontal=6, vertical=8),
             expand=True,
-            on_change=lambda e, idx=i: self._update_set(idx, "reps", e.control.value),
+            on_change=lambda e, idx=i: touched(idx, "reps", e.control.value),
+            on_blur=blurred,
         )
         # RIR (reps in reserve): optional. Left blank it simply isn't stored.
         rir_field = ft.TextField(
             value=s.get("rir", ""),
-            hint_text=str(last_ref.get("rir", "")) if last_ref and last_ref.get("rir") else "–",
+            hint_text=_num_text(last_ref.get("rir")) if last_ref and last_ref.get("rir") else "–",
             keyboard_type=ft.KeyboardType.NUMBER,
             text_align=ft.TextAlign.CENTER,
             bgcolor=C.bg_page,
-            border_color=C.border,
+            border_color=field_border,
             focused_border_color=C.accent,
-            color=C.text,
+            color=field_color,
             text_size=14,
             height=40,
             width=46,
             content_padding=ft.padding.symmetric(horizontal=2, vertical=8),
-            on_change=lambda e, idx=i: self._update_set(idx, "rir", e.control.value),
+            on_change=lambda e, idx=i: touched(idx, "rir", e.control.value),
+            on_blur=blurred,
         )
         # One tap cycles Normal → Warm-up → Drop → Failure. A badge, not a
         # form: four options do not deserve a dropdown on a 420 px screen.
@@ -650,19 +1357,28 @@ class WorkoutView:
             on_click=lambda _, idx=i: self._cycle_set_type(idx),
             ink=True,
         )
+        # The set number doubles as the confirm button — it costs no width on a
+        # 420 px row and it is already where the eye goes when a set ends.
+        confirmed_number_color = phase_color(self.phase_id) if self._phase() else C.accent
+        num_text = ft.Text(
+            str(i + 1),
+            size=13,
+            weight=ft.FontWeight.W_900,
+            color=C.text_muted if suggested else confirmed_number_color,
+            text_align=ft.TextAlign.CENTER,
+        )
+        num_badge = ft.Container(
+            content=num_text,
+            width=20,
+            height=40,
+            alignment=ft.alignment.center,
+            tooltip=("Tap to confirm this set" if suggested else f"Set {i + 1}"),
+            on_click=(lambda _, idx=i: self._confirm_set(idx)) if suggested else None,
+            ink=suggested,
+        )
         return ft.Row(
             [
-                ft.Container(
-                    content=ft.Text(
-                        str(i + 1),
-                        size=13,
-                        weight=ft.FontWeight.W_900,
-                        color=phase_color(self.phase_id) if self._phase() else C.accent,
-                        text_align=ft.TextAlign.CENTER,
-                    ),
-                    width=20,
-                    alignment=ft.alignment.center,
-                ),
+                num_badge,
                 type_chip,
                 w_field,
                 r_field,
@@ -690,7 +1406,9 @@ class WorkoutView:
         raw = self._current_exercise_raw()
         key = exercise_key(raw)
         display = raw
-        last_sets = self.store.get_last_sets(key)
+        # Through the cache, not straight to the store: the exercise just
+        # logged would otherwise come back as its own "last session".
+        last_sets = self._last_sets(self.ex_idx)
         last_ref_for_placeholder = last_sets[0] if last_sets else None
 
         if last_sets:
@@ -750,8 +1468,91 @@ class WorkoutView:
             border_radius=8,
             padding=8,
             alignment=ft.alignment.center,
+            expand=True,
             on_click=self._add_set,
             ink=True,
+        )
+        pending = self._pending_count()
+        row_actions: list[ft.Control] = [add_btn]
+        if pending:
+            # "Same as last time" in one tap — the whole point of prefilling.
+            # Only rendered while something is unconfirmed, so the button
+            # disappears the moment it would do nothing.
+            row_actions.append(
+                ft.Container(
+                    content=ft.Row(
+                        [
+                            ft.Icon(ft.Icons.DONE_ALL, size=14, color=C.accent),
+                            ft.Text(
+                                f"Confirm all ({pending})",
+                                size=11,
+                                color=C.accent,
+                                weight=ft.FontWeight.W_700,
+                            ),
+                        ],
+                        spacing=4,
+                        tight=True,
+                        alignment=ft.MainAxisAlignment.CENTER,
+                    ),
+                    border=ft.border.all(1, C.accent),
+                    border_radius=8,
+                    padding=8,
+                    alignment=ft.alignment.center,
+                    expand=True,
+                    on_click=self._confirm_all,
+                    ink=True,
+                )
+            )
+        actions_row = ft.Row(row_actions, spacing=6)
+
+        # Said once, above the rows, instead of guessed from a grey field: the
+        # muted rows are a proposal until they are claimed, and nothing muted
+        # is ever written to the history.
+        prefill_note: ft.Control = (
+            ft.Container(
+                content=ft.Row(
+                    [
+                        ft.Icon(ft.Icons.HISTORY, size=13, color=C.text_secondary),
+                        ft.Text(
+                            "From your last session — tap the set number to confirm",
+                            size=10,
+                            color=C.text_secondary,
+                            weight=ft.FontWeight.W_700,
+                            expand=True,
+                        ),
+                    ],
+                    spacing=6,
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                ),
+                bgcolor=C.bg_sunken,
+                border_radius=8,
+                padding=ft.padding.symmetric(horizontal=8, vertical=6),
+                margin=ft.margin.only(bottom=6),
+            )
+            if pending
+            else ft.Container()
+        )
+
+        already_logged = self.ex_idx in self._logged_ex
+        logged_note: ft.Control = (
+            ft.Container(
+                content=ft.Row(
+                    [
+                        ft.Icon(ft.Icons.CHECK_CIRCLE, size=13, color=C.success),
+                        ft.Text(
+                            "Logged in this session",
+                            size=10,
+                            color=C.success,
+                            weight=ft.FontWeight.W_700,
+                        ),
+                    ],
+                    spacing=6,
+                    tight=True,
+                ),
+                margin=ft.margin.only(bottom=6),
+            )
+            if already_logged
+            else ft.Container()
         )
 
         frames = image_frames(key)
@@ -802,10 +1603,12 @@ class WorkoutView:
             ft.Container(height=4),
             self.timer.build(),
             ft.Container(height=14),
+            logged_note,
+            prefill_note,
             header_row,
             *set_rows,
             ft.Container(height=6),
-            add_btn,
+            actions_row,
             border_color=phase_color(phase.id),
         )
 
@@ -822,14 +1625,17 @@ class WorkoutView:
             drag_interval=100,
         )
 
+        if already_logged:
+            # Nothing left to write for this exercise, and `_save_next` would
+            # refuse anyway. Saying "Next" is honest; saying "Save" twice is
+            # how you end up with two rows for one exercise on one day.
+            save_label = "Next" if self.ex_idx + 1 < total else "Finish"
+        else:
+            save_label = "Save → Next" if self.ex_idx + 1 < total else "Save → Finish"
         action_row = ft.Row(
             [
                 ghost_button("Skip", on_click=self._skip, expand=True),
-                primary_button(
-                    "Save → Next" if self.ex_idx + 1 < total else "Save → Finish",
-                    on_click=self._save_next,
-                    expand=True,
-                ),
+                primary_button(save_label, on_click=self._save_next, expand=True),
             ],
             spacing=8,
         )
@@ -859,7 +1665,7 @@ class WorkoutView:
 
         header = ft.Row(
             [
-                self._back_btn("Back", lambda _: None, raw_handler=lambda _: self._reset_to_days()),
+                self._back_btn("Back", lambda _: None, raw_handler=lambda _: self._back_to_days()),
                 session_chip,
                 ft.Text(
                     f"{self.ex_idx + 1}/{total}",
@@ -896,12 +1702,14 @@ class WorkoutView:
             spacing=0,
         )
 
-    def _reset_to_days(self):
-        self.day_idx = -1
-        self.ex_idx = 0
-        self.completed = []
-        self.timer.stop()
-        self._stop_session_timer()
+    def _back_to_days(self):
+        """The header's Back chip: same promise as the hardware back button.
+
+        It used to be `_reset_to_days` and it destroyed `ex_idx`, `completed`
+        and the running clock. Looking at the day list is not quitting.
+        """
+        self.show_day_list = True
+        self._persist_draft()
         self.page.data["refresh_current"]()
 
     def _back_btn(self, label: str, on_click, raw_handler=None) -> ft.Control:
@@ -942,9 +1750,15 @@ class WorkoutView:
     def build(self) -> ft.Control:
         # Invalidate any running frame-swap task before rebuild
         self._anim_tick_id += 1
-        if self.phase_id == 0:
+        # A routine swap from outside (`main.set_routine`) leaves `phase_id`
+        # and `day_idx` pointing into a routine that no longer exists; catch it
+        # before anything indexes with them.
+        self._ensure_scope()
+        # `show_*` pick the screen without touching the state underneath, which
+        # is what makes stepping out of a workout and back in free.
+        if self.phase_id == 0 or self.show_phase_list:
             return self._render_phase_select()
-        if self.day_idx < 0:
+        if self.day_idx < 0 or self.show_day_list:
             return self._render_day_select()
         if self.finished:
             return self._render_finished()
