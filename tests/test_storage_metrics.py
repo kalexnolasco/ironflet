@@ -223,8 +223,14 @@ def test_three_days_a_week_counts_on_the_default_routine(store):
     The minimum was hardcoded at 4, and CambiaTuFísico — the routine every
     new install starts on — prescribes 3 days a week for weeks 1 to 10. Ten
     weeks of flawless adherence therefore rendered as 🔥 0. `push-pull-legs`
-    and `women-home` are 3-day routines end to end, so their streak could
-    never have left 0 at all.
+    is a 3-day routine end to end, so its streak could never have left 0
+    at all.
+
+    Removing the four `women-*` routines on 2026-08-17 did NOT cost this test
+    its boundary case: `women-home` was a 3-day routine, but so are
+    CambiaTuFísico's phases 1-4 and both phases of `push-pull-legs`, so 3
+    remains the lowest `weekly_session_minimum()` of any shipped routine and
+    the "below the old hardcoded 4" case is still genuinely exercised.
     """
     for weeks_ago in (1, 2, 3, 4, 5):
         full_week(store, weeks_ago, days=3)
@@ -251,8 +257,14 @@ def test_perfect_adherence_is_never_a_zero_streak(store, use_routine, routine_id
 
     Each week logs exactly what the routine's lightest phase prescribes —
     the least a fully adherent user can ever do — and the streak has to see
-    it. This is the assertion that fails for four of the eight routines if
-    the minimum ever goes back to being a constant.
+    it. This is the assertion that breaks if the minimum ever goes back to
+    being a constant.
+
+    It caught 4 of the 8 routines when the hardcoded minimum was 4; with the
+    `women-*` routines gone it catches 2 of the 4 — `cambiatufisico` and
+    `push-pull-legs`, the two whose lightest phase is 3 days. Recalculate the
+    per-routine minima with:
+      for r in ROUTINES: set_active_routine(r.id); print(r.id, weekly_session_minimum())
     """
     use_routine(routine_id)
     prescribed = weekly_session_minimum()

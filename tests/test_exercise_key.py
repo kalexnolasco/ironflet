@@ -27,10 +27,23 @@ from exercises import exercise_key
 RAIZ = Path(__file__).resolve().parent.parent
 BOT = RAIZ.parent / "agente" / "entrenador" / "entrenos.py"
 
-# Medido sobre las 8 rutinas de data.py el 13/08/2026. Si cambian, es porque
-# alguien añadió ejercicios (sube el número) o rompió la normalización (baja).
-CADENAS_ESPERADAS = 282
-CLAVES_ESPERADAS = 104
+# Measured over the routines in `data.ROUTINES` on 2026-08-17, after the four
+# `women-*` routines were dropped: 282 strings / 104 keys over 8 routines became
+# 219 / 100 over 4. The four keys that stopped being prescribed are
+# `HIIT Intervals`, `Hyperextensions`, `Leg Raises` and `Triceps Kickback`; all
+# four remain in EXERCISE_CATALOG, so nothing became unreachable.
+#
+# Recalculate — never edit these to make a red test go green:
+#   .venv/bin/python -c "from data import ROUTINES; from exercises import exercise_key; \
+#     c = {e for r in ROUTINES for p in r.phases \
+#          for d in r.days_for_phase(p.id) for e in d.exercises}; \
+#     print(len(c), len({exercise_key(x) for x in c}))"
+#
+# Reading a failure: both numbers rising means exercises were added. CADENAS
+# steady while CLAVES moves means the normalisation drifted — that is the
+# data-integrity incident this file exists to catch.
+CADENAS_ESPERADAS = 219
+CLAVES_ESPERADAS = 100
 
 
 def cadenas_de_ejercicio() -> set[str]:

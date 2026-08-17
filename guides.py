@@ -1,4 +1,4 @@
-"""In-app reference tips for training, nutrition, and women-fitness.
+"""In-app reference tips for training and nutrition.
 
 Short, original tips based on general strength-training / nutrition principles.
 Not derived from any specific third-party publication.
@@ -87,48 +87,6 @@ GUIDES: dict[str, dict] = {
                 "Patience beats perfection",
                 "Pick a plan you can sustain 6 months. The ‘perfect’ diet you "
                 "abandon in 3 weeks beats nothing, but loses to the decent one you keep.",
-            ),
-        ],
-    },
-    "women": {
-        "title_key": "Women Fitness",
-        "icon": "💪",
-        "tips": [
-            (
-                "Lifting heavy doesn't 'bulk'",
-                "Adding visible size takes years and hormones you don't have. "
-                "Heavy compound lifts shape more than they enlarge.",
-            ),
-            (
-                "Glutes grow with hinge + stretch",
-                "Romanian deadlifts, hip thrusts, deep lunges and split squats "
-                "hit the glutes where they respond best.",
-            ),
-            (
-                "Track the full cycle",
-                "Strength often peaks in the follicular phase (days 1–14) and dips "
-                "pre-period. Log workouts alongside your cycle and plan heavy sessions "
-                "on your strong days.",
-            ),
-            (
-                "Don't fear the scale jump",
-                "Water retention, glycogen and muscle all add weight without adding fat. "
-                "Trust the mirror and the tape measure over a 1-day scale reading.",
-            ),
-            (
-                "Protein is not optional",
-                "1.6–2.2 g/kg still applies. Under-eating protein is the most common "
-                "reason a program stalls.",
-            ),
-            (
-                "Strength floor over cardio",
-                "Cardio supports the goal; strength training builds the shape. "
-                "Two to four strength sessions per week is the minimum.",
-            ),
-            (
-                "Rest is training",
-                "Muscle adapts between sessions, not during. One or two full rest days "
-                "per week are non-negotiable.",
             ),
         ],
     },

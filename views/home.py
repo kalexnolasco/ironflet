@@ -394,6 +394,15 @@ class HomeView:
         )
 
     def _guides_row(self) -> ft.Control:
+        """One card per guide, however many there are.
+
+        The row is driven by `guide_ids()` and every card is `expand=True`, so
+        the width is split evenly whatever the count: measured at the 420 px
+        window, three cards come out 125 px each and two come out 192 px, both
+        flush with the stats row above. Dropping the women guide therefore
+        needed no change here. Do not pin a width to keep the old card size —
+        two fixed cards leave a dead strip on the right instead of filling it.
+        """
         from guides import guide_icon, guide_ids, guide_title_key
         from views.guide_dialog import open_guide
 

@@ -443,19 +443,36 @@ def test_resolve_muscles_recovers_most_of_the_missing_keys():
     movements on one line, where at least one component still does not resolve —
     plus `Bulgarian Split Squat`, which is absent from the 500-exercise source
     altogether.
+
+    Dropping the four `women-*` routines on 2026-08-17 took the key count from
+    104 to 100 but left `unknown` at 8 with exactly the same members: the four
+    keys that stopped being prescribed (`HIIT Intervals`, `Hyperextensions`,
+    `Leg Raises`, `Triceps Kickback`) all resolved to muscles already. So the
+    8 above is unchanged, not merely recounted — the sentence explaining it is
+    still true movement for movement.
     """
-    import data
+    from data import ROUTINES
     from exercises import exercise_key
 
-    keys = set()
-    for name in dir(data):
-        value = getattr(data, name)
-        if isinstance(value, list) and value and isinstance(value[0], data.TrainingDay):
-            for day in value:
-                keys.update(exercise_key(ex) for ex in day.exercises)
+    # Iterate ROUTINES — the same source of truth as tests/test_exercise_key.py,
+    # so the two files can never disagree about what is prescribed. The previous
+    # scan walked `dir(data)` for module-level `list[TrainingDay]` constants,
+    # which also counts a day list no routine references any more; a deletion
+    # that removed a routine but left its `WH_DAYS`-style constant behind would
+    # have kept this test green on dead data.
+    keys = {
+        exercise_key(ex)
+        for routine in ROUTINES
+        for phase in routine.phases
+        for day in routine.days_for_phase(phase.id)
+        for ex in day.exercises
+    }
 
     unknown = {k for k in keys if resolve_muscles(k).status == "unknown"}
-    assert len(keys) == 104
+    # Must equal CLAVES_ESPERADAS in tests/test_exercise_key.py, which carries
+    # the recalculation command. Both are the collapsed key set of data.ROUTINES.
+    assert len(keys) == 100
+    # Recalculate: {k for k in keys if resolve_muscles(k).status == "unknown"}
     assert len(unknown) == 8
     assert "Bulgarian Split Squat" in unknown
     assert "Hip Thrust" not in unknown

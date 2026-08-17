@@ -1,4 +1,4 @@
-"""In-app dialog that shows a guide (training / nutrition / women fitness)."""
+"""In-app dialog that shows a guide (training / nutrition)."""
 
 from __future__ import annotations
 

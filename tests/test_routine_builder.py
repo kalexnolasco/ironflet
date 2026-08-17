@@ -327,7 +327,10 @@ def test_the_existing_views_render_a_stored_routine(store, page_mock):
 
 def test_sync_is_idempotent_and_keeps_the_builtins(store):
     before = [r.id for r in ROUTINES]
-    duplicate_builtin(store, "women-home")
+    # Was `women-home` (1 phase / 3 days) before that routine was removed. This
+    # test only needs *some* built-in to duplicate, so it takes the cheapest
+    # survivor: `push-pull-legs`, 2 phases of 3 days, the smallest still shipped.
+    duplicate_builtin(store, "push-pull-legs")
     for _ in range(3):
         sync_user_routines(store)
     after = [r.id for r in ROUTINES]
@@ -336,7 +339,11 @@ def test_sync_is_idempotent_and_keeps_the_builtins(store):
 
 
 def test_deleting_the_active_routine_falls_back(store):
-    pk = duplicate_builtin(store, "women-strength")
+    # Was `women-strength`. `upper-lower` is its exact structural twin — 2 phases
+    # of 4 days each — so the copy being deleted is the same size and shape as
+    # before. It must also not be ROUTINES[0], since the fallback asserted below
+    # is precisely "the active routine reverts to ROUTINES[0]"; it is not.
+    pk = duplicate_builtin(store, "upper-lower")
     rid = user_routine_id(pk)
     set_active_routine(rid)
     assert active_routine().id == rid
@@ -387,7 +394,15 @@ def test_save_load_round_trip_keeps_order(store):
 
 
 def test_update_replaces_children_instead_of_appending(store):
-    pk = duplicate_builtin(store, "women-home")
+    # Was `women-home`. What this test needs is a first phase with enough days
+    # that popping one is observable; `women-home` had 3. `push-pull-legs` also
+    # opens on a 3-day phase, so `original_days` is still 3 and the assertion
+    # below still spans the same 3 → 2 transition.
+    #
+    # No surviving routine has `women-home`'s single phase (the lightest left is
+    # 2), but the extra phase is inert here: only `phases[0]` is mutated, and the
+    # round trip through save/load covers it either way.
+    pk = duplicate_builtin(store, "push-pull-legs")
     draft = load_draft(store, pk)
     original_days = len(draft.phases[0].days)
 
