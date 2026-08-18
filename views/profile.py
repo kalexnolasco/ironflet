@@ -208,18 +208,24 @@ class ProfileView:
 
     # ── exercise guides (image cache) ────────────────────────
     def _open_download_dialog(self):
-        total = asset_manager.total_file_count()
-        installed = asset_manager.is_installed()
+        st = asset_manager.status()
+        total = st.total
+        installed = st.complete
         status_label = ft.Text(
-            "Installed" if installed else "Not installed  ·  ~9 MB",
+            "Installed"
+            if installed
+            else (f"{st.missing} of {total} missing" if st.present else "Not installed  ·  ~9 MB"),
             size=11,
             color=C.accent if installed else C.text_secondary,
             weight=ft.FontWeight.W_700,
         )
         progress_bar = ft.ProgressBar(
-            value=1 if installed else 0, bgcolor=C.border, color=C.accent, bar_height=6
+            value=st.present / total if total else 0,
+            bgcolor=C.border,
+            color=C.accent,
+            bar_height=6,
         )
-        count_label = ft.Text(f"0 / {total}", size=10, color=C.text_secondary)
+        count_label = ft.Text(f"{st.present} / {total}", size=10, color=C.text_secondary)
 
         def on_progress(done: int, tot: int):
             try:
@@ -299,8 +305,16 @@ class ProfileView:
         self.page.open(dlg)
 
     def _guides_section(self) -> ft.Control:
-        installed = asset_manager.is_installed()
-        status = "Installed" if installed else "~9 MB"
+        st = asset_manager.status()
+        installed = st.complete
+        # Three states, not two. "68 of 70" is what Alex actually had, and the
+        # old label called it "~9 MB" — indistinguishable from having none.
+        if st.complete:
+            status = "Installed"
+        elif st.present:
+            status = f"{st.missing} of {st.total} missing"
+        else:
+            status = "~9 MB"
         return ft.Container(
             content=ft.Row(
                 [

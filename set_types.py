@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterable
+from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
@@ -78,6 +79,78 @@ SHORT_LABELS: dict[SetType, str] = {
     SetType.DROPSET: "D",
     SetType.FAILURE: "F",
 }
+
+
+@dataclass(frozen=True)
+class SetTypeHelp:
+    """One entry of the legend behind the TYPE column.
+
+    Split in two on purpose. `what` is the definition — it tells you which
+    letter to pick. `consequence` is the part that is invisible in the UI and
+    that you cannot guess: whether the set feeds volume, set counts and
+    records. That second line is the whole reason this help exists; a warm-up
+    logged as a working set inflates tonnage, and a top set logged as a warm-up
+    silently throws away a PR.
+    """
+
+    what: str
+    consequence: str
+
+
+#: Plain-English legend, one entry per `SetType`. Data, not layout: it lives
+#: next to the enum so a new member cannot ship without its explanation (the
+#: tests assert the mapping is total), and `views/help_dialog.py` only renders
+#: it. Written to be read on a phone between sets — two short lines, no prose.
+HELP: dict[SetType, SetTypeHelp] = {
+    SetType.WARMUP: SetTypeHelp(
+        what=(
+            "Light reps to prime the movement before the real work — "
+            "well under the weight you are about to lift."
+        ),
+        consequence=(
+            "Not counted: no volume, no set count, and it can never take a "
+            "record. Rest afterwards is short."
+        ),
+    ),
+    SetType.NORMAL: SetTypeHelp(
+        what=(
+            "The sets the plan asks for. This is the default: leave the letter "
+            "alone and the set is stored as normal work."
+        ),
+        consequence=(
+            "Counts for volume, set counts and records. Everything the Telegram "
+            "coach logs arrives as this."
+        ),
+    ),
+    SetType.DROPSET: SetTypeHelp(
+        what=(
+            "You hit the target reps, cut about 20–30 % of the weight and keep "
+            "going with no rest. Log the drop as its own set."
+        ),
+        consequence=(
+            "Counts in full, like any working set. The label is what explains "
+            "why the weight fell mid-exercise."
+        ),
+    ),
+    SetType.FAILURE: SetTypeHelp(
+        what=(
+            "Taken until one more clean rep is not there — RIR 0. Worth saving "
+            "for the last set of an exercise."
+        ),
+        consequence=(
+            "Counts in full, like any working set. It costs recovery, so it is "
+            "a choice, not a default."
+        ),
+    ),
+}
+
+
+def help_for(set_type: Any) -> SetTypeHelp:
+    """Legend entry for any stored value. Same forgiving parse as everything
+    else here: unknown or missing reads as normal, so the dialog never raises
+    on a row written by another program."""
+    return HELP[parse_set_type(set_type)]
+
 
 #: Order a tap-to-cycle control walks through. Normal first: it is the default
 #: and the one Alex picks 90 % of the time, so it costs zero taps.

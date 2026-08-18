@@ -76,10 +76,11 @@ EXERCISE_IMAGE: dict[str, str] = {
     "Standing Calf Raise": "Standing_Barbell_Calf_Raise",
     "Seated Calf Raise": "Seated_Calf_Raise",
     # Recomp routine. Slugs reused from the existing bundle so no new assets
-    # are needed, except Barbell_Hip_Thrust and Full_Range-Of-Motion_Lat_Pulldown,
-    # fetched from the source repo. Bulgarian Split Squat has no match at all in
-    # the 500-exercise source and deliberately renders without an image —
-    # a photo of a different movement would be worse than none.
+    # are needed, except Barbell_Hip_Thrust and Full_Range-Of-Motion_Lat_Pulldown
+    # (mapped above), which postdate the release tarball and are fetched
+    # per-file from upstream by `asset_manager`. Bulgarian Split Squat has no
+    # match at all in the source catalogue and deliberately renders without an
+    # image — a photo of a different movement would be worse than none.
     "Dips": "Dips_-_Triceps_Version",
     "Face Pull": "Face_Pull",
     "Cable Lateral Raises": "Side_Lateral_Raise",
@@ -98,6 +99,17 @@ EXERCISE_IMAGE: dict[str, str] = {
     "Elliptical": "Elliptical_Trainer",
     "HIIT Intervals": "Air_Bike",
 }
+
+
+def required_slugs() -> tuple[str, ...]:
+    """Every distinct slug the catalog needs, sorted.
+
+    Single source of truth for "what must be installed". `asset_manager`, the
+    bundle-building script and the tests all ask this instead of each keeping
+    their own set comprehension over `EXERCISE_IMAGE.values()` — three copies
+    of that is how a slug ends up required by one and unknown to another.
+    """
+    return tuple(sorted({s for s in EXERCISE_IMAGE.values() if s}))
 
 
 def image_for(key: str) -> str | None:
@@ -124,7 +136,8 @@ def image_frames(key: str) -> tuple[str, str] | None:
 
     if not image_path(slug, 0):
         return None
-    # Frame 1 is optional: half the bundle only ships a single frame, and
-    # falling back to frame 0 shows a still instead of a hole.
+    # Frame 1 is optional: it can be absent when a slug was repaired from
+    # upstream and only the first frame came through. Falling back to frame 0
+    # shows a still instead of a hole.
     segundo = 1 if image_path(slug, 1) else 0
     return f"/exercises/{slug}/0.jpg", f"/exercises/{slug}/{segundo}.jpg"

@@ -5,15 +5,17 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import time
-from datetime import date
+from datetime import date, timedelta
 
 import flet as ft
 
 from analytics import Record, detect_new_records
 from components.timer import RestTimer
 from data import active_routine
+from dates import day_name, month_name
 from exercise_images import image_frames
 from exercises import exercise_key, phase_color
+from program_week import StartSource, load_program_start
 from set_types import (
     TYPE_KEY,
     SetType,
@@ -36,6 +38,7 @@ from theme import (
     ghost_button,
     primary_button,
 )
+from views.help_dialog import help_icon
 from workout_draft import DraftStore, WorkoutDraft, is_blank_row
 
 #: `get_exercise_history` keeps the last 20 sessions by default. A record has to
@@ -59,6 +62,26 @@ _SUGGESTED_KEY = "_suggested"
 #: put the food diary back in front of him mid-set.
 ZEN_PREF = "zen_mode"
 
+#: Preference key holding the date the session in progress is being logged to.
+#:
+#: The value is ``"<log date>|<the calendar day the choice was made on>"``, both
+#: ISO. The second half is not decoration: it is what makes a forgotten choice
+#: expire by itself, because a date chosen yesterday can never be adopted today.
+#: See `_load_log_date`.
+#:
+#: Its own key rather than a field on `WorkoutDraft` for two reasons. The draft
+#: payload is versioned (`DRAFT_VERSION`) and shared with `backup.py`'s skip
+#: list, so a new field there is a format bump; and this value is re-validated
+#: on read anyway, so the two can never disagree in a way that costs a date.
+LOG_DATE_PREF = "workout_log_date"
+
+#: How far back a session may be filed. Alex's case is "I forgot my phone" —
+#: hours, or a couple of days. A month is generous for that and still refuses
+#: the realistic typo: `2025-08-16` for `2026-08-16` is a year-old date that
+#: would move the inferred program start (see `_backdate_warnings`) and drag the
+#: Plan screen with it, and it is far easier to catch here than to undo later.
+MAX_BACKDATE_DAYS = 30
+
 
 def _num_text(value) -> str:
     """A stored number as the text a field shows — `82.5` → "82.5", `80.0` → "80".
@@ -72,6 +95,29 @@ def _num_text(value) -> str:
     if isinstance(value, (int, float)):
         return f"{value:g}"
     return str(value).strip()
+
+
+def _date_label(day: date, today: date | None = None) -> str:
+    """A logging date as the phrase that goes on screen.
+
+    Deliberately not an ISO string. "2026-08-16" is a number to decode; "Sat 16
+    Aug · 2 days ago" is read at a glance, which is the whole job of the warning
+    strip this feeds. `views/nutrition_view.py` already words its day header
+    this way, so the two screens say "Yesterday" the same.
+    """
+    today = today or date.today()
+    gap = (today - day).days
+    if gap == 0:
+        return "Today"
+    if gap == 1:
+        return "Yesterday"
+    stamp = f"{day_name(day.weekday())} {day.day} {month_name(day.month - 1)}"
+    if gap < 0:
+        # Only reachable from a hand-edited preference row: `_set_log_date`
+        # clamps and the dialog refuses. Say something true rather than
+        # "-3 days ago".
+        return f"{stamp} · in the future"
+    return f"{stamp} · {gap} days ago"
 
 
 def _set_type_color(set_type: SetType) -> str:
@@ -138,6 +184,14 @@ class WorkoutView:
         # flag whose value only matters once a day is actually open, where
         # `_arm_zen` reads it. See `hides_nav` for what it costs the shell.
         self.zen: bool = True
+
+        # The date every set of this session is written under. Today until Alex
+        # says otherwise, and back to today the moment the session it belonged
+        # to is over — see the "Logging date" block below for the full rule.
+        self.log_date: date = date.today()
+        # The real calendar day on which `log_date` was last chosen. `None` means
+        # "never chosen", i.e. plain today, and is the state a fresh view is in.
+        self._log_date_chosen_on: date | None = None
 
         # Image animation state (frame-swap loop)
         self._anim_tick_id: int = 0
@@ -290,6 +344,304 @@ class WorkoutView:
         """
         return self.zen and self._on_exercise_screen()
 
+    # ── Logging date ──────────────────────────────────────────
+    #
+    # Alex: "podamos actualizar para un dia anterior... la sesion ... osea que
+    # se pueda cambiar el día... por ejemplo a veces nos olvidamos el movil y al
+    # llegar a casa quiero actualizar el entreno."
+    #
+    # The data layer was never the obstacle: `WorkoutEntry` has carried a `date`
+    # since the first commit and `Storage.save_workout` writes whatever it is
+    # given. This view simply hardcoded `date.today()`. So the feature is a
+    # choice, a place to make it, and — the part that actually matters — a
+    # guarantee that it is never made by accident.
+    #
+    # WHERE IT LIVES. On the day-select screen, one line above the day cards.
+    # That is the last screen before a session starts and the only one already
+    # asking "which workout is this", so the date belongs in the same breath as
+    # the day. Putting it on the exercise screen would tax every ordinary
+    # workout with a control that is wrong 95 % of the time; putting it behind
+    # Finish would ask the question after the answer stopped being changeable
+    # without thought. The exercise screen therefore shows a small "Today" chip
+    # (so the setting is still reachable from inside a session, one tap, no
+    # navigation) and, when the date is *not* today, a full-width warning strip
+    # that no layout — zen mode included — is allowed to hide.
+    #
+    # WHEN IT GOES BACK TO TODAY. The dangerous failure is not picking the wrong
+    # date. It is picking the right one on Tuesday and finding it still set on
+    # Wednesday: a whole session filed under a stale day, nothing on screen
+    # saying so, in the one part of the app whose entire job is to be a faithful
+    # record. So the choice is scoped to a session *and* to a day:
+    #
+    #   * `_reset()` and `_discard_workout()` clear it — finishing or abandoning
+    #     a workout ends the only thing the date belonged to;
+    #   * `_ensure_log_date_fresh()`, run from `build()`, clears it as soon as
+    #     the real calendar day has moved on and no workout is open;
+    #   * the persisted copy carries the day the choice was made on, so a draft
+    #     restored the next morning comes back logging to *that* morning.
+    #
+    # A live session is deliberately exempt from the day-rollover rule. A
+    # backdated session that is still open sits behind a warning strip that
+    # cannot be missed, and yanking its date away at midnight — the 22:30 to
+    # 00:10 session `workout_draft` already reasons about — would be a change
+    # nobody asked for and nobody would see.
+    #
+    # NO FUTURE DATES. Not taste, arithmetic: `analytics.training_streak` skips
+    # rows dated after today, `Storage.get_week_stats` filters them out of the
+    # trailing week, and `program_week.last_workout_date` ignores them. A
+    # session logged for next Tuesday would be written, reported as saved, and
+    # then counted by nothing at all — a silent no-op, which is the worst answer
+    # available. There is also nothing to log: a workout you have not done yet
+    # has no sets. The picker refuses, and says why.
+    #
+    # WHAT ELSE MOVES WHEN THE DATE MOVES. Two things, both real, both surfaced
+    # in the dialog by `_backdate_warnings` rather than left to be discovered:
+    # the weekly streak counts the session in the week the date falls in (not
+    # this one), and — when the program start is being *inferred* from the
+    # earliest logged session — a date older than that start moves the whole
+    # program back and can change the week Plan reports.
+
+    def _min_log_date(self, today: date | None = None) -> date:
+        return (today or date.today()) - timedelta(days=MAX_BACKDATE_DAYS)
+
+    def is_backdated(self) -> bool:
+        """Is this session being written under a day that is not today?
+
+        Public like `hides_nav`: it is a fact about the view other code (and
+        every test in tests/test_workout_date.py) has a right to ask for.
+        """
+        return self.log_date != date.today()
+
+    def _log_date_text(self) -> str:
+        return _date_label(self.log_date)
+
+    def _set_log_date(self, day: date, *, persist: bool = True) -> date:
+        """Point the session at `day`. Returns the date actually adopted.
+
+        Clamped rather than trusted. The dialog validates and explains before
+        ever calling this, so the clamp is for programmatic callers and for the
+        day-rollover corner where "today" moved under a value already held.
+        """
+        today = date.today()
+        chosen = min(max(day, self._min_log_date(today)), today)
+        self.log_date = chosen
+        # Choosing today *is* the default state, not a choice to remember: it
+        # leaves nothing behind to go stale and nothing to write down.
+        self._log_date_chosen_on = None if chosen == today else today
+        if persist:
+            self._persist_log_date()
+        return chosen
+
+    def _reset_log_date(self, *, persist: bool = True):
+        self.log_date = date.today()
+        self._log_date_chosen_on = None
+        if persist:
+            self._persist_log_date()
+
+    def _persist_log_date(self):
+        """Mirror the choice into `preferencias`, or clear the row.
+
+        Never at the caller's expense — this runs on a tap during a workout, and
+        a preference that will not save costs a restored date, not a set.
+        """
+        value = ""
+        if self._log_date_chosen_on is not None:
+            value = f"{self.log_date.isoformat()}|{self._log_date_chosen_on.isoformat()}"
+        with contextlib.suppress(Exception):
+            self.store.set_pref(LOG_DATE_PREF, value)
+
+    def _load_log_date(self):
+        """Adopt the persisted choice — but only if it was made today.
+
+        Everything else reads as "log to today": an empty row, junk, a date
+        chosen on another day, a date outside the allowed window. That is the
+        one answer that can never be wrong by surprise, which is the property
+        this whole feature is built around.
+        """
+        raw = ""
+        with contextlib.suppress(Exception):
+            raw = self.store.get_pref(LOG_DATE_PREF, "") or ""
+        today = date.today()
+        chosen_iso, _, made_on_iso = str(raw).partition("|")
+        try:
+            chosen = date.fromisoformat(chosen_iso.strip())
+            made_on = date.fromisoformat(made_on_iso.strip())
+        except ValueError:
+            # `persist` only when there was something to clean up: an empty row
+            # is the normal case and must not cost a write on every restore.
+            self._reset_log_date(persist=bool(raw))
+            return
+        if made_on != today or not (self._min_log_date(today) <= chosen <= today):
+            self._reset_log_date(persist=True)
+            return
+        self.log_date = chosen
+        self._log_date_chosen_on = made_on
+
+    def _ensure_log_date_fresh(self):
+        """Snap back to today once the choice has outlived its session.
+
+        Called from `build()`. `build()` is meant to be a pure render, and this
+        is the same exception `_ensure_scope` already is: the state it repairs
+        goes stale while nothing is calling anything — the clock passes
+        midnight, the app sits on a tab — so the render is the first moment
+        anybody could notice.
+        """
+        if self._log_date_chosen_on is None or self._log_date_chosen_on == date.today():
+            return
+        if self._workout_in_progress():
+            # Open session: the strip is on screen and the date is still his.
+            return
+        self._reset_log_date()
+
+    def _backdate_warnings(self, chosen: date, entries: list, start) -> list[str]:
+        """What choosing `chosen` will do beyond writing the sets.
+
+        Pure: the caller reads the history once when the dialog opens and this
+        is re-run on every tap. Both warnings describe behaviour that already
+        exists elsewhere in the app and would otherwise be discovered days
+        later, in Plan or in History, with no way left to connect it to a tap.
+        """
+        out: list[str] = []
+        stamp = chosen.isoformat()
+        names = sorted({e.exercise for e in entries if str(getattr(e, "date", "")) == stamp})
+        if names:
+            shown = ", ".join(names[:3]) + ("…" if len(names) > 3 else "")
+            out.append(
+                f"{len(names)} exercise{'' if len(names) == 1 else 's'} already logged that "
+                f"day ({shown}). Saving adds rows — it never replaces them."
+            )
+        # Only when the start date is a *guess*. A start Alex pinned himself is
+        # a fact and no amount of back-dating moves it.
+        if (
+            start is not None
+            and getattr(start, "source", None) is StartSource.FIRST_WORKOUT
+            and start.day is not None
+            and chosen < start.day
+        ):
+            out.append(
+                f"Earlier than your first logged session ({start.day.isoformat()}), which is "
+                "where the program start is being guessed from — this moves the program back "
+                "and can change the week Plan shows."
+            )
+        return out
+
+    def _open_date_dialog(self, _=None):
+        """Pick the day this session is filed under.
+
+        Four taps' worth of shortcuts and a typed field, not an `ft.DatePicker`.
+        That was checked rather than assumed: Flet 0.28.3 does ship one, it
+        renders as a full-screen Material calendar on a phone, and there is not
+        one anywhere in this app — `views/plan.py::open_start_date_dialog`
+        already declined to introduce the first, for a screen with the same
+        shape of question. A month-grid modal to answer "yesterday" is more
+        gesture, more surface and more inconsistency for less speed. The four
+        buttons cover every case Alex described in one tap; the field covers the
+        rest in the app's existing idiom.
+
+        The history is read **once**, here, and the warnings below it are
+        recomputed locally on every tap — so the note is live and the database
+        is touched once per dialog, not once per keystroke.
+        """
+        today = date.today()
+        entries: list = []
+        start = None
+        # A dialog that cannot reach the database still has to let him pick a
+        # date; it just cannot warn him about the history it could not read.
+        with contextlib.suppress(Exception):
+            entries = list(self.store.get_all())
+        with contextlib.suppress(Exception):
+            start = load_program_start(self.store, entries=entries)
+
+        field = ft.TextField(
+            label="Date (YYYY-MM-DD)",
+            value=self.log_date.isoformat(),
+            dense=True,
+            color=C.text,
+            border_color=C.border_strong,
+            focused_border_color=C.accent,
+            label_style=ft.TextStyle(color=C.text_secondary),
+        )
+        note = ft.Text("", size=11, color=C.warning)
+        err = ft.Text("", size=11, color=C.danger)
+        dlg = ft.AlertDialog(modal=False)
+
+        def show_note(day: date | None):
+            note.value = "\n".join(self._backdate_warnings(day, entries, start)) if day else ""
+
+        def fill(day: date):
+            field.value = day.isoformat()
+            err.value = ""
+            show_note(day)
+            self.page.update()
+
+        def save(_):
+            text = (field.value or "").strip()
+            try:
+                chosen = date.fromisoformat(text)
+            except ValueError:
+                err.value = "Use YYYY-MM-DD"
+                self.page.update()
+                return
+            if chosen > today:
+                # Refused, not clamped: see the block comment above. Silently
+                # moving the date to today would be the app pretending to obey.
+                err.value = "Not the future — a workout you have not done has nothing to log."
+                self.page.update()
+                return
+            if chosen < self._min_log_date(today):
+                err.value = f"Too far back — {MAX_BACKDATE_DAYS} days is the limit."
+                self.page.update()
+                return
+            self._set_log_date(chosen)
+            self.page.close(dlg)
+            self.page.data["refresh_current"]()
+
+        # Today and Yesterday by name; the two before by weekday, which is how
+        # anybody actually remembers a missed session ("that was Saturday").
+        shortcuts = [
+            ghost_button(
+                _date_label(today - timedelta(days=n), today).split(" · ")[0],
+                on_click=lambda _, n=n: fill(today - timedelta(days=n)),
+                expand=True,
+            )
+            for n in range(4)
+        ]
+        show_note(self.log_date)
+
+        dlg.title = ft.Text(
+            "Log this workout to", size=16, weight=ft.FontWeight.W_900, color=C.text
+        )
+        dlg.content = ft.Container(
+            content=ft.Column(
+                [
+                    ft.Text(
+                        "The day the sets were actually performed. Everything you save in "
+                        "this session goes under it.",
+                        size=11,
+                        color=C.text_secondary,
+                        width=300,
+                    ),
+                    ft.Row(shortcuts[:2], spacing=8),
+                    ft.Row(shortcuts[2:], spacing=8),
+                    field,
+                    note,
+                    err,
+                ],
+                spacing=10,
+                tight=True,
+                scroll=ft.ScrollMode.AUTO,
+            ),
+            width=320,
+            height=280,
+        )
+        dlg.actions = [
+            ghost_button("Cancel", on_click=lambda _: self.page.close(dlg)),
+            primary_button("Use this date", on_click=save),
+        ]
+        dlg.actions_alignment = ft.MainAxisAlignment.END
+        dlg.bgcolor = C.bg_surface
+        self.page.open(dlg)
+
     # ── State helpers ─────────────────────────────────────────
     @staticmethod
     def _blank_set() -> dict[str, str]:
@@ -341,7 +693,16 @@ class WorkoutView:
         self._sets_by_ex[self.ex_idx] = list(rows)
 
     def _last_sets(self, ex_idx: int) -> list[dict] | None:
-        """Previous session of exercise `ex_idx`, read once per workout."""
+        """Previous session of exercise `ex_idx`, read once per workout.
+
+        "Previous" means the most recent row in the database, not the most
+        recent row *before* `log_date`. On a back-dated session those differ:
+        log Saturday on Monday having trained Sunday, and the suggestion carries
+        Sunday's numbers. Left as is on purpose — `Storage.get_last_sets` takes
+        no date and this view may not add one, the suggestion is a prefill
+        nobody logs without confirming (`_seed_sets`), and the numbers on the
+        phone are the ones being copied off paper anyway.
+        """
         if ex_idx in self._last_sets_cache:
             return self._last_sets_cache[ex_idx]
         day = self._current_day()
@@ -438,6 +799,11 @@ class WorkoutView:
         self.show_phase_list = False
         self.timer.stop()
         self._stop_session_timer()
+        # The date belonged to the session that just ended. Leaving it set is
+        # exactly the "it was still on yesterday" failure the whole feature is
+        # designed around. `persist=False` because `_clear_draft` below wipes
+        # the stored copy anyway — one write, not two.
+        self._reset_log_date(persist=False)
         # Whatever brought us here — finishing, or an explicit discard — the
         # session is over. A draft left behind would resurrect it on the next
         # visit to the Train tab.
@@ -544,6 +910,12 @@ class WorkoutView:
     def _clear_draft(self):
         with contextlib.suppress(Exception):
             self._drafts.clear()
+        # The chosen date is part of that draft's session in everything but
+        # storage location, so it dies with it. Cleared unconditionally rather
+        # than through `_persist_log_date`: this runs on paths that have already
+        # reset the in-memory value, and the row must go either way.
+        with contextlib.suppress(Exception):
+            self.store.set_pref(LOG_DATE_PREF, "")
 
     def _restore_draft(self):
         """Rebuild the session from the draft.
@@ -573,6 +945,11 @@ class WorkoutView:
         # is the path a killed process takes, which makes it the one where a
         # surprise change of layout would be least welcome.
         self._arm_zen(fresh_day=False)
+        # Same argument for the date, with one extra guarantee: `_load_log_date`
+        # refuses a choice made on another calendar day, so a session resumed
+        # the next morning comes back logging to *that* morning rather than
+        # quietly continuing to write into a day that is now two days old.
+        self._load_log_date()
         # Set the scope by hand: `_ensure_scope` would otherwise notice the
         # change and wipe the buffer we are about to fill.
         self._scope = self._current_scope()
@@ -960,7 +1337,15 @@ class WorkoutView:
         key = exercise_key(day.exercises[idx])  # canonical EN name, no brackets/star
         sets_parsed = [self._parse_set(s) for s in valid]
         entry = WorkoutEntry(
-            date=date.today().isoformat(),
+            # The one line the whole "log yesterday's session" feature comes
+            # down to. `log_date` is today unless Alex said otherwise, and it
+            # can never be a future date — see the "Logging date" block.
+            #
+            # `entry.timestamp` is deliberately left alone: `creado` records
+            # when the row was *written*, which for a backdated session is
+            # tonight, and that is the truth. Only `fecha` — the day trained —
+            # moves, and it is the column every metric reads.
+            date=self.log_date.isoformat(),
             exercise=key,
             muscle_group=day.name,
             phase=self.phase_id,
@@ -1033,6 +1418,15 @@ class WorkoutView:
                 C.success,
             )
             return
+        if self.is_backdated():
+            # Confirmation, not decoration: a write that went somewhere other
+            # than today says so out loud, once per exercise. Nothing is said on
+            # an ordinary save — a toast for the normal case is noise.
+            self._toast(
+                f"Saved to {self._log_date_text()}.",
+                ft.Icons.EVENT_BUSY,
+                C.warning,
+            )
         # Rest between exercises counts too — except after the last one, where
         # the next thing to happen is Finish.
         if not self._is_last_exercise():
@@ -1123,6 +1517,19 @@ class WorkoutView:
                 color=C.text_secondary,
             )
         ]
+        if self.is_backdated():
+            # Last checkpoint before the flush below writes everything still
+            # pending. If the date is wrong, this is the final place it is
+            # cheap to notice — afterwards it is rows in `entrenos`, and this
+            # app does not delete history.
+            lines.append(
+                ft.Text(
+                    f"Writing to {self._log_date_text()} — not today.",
+                    size=12,
+                    color=C.warning,
+                    weight=ft.FontWeight.W_700,
+                )
+            )
         if unsaved:
             lines.append(ft.Container(height=6))
             lines.append(
@@ -1241,6 +1648,8 @@ class WorkoutView:
         self._stop_session_timer()
         self.session_started_at = None
         self.session_ended_at = None
+        # See `_reset`: the date is scoped to the session being thrown away.
+        self._reset_log_date(persist=False)
         self._clear_draft()
 
     # ── Render: phase select ──────────────────────────────────
@@ -1311,6 +1720,10 @@ class WorkoutView:
                 self._back_btn("Phases", lambda _: self._show_phases()),
                 ft.Text(phase.name, size=22, weight=ft.FontWeight.W_900, color=C.text),
                 ft.Container(height=10),
+                # Above the day cards, not below: the date is part of choosing
+                # which session this is, and it has to be answered before the
+                # tap that starts one.
+                self._log_date_row(),
                 self._in_progress_banner(),
                 *[
                     ft.Container(
@@ -1362,6 +1775,129 @@ class WorkoutView:
     def _show_phases(self):
         self.show_phase_list = True
         self.page.data["refresh_current"]()
+
+    # ── Render: the logging date, in its three sizes ──────────
+    def _log_date_row(self) -> ft.Control:
+        """The day-select screen's line. Always on screen, quiet until it isn't.
+
+        Quiet is the point: it sits between the phase title and the day cards,
+        one line tall, saying "Today" for the ordinary workout. It is the home
+        of this setting because it is the last thing seen before a session
+        starts, so "which day is this" is answered before the first set instead
+        of after the last.
+        """
+        off = self.is_backdated()
+        tint = C.warning if off else C.text_muted
+        return ft.Container(
+            content=ft.Row(
+                [
+                    ft.Icon(
+                        ft.Icons.EVENT_BUSY if off else ft.Icons.EVENT_AVAILABLE,
+                        size=15,
+                        color=tint,
+                    ),
+                    ft.Column(
+                        [
+                            ft.Text("LOGGING TO", size=9, color=tint, weight=ft.FontWeight.W_900),
+                            ft.Text(
+                                self._log_date_text(),
+                                size=13,
+                                color=C.text,
+                                weight=ft.FontWeight.W_900,
+                            ),
+                        ],
+                        spacing=0,
+                        expand=True,
+                    ),
+                    ft.Text("Change", size=11, color=C.accent, weight=ft.FontWeight.W_700),
+                ],
+                spacing=8,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
+            bgcolor=C.bg_surface,
+            border=ft.border.all(1, C.warning if off else C.border),
+            border_radius=12,
+            padding=ft.padding.symmetric(horizontal=12, vertical=8),
+            margin=ft.margin.only(bottom=8),
+            tooltip="Change the day this session is written under",
+            on_click=self._open_date_dialog,
+            ink=True,
+        )
+
+    def _backdate_strip(self) -> ft.Control:
+        """The exercise screen's warning. Nothing at all while the date is today.
+
+        This is the control the feature lives or dies by. Alex's real exposure
+        is not choosing the wrong day, it is a right choice left over from last
+        night quietly filing tonight's session into it — so while the date is
+        not today this is the first thing on the card, full width, in warning
+        ink, above the exercise name, and **zen mode does not remove it**. Zen
+        strips reference material; this is not reference material, it is the
+        difference between a log and a lie.
+        """
+        if not self.is_backdated():
+            return ft.Container()
+        return ft.Container(
+            content=ft.Row(
+                [
+                    ft.Icon(ft.Icons.EVENT_BUSY, size=17, color=C.warning),
+                    ft.Column(
+                        [
+                            ft.Text(
+                                "NOT TODAY", size=9, color=C.warning, weight=ft.FontWeight.W_900
+                            ),
+                            ft.Text(
+                                f"Saving to {self._log_date_text()}",
+                                size=13,
+                                color=C.text,
+                                weight=ft.FontWeight.W_900,
+                            ),
+                        ],
+                        spacing=0,
+                        expand=True,
+                    ),
+                    ft.Text("Change", size=11, color=C.warning, weight=ft.FontWeight.W_700),
+                ],
+                spacing=8,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
+            bgcolor=C.bg_sunken,
+            border=ft.border.all(1, C.warning),
+            border_radius=Radius.md,
+            padding=ft.padding.symmetric(horizontal=10, vertical=8),
+            margin=ft.margin.only(bottom=10),
+            tooltip="These sets go into a past day — tap to change the date",
+            on_click=self._open_date_dialog,
+            ink=True,
+        )
+
+    def _log_date_chip(self) -> ft.Control:
+        """The small "Today" pill on the exercise card's first line.
+
+        Renders only when the date *is* today and zen mode is off — the two
+        cases where the strip above says nothing. Without it the setting would
+        be unreachable from inside a session without walking back to the day
+        list; with it the whole cost is one muted pill on a line that otherwise
+        holds nothing but "EXERCISE 3".
+        """
+        if self.zen or self.is_backdated():
+            return ft.Container()
+        return ft.Container(
+            content=ft.Row(
+                [
+                    ft.Icon(ft.Icons.EVENT_AVAILABLE, size=11, color=C.text_muted),
+                    ft.Text("Today", size=10, color=C.text_muted, weight=ft.FontWeight.W_700),
+                ],
+                spacing=3,
+                tight=True,
+            ),
+            border=ft.border.all(1, C.border),
+            border_radius=Radius.sm,
+            padding=ft.padding.symmetric(horizontal=6, vertical=2),
+            tooltip="Logging to today — tap to file this session under another day",
+            on_click=self._open_date_dialog,
+            ink=True,
+        )
 
     def _in_progress_banner(self) -> ft.Control:
         """ "You have a workout open" — the way back in, and the way out.
@@ -1501,6 +2037,28 @@ class WorkoutView:
             subtitle = "Nothing logged this time"
             subtitle_color = C.text_muted
 
+        # Says where it went. Without this the summary would read exactly the
+        # same for a session filed under today and one filed under Saturday,
+        # and the only way to find out would be the History tab.
+        date_line: ft.Control = (
+            ft.Row(
+                [
+                    ft.Icon(ft.Icons.EVENT_BUSY, color=C.warning, size=14),
+                    ft.Text(
+                        f"Logged to {self._log_date_text()}",
+                        size=12,
+                        color=C.warning,
+                        weight=ft.FontWeight.W_700,
+                    ),
+                ],
+                alignment=ft.MainAxisAlignment.CENTER,
+                spacing=6,
+                tight=True,
+            )
+            if self.is_backdated()
+            else ft.Container()
+        )
+
         return ft.Column(
             [
                 ft.Container(height=20),
@@ -1534,6 +2092,7 @@ class WorkoutView:
                     spacing=6,
                     tight=True,
                 ),
+                date_line,
                 ft.Container(height=16),
                 *completed_blocks,
                 ft.Container(height=10),
@@ -1850,7 +2409,10 @@ class WorkoutView:
                 column_head("KG"),
                 column_head("REPS"),
                 column_head("RIR", 46),
-                ft.Container(width=30),
+                # The `?` lives here on purpose: TYPE shows a bare letter
+                # (N/W/D/F) and RIR a bare number, and neither says what it
+                # means. This slot was already reserved as an empty 30 px box.
+                help_icon(self.page, size=30),
             ],
             spacing=5,
         )
@@ -2012,11 +2574,22 @@ class WorkoutView:
             next_line = ft.Container()
 
         exercise_card = card(
-            ft.Text(
-                f"EXERCISE {self.ex_idx + 1}",
-                size=10,
-                color=phase_color(phase.id),
-                weight=ft.FontWeight.W_900,
+            # First thing in the card, before the exercise name, and it survives
+            # zen mode. Empty — literally zero height — whenever the date is
+            # today, which is the 95 % case.
+            self._backdate_strip(),
+            ft.Row(
+                [
+                    ft.Text(
+                        f"EXERCISE {self.ex_idx + 1}",
+                        size=10,
+                        color=phase_color(phase.id),
+                        weight=ft.FontWeight.W_900,
+                        expand=True,
+                    ),
+                    self._log_date_chip(),
+                ],
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
             ),
             ft.Text(display, size=24 if zen else 19, weight=ft.FontWeight.W_900, color=C.text),
             next_line,
@@ -2285,6 +2858,11 @@ class WorkoutView:
         # and `day_idx` pointing into a routine that no longer exists; catch it
         # before anything indexes with them.
         self._ensure_scope()
+        # And a date chosen on a day that has since ended has nothing left to
+        # describe. Same exception to "build() is a pure render" as the line
+        # above, for the same reason: nothing else runs while the clock passes
+        # midnight, so the render is the first chance anyone gets.
+        self._ensure_log_date_fresh()
         # `show_*` pick the screen without touching the state underneath, which
         # is what makes stepping out of a workout and back in free.
         if self.phase_id == 0 or self.show_phase_list:

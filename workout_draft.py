@@ -95,7 +95,10 @@ DRAFT_PREF_KEY = "workout_draft"
 #: Preference keys that are scratch state, not user data. `backup.py` may skip
 #: these when dumping `preferencias`; restoring one would resurrect a workout
 #: that ended months ago.
-EPHEMERAL_PREF_KEYS: tuple[str, ...] = (DRAFT_PREF_KEY,)
+# The log-date pick belongs here too: it is a property of the session in
+# progress, not of the history. Restoring a backup must not drop someone
+# else's "I am logging Saturday" onto this device.
+EPHEMERAL_PREF_KEYS: tuple[str, ...] = (DRAFT_PREF_KEY, "workout_log_date")
 
 #: Payload format. Bump on any shape change; older drafts are then discarded.
 DRAFT_VERSION = 1
