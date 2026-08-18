@@ -42,6 +42,15 @@ PRE_ALERT_MIN_TOTAL_S = 25
 SOUND_PREF = "timer_sound"
 HAPTICS_PREF = "timer_haptics"
 
+#: Sizes for the two layouts this timer can render into. `build()` and
+#: `build_large()` hand out the **same** control objects — the countdown loop
+#: mutates them by reference — so each layout has to restate every geometry the
+#: other one changes. Leave a size out of `build()` and switching zen mode off
+#: leaves a 36 pt countdown inside a 56 px ring, which is how the digits ended
+#: up clipped the first time this was written.
+RING_PX, DISPLAY_PT = 56, 14
+RING_PX_LARGE, DISPLAY_PT_LARGE = 128, 36
+
 #: `main.py` passes `assets_dir="assets"`, so Flet serves this directory at the
 #: web root and the src is an app-relative URL. It must NOT be a filesystem
 #: path: a `file://` src is refused by the browser ("Not allowed to load local
@@ -149,10 +158,10 @@ class RestTimer:
         self._haptics: ft.HapticFeedback | None = None
         self._mounted = False
 
-        self.display = ft.Text("REST", size=14, weight=ft.FontWeight.W_800, color=C.accent)
+        self.display = ft.Text("REST", size=DISPLAY_PT, weight=ft.FontWeight.W_800, color=C.accent)
         self.ring = ft.ProgressRing(
-            width=56,
-            height=56,
+            width=RING_PX,
+            height=RING_PX,
             stroke_width=4,
             color=C.accent,
             bgcolor=C.border,
@@ -370,46 +379,109 @@ class RestTimer:
             on_click=lambda _, s=secs: self.start(s),
         )
 
-    def build(self) -> ft.Control:
-        # These controls outlive a render — they are created once in
-        # `__init__` — so their colours are re-read here to follow the palette.
+    def _restyle(self, *, ring_px: int, display_pt: int, stroke: int) -> None:
+        """Re-apply everything a layout owns, before handing the controls out.
+
+        These controls outlive a render — they are created once in `__init__`
+        and both layouts reuse the very same objects — so colours are re-read
+        to follow the palette, and geometry is restated because the *other*
+        layout may have left its own numbers behind.
+        """
         self.display.color = C.accent
+        self.display.size = display_pt
         self.ring.color = C.accent
         self.ring.bgcolor = C.border
+        self.ring.width = self.ring.height = ring_px
+        self.ring.stroke_width = stroke
         self.stop_btn.style = ft.ButtonStyle(color=C.accent_2)
         # Lazily, so the speaker button shows the stored state on the first
         # render instead of guessing "on"; afterwards the in-process value is
         # trusted and only `start()` goes back to the database.
         self._load_prefs()
         self._style_sound_btn()
-        return ft.Row(
+
+    def _dial(self, px: int) -> ft.Control:
+        """The ring with the remaining time centred in it."""
+        return ft.Stack(
             [
-                ft.Stack(
-                    [
-                        self.ring,
-                        ft.Container(
-                            self.display,
-                            alignment=ft.alignment.center,
-                            width=56,
-                            height=56,
-                        ),
-                    ],
-                    width=56,
-                    height=56,
-                ),
-                ft.Row(
-                    [
-                        self._preset("1m", 60),
-                        self._preset("1:30", 90),
-                        self._preset("2m", 120),
-                        self._preset("3m", 180),
-                        self.sound_btn,
-                        self.stop_btn,
-                    ],
-                    spacing=4,
-                    wrap=True,
+                self.ring,
+                ft.Container(
+                    self.display,
+                    alignment=ft.alignment.center,
+                    width=px,
+                    height=px,
                 ),
             ],
+            width=px,
+            height=px,
+        )
+
+    def _controls_row(self, **row_kw) -> ft.Control:
+        """Presets, mute and Stop. Rest is automatic; this is the override."""
+        return ft.Row(
+            [
+                self._preset("1m", 60),
+                self._preset("1:30", 90),
+                self._preset("2m", 120),
+                self._preset("3m", 180),
+                self.sound_btn,
+                self.stop_btn,
+            ],
+            spacing=4,
+            wrap=True,
+            **row_kw,
+        )
+
+    def build(self) -> ft.Control:
+        self._restyle(ring_px=RING_PX, display_pt=DISPLAY_PT, stroke=4)
+        return ft.Row(
+            [self._dial(RING_PX), self._controls_row()],
             spacing=10,
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
+        )
+
+    def build_large(self, caption: str | None = None) -> ft.Control:
+        """The same countdown, sized to be read from a metre away.
+
+        Zen mode's rest block. The phone is on the floor or on the bench and
+        Alex is standing over it: at 14 pt the seconds left are a squint, which
+        is why he picks the phone up mid-rest in the first place.
+
+        It returns the controls `build()` returns, not copies of them —
+        `_tick_loop` counts down by mutating `self.display` and `self.ring`, so
+        a copy would freeze at the value it was cloned with. Only one of the two
+        layouts is ever mounted at a time, which is what makes sharing safe.
+
+        It stays this size even with no rest running, which looks like waste and
+        is not. Shrinking when idle would mean re-rendering on `start()` and
+        `stop()`, and a rebuild while a set is being typed steals the focus and
+        the caret mid-number — the same trap `_set_row.touched()` exists to dodge.
+        A steady dial that reads REST, then the seconds, then GO! costs some
+        pixels and cannot eat a keystroke.
+        """
+        self._restyle(ring_px=RING_PX_LARGE, display_pt=DISPLAY_PT_LARGE, stroke=8)
+        children: list[ft.Control] = [self._dial(RING_PX_LARGE)]
+        if caption:
+            children.append(
+                ft.Text(
+                    caption,
+                    size=10,
+                    color=C.text_muted,
+                    weight=ft.FontWeight.W_700,
+                    text_align=ft.TextAlign.CENTER,
+                )
+            )
+        children.append(self._controls_row(alignment=ft.MainAxisAlignment.CENTER))
+        return ft.Container(
+            content=ft.Column(
+                children,
+                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                spacing=8,
+                tight=True,
+            ),
+            bgcolor=C.bg_page,
+            border=ft.border.all(1, C.border),
+            border_radius=Radius.lg,
+            padding=ft.padding.symmetric(horizontal=12, vertical=14),
+            alignment=ft.alignment.center,
         )

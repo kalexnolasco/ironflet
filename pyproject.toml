@@ -96,6 +96,14 @@ Releases = "https://github.com/kalexnolasco/ironflet/releases"
 [tool.flet]
 app.module = "main"
 
+# The name under the launcher icon. It has to live HERE, not under
+# `[tool.flet.android]`: build.py:892 reads `tool.flet.product` and has no
+# per-platform variant, so the `product_name` that used to sit in the android
+# section was read by nothing and the icon was labelled "ironflet" — the
+# slug of `[project] name`, lower-case and all. Verified in the built APK's
+# manifest, not assumed; see the note in [tool.flet.android].
+product = "IronFlet"
+
 # WHAT DOES NOT GET COPIED INTO THE APK.
 #
 # `flet build` hands the *whole project directory* to serious_python, which
@@ -135,6 +143,29 @@ app.exclude = [
     "views/__pycache__",
 ]
 
+# NEVER LEAVE THE USER LOOKING AT NOTHING.
+#
+# This is the second half of the black-screen fix (the first is
+# flet_reconnect.py). While the Flutter side has no session — at boot, and for
+# the moment after Android re-creates the client — Flet renders
+# `Scaffold(body: PageMedia())`: an empty Material scaffold inside a MaterialApp
+# whose `themeMode` is still null, i.e. ThemeMode.system. On a phone in dark
+# mode that scaffold is near-black and completely blank, which is exactly what
+# Alex describes. Turning the startup screen on replaces it with a spinner and
+# a message — and, when the client reports an error, with the error text
+# instead of silence.
+#
+# It does not by itself fix anything: a stuck client would now show a spinner
+# forever rather than a black rectangle. That is still strictly better — it
+# tells the user (and us) that the app is alive and waiting, instead of looking
+# like a crash.
+#
+# Read by the build template as `tool.flet.app.startup_screen.*`
+# (lib/main.dart -> FletApp(showAppStartupScreen:...) -> controls/page.dart).
+[tool.flet.app.startup_screen]
+show = true
+message = "Loading IronFlet…"
+
 # Must match theme.py: LIGHT.bg_page / DARK.bg_page. LIGHT is the default
 # palette, so a splash painted in the dark background flashed black before the
 # first light frame. These two keys are the only ones flet reads for the splash
@@ -145,8 +176,22 @@ color = "#F4F6F8"
 dark_color = "#0A0A0B"
 
 [tool.flet.android]
-package_name = "com.ironflet.app"
-product_name = "IronFlet"
+# TWO KEYS THAT USED TO BE HERE AND WERE READ BY NOTHING. Both removed rather
+# than left in place looking like configuration:
+#
+#   product_name = "IronFlet"   -> moved up to `tool.flet.product`, the key the
+#                                  builder actually reads.
+#   package_name = "com.ironflet.app"
+#       Never read anywhere in flet_cli. The real applicationId is
+#       `com.flet.ironflet`, derived by the cookiecutter from `org_name`
+#       (default "com.flet") plus the project slug. The keys that would change
+#       it are `tool.flet.bundle_id` / `tool.flet.org`.
+#
+#       DO NOT "fix" it by setting bundle_id without a migration plan. The
+#       applicationId is what Android keys the app's private storage on, and
+#       that directory is where `storage.sqlite_path()` keeps ironflet.db.
+#       Changing it installs a second, empty app beside the first and leaves
+#       every workout, weight and meal in a directory the new one cannot read.
 # Launcher-icon background layer, not the splash: it shows on the home screen
 # against the wallpaper, so it does not follow the app's page background.
 adaptive_icon_background = "#0A0A0B"

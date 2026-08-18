@@ -53,6 +53,12 @@ _PR_HISTORY_LIMIT = 100_000
 #: weight/reps/rir/type and copies nothing else.
 _SUGGESTED_KEY = "_suggested"
 
+#: Preference key for zen mode. Values are "on"/"off"; anything unrecognised —
+#: including a missing row, or a database that will not answer — reads as ON,
+#: because focus is what Alex asked for and a storage hiccup must not silently
+#: put the food diary back in front of him mid-set.
+ZEN_PREF = "zen_mode"
+
 
 def _num_text(value) -> str:
     """A stored number as the text a field shows — `82.5` → "82.5", `80.0` → "80".
@@ -127,6 +133,11 @@ class WorkoutView:
         # `phase_id` included, so walking out and back in costs nothing.
         self.show_day_list: bool = False
         self.show_phase_list: bool = False
+        # Zen mode. Default on, and deliberately NOT read from storage here:
+        # `__init__` runs for all nine views at start-up and this is the one
+        # flag whose value only matters once a day is actually open, where
+        # `_arm_zen` reads it. See `hides_nav` for what it costs the shell.
+        self.zen: bool = True
 
         # Image animation state (frame-swap loop)
         self._anim_tick_id: int = 0
@@ -186,6 +197,98 @@ class WorkoutView:
             and not self.show_phase_list
             and not self.finished
         )
+
+    # ── Zen mode ──────────────────────────────────────────────
+    #
+    # Alex: "al momento de poner una rutina se tendría que poner en modo ZEN de
+    # IronFlet, ya que si estoy entrenando no veré otra cosa de esa app... lo que
+    # sí, puede que cambie de música."
+    #
+    # Two halves, and the second one bounds the first. Inside IronFlet, while he
+    # is training, nothing but the training. Outside it, **nothing may get in his
+    # way** — so zen mode is a layout, and only a layout. It does not pin the app
+    # in the foreground, it does not go immersive-fullscreen, it does not touch
+    # the system bars and it does not intercept the back gesture. Leaving for
+    # Spotify has to cost exactly what it costs today, and it does: this code
+    # cannot make it cost anything, because it never asks the OS for anything.
+    #
+    # What it actually removes is the bottom navigation bar (`hides_nav`, which
+    # `main.py` honours) and the reference material on the exercise screen — the
+    # animated form image, the "LAST SESSION" chips, the prefill explainer. All
+    # of that is worth having when planning a workout and is noise at rep seven.
+    # What it *adds* is size: the exercise, the next set and the rest left get
+    # big enough to read with the phone on the floor.
+    #
+    # WHAT ZEN MODE DOES NOT DO, AND CANNOT: keep the screen awake.
+    #
+    # The phone still dims and locks mid-set, and no amount of Python here will
+    # change that on Flet 0.28.3. This was checked rather than assumed:
+    #
+    #   * The Dart client answers exactly nine `page._invoke_method` names
+    #     (`reducers.dart`), all of them clipboard/url/window-on-desktop. None
+    #     touches the screen.
+    #   * `grep -rn wakelock` over the installed `flet` Dart package returns
+    #     nothing — the client never calls `WakelockPlus`, even though
+    #     `GeneratedPluginRegistrant.java` *does* register `WakelockPlusPlugin`,
+    #     so the plugin is sitting in the APK with no caller.
+    #   * The only `wakelock` in the Python package is a property of `Video`,
+    #     and `Video` has no implementation in this client's Dart side at all.
+    #
+    # So the honest answer is "not from here". Closing it needs either a Flet
+    # extension or ~3 lines in the build template's `main.dart` calling
+    # `WakelockPlus.enable()` — `tool.flet.template.url` accepts a plain local
+    # directory, so that fork costs a copy, not a hosted repo. Until then the
+    # mitigation is the one already built: the rest timer beeps and vibrates at
+    # zero, so a dark screen does not mean a missed set. That is why the mute
+    # button survives the decluttering in `build_large()`.
+
+    def _zen_pref(self) -> bool:
+        """The remembered choice. Missing, unreadable or junk all read as ON."""
+        raw = None
+        with contextlib.suppress(Exception):
+            raw = self.store.get_pref(ZEN_PREF, "on")
+        return (raw or "on").strip().lower() not in ("off", "0", "false", "no")
+
+    def _set_zen(self, on: bool, *, persist: bool = True):
+        self.zen = bool(on)
+        if persist:
+            # Never at the caller's expense: a preference that will not save is
+            # a cosmetic loss, and this runs on the tap that starts a workout.
+            with contextlib.suppress(Exception):
+                self.store.set_pref(ZEN_PREF, "on" if self.zen else "off")
+
+    def _arm_zen(self, *, fresh_day: bool):
+        """Decide zen on the way into the exercise screen.
+
+        `fresh_day=True` — he just picked a day, which is literally the moment
+        Alex described ("al momento de poner una rutina"), so zen goes on and is
+        written down. That also re-arms it for the next workout after a session
+        where he stepped out of it, which is the behaviour he asked for.
+
+        `fresh_day=False` — resuming: back from the day list, or rebuilt from
+        the draft after the app died. Neither is a new workout, so the stored
+        choice wins and an opt-out survives both, including a crash mid-set.
+        """
+        if fresh_day:
+            self._set_zen(True)
+        else:
+            self._set_zen(self._zen_pref(), persist=False)
+
+    def _toggle_zen(self, _=None):
+        self._set_zen(not self.zen)
+        # Through `refresh_current`, not `page.update()`: the whole point is that
+        # `main.py` re-reads `hides_nav()` on rebuild and shows or hides the bar.
+        self.page.data["refresh_current"]()
+
+    def hides_nav(self) -> bool:
+        """Should the shell hide its bottom navigation bar right now?
+
+        Read by `main.py` after every `build()`. Deliberately narrow: only the
+        exercise screen. The day list, the phase list and the summary all keep
+        the bar, so backing out of a set is always a way back to the rest of the
+        app — zen mode can never become a room with no door.
+        """
+        return self.zen and self._on_exercise_screen()
 
     # ── State helpers ─────────────────────────────────────────
     @staticmethod
@@ -465,6 +568,11 @@ class WorkoutView:
         self.finished = False
         self.show_phase_list = False
         self.show_day_list = False
+        # A restore is the same workout coming back, not a new one — so it must
+        # not silently re-enable zen on someone who had stepped out of it. This
+        # is the path a killed process takes, which makes it the one where a
+        # surprise change of layout would be least welcome.
+        self._arm_zen(fresh_day=False)
         # Set the scope by hand: `_ensure_scope` would otherwise notice the
         # change and wipe the buffer we are about to fill.
         self._scope = self._current_scope()
@@ -626,6 +734,8 @@ class WorkoutView:
         self.show_day_list = False
         self.show_phase_list = False
         self.finished = False
+        # Resuming, not starting: whatever he chose last is what he gets back.
+        self._arm_zen(fresh_day=False)
         # The clock kept running while the day list was on screen — the user
         # never left the gym — so it is only restarted if it was stopped.
         if self.session_started_at is None:
@@ -652,6 +762,8 @@ class WorkoutView:
         # with this one.
         self.timer.stop()
         if idx >= 0:
+            # "Al momento de poner una rutina" — this is that moment.
+            self._arm_zen(fresh_day=True)
             self._start_session_timer()
             self._persist_draft()
         else:
@@ -1435,6 +1547,66 @@ class WorkoutView:
         )
 
     # ── Render: active exercise ───────────────────────────────
+    def _next_set_hint(self) -> str:
+        """The one line worth reading from across the gym: what to do next.
+
+        The next set is the first row he has not claimed — a suggestion carries
+        last session's numbers, an empty row carries none — so this doubles as
+        "the weight to put on the bar" without him having to find the right row
+        on a 420 px screen with the phone on the floor.
+
+        It never guesses past the end: once every row is his, the exercise is
+        waiting to be written, and once written there is nothing left to do here.
+        """
+        if self.ex_idx in self._logged_ex:
+            return "LOGGED — MOVE ON"
+        rows = self.sets
+        total = len(rows)
+        for i, row in enumerate(rows):
+            if not self._is_suggested(row) and self._has_content(row):
+                continue
+            weight, reps = row.get("weight", ""), row.get("reps", "")
+            if weight and reps:
+                target = f" · {weight} kg × {reps}"
+            elif weight:
+                target = f" · {weight} kg"
+            elif reps:
+                target = f" · × {reps}"
+            else:
+                target = ""
+            return f"SET {i + 1} OF {total}{target}"
+        return "ALL SETS IN — SAVE THIS EXERCISE"
+
+    def _zen_toggle(self) -> ft.Control:
+        """The way out of zen mode, and back in. Always on screen, one tap.
+
+        This is what keeps zen from being a trap. It is not hidden behind a
+        long-press or a settings screen: the state is visible in the header and
+        flipping it is a single tap with a 40 px target, which is the size a
+        sweaty thumb needs.
+        """
+        on = self.zen
+        return ft.Container(
+            content=ft.Icon(
+                ft.Icons.CENTER_FOCUS_STRONG if on else ft.Icons.CENTER_FOCUS_WEAK,
+                size=18,
+                color=C.accent if on else C.text_muted,
+            ),
+            width=40,
+            height=40,
+            bgcolor=C.accent_soft if on else C.bg_sunken,
+            border=ft.border.all(1, C.accent if on else C.border),
+            border_radius=Radius.md,
+            alignment=ft.alignment.center,
+            tooltip=(
+                "Zen mode on — tap to bring the rest of the app back"
+                if on
+                else "Zen mode off — tap to focus on the workout"
+            ),
+            on_click=self._toggle_zen,
+            ink=True,
+        )
+
     def _step_button(self, icon: str, tooltip: str, on_click, *, enabled: bool) -> ft.Control:
         """A square arrow flanking Save. Fixed width, so Save keeps the rest.
 
@@ -1615,12 +1787,23 @@ class WorkoutView:
         raw = self._current_exercise_raw()
         key = exercise_key(raw)
         display = raw
+        # One read, used by every branch below. Zen mode is a *layout*: this
+        # method stays single, so the two versions of the screen cannot drift
+        # apart the way two copies of a 200-line render always do.
+        zen = self.zen
         # Through the cache, not straight to the store: the exercise just
         # logged would otherwise come back as its own "last session".
         last_sets = self._last_sets(self.ex_idx)
         last_ref_for_placeholder = last_sets[0] if last_sets else None
 
-        if last_sets:
+        if zen:
+            # Last session's numbers are already sitting in the fields as
+            # suggestions — the chips repeat them, and repeating them is exactly
+            # the kind of thing that is useful before a workout and clutter
+            # during one. `last_ref_for_placeholder` above is untouched, so the
+            # hints inside the empty fields still work.
+            last_row: ft.Control = ft.Container()
+        elif last_sets:
             last_row = ft.Container(
                 content=ft.Column(
                     [
@@ -1738,7 +1921,7 @@ class WorkoutView:
                 padding=ft.padding.symmetric(horizontal=8, vertical=6),
                 margin=ft.margin.only(bottom=6),
             )
-            if pending
+            if pending and not zen
             else ft.Container()
         )
 
@@ -1764,7 +1947,11 @@ class WorkoutView:
             else ft.Container()
         )
 
-        frames = image_frames(key)
+        # No form image in zen mode, and — because `_animate_loop` is only
+        # started below — no frame-swap task either. It is 180 px of the tallest
+        # thing on the screen plus a repaint every 700 ms, spent on a photo he
+        # stopped needing after set one. Stepping out of zen brings it back.
+        frames = None if zen else image_frames(key)
         if frames:
             image = ft.Image(
                 src=frames[0],
@@ -1788,6 +1975,42 @@ class WorkoutView:
             self._anim_frames = None
             image_block = ft.Container()
 
+        # The three things worth reading with the phone on the floor: which
+        # exercise, which set and how much, and how much rest is left. In zen
+        # mode the first two get the size, and `build_large` gives the third.
+        if zen:
+            rest_block: ft.Control = self.timer.build_large(
+                caption=f"AUTO {format_rest(self._rest_seconds())} AFTER EACH SET"
+            )
+            next_line: ft.Control = ft.Container(
+                content=ft.Text(
+                    self._next_set_hint(),
+                    size=15,
+                    weight=ft.FontWeight.W_900,
+                    color=phase_color(phase.id),
+                ),
+                margin=ft.margin.only(top=2),
+            )
+        else:
+            rest_block = ft.Column(
+                [
+                    # Says out loud what now happens by itself, so the countdown
+                    # that appears after a set does not look like something went
+                    # wrong.
+                    ft.Text(
+                        f"Rest · auto {format_rest(self._rest_seconds())} after each set",
+                        size=10,
+                        color=C.text_muted,
+                        weight=ft.FontWeight.W_700,
+                    ),
+                    ft.Container(height=4),
+                    self.timer.build(),
+                ],
+                spacing=0,
+                tight=True,
+            )
+            next_line = ft.Container()
+
         exercise_card = card(
             ft.Text(
                 f"EXERCISE {self.ex_idx + 1}",
@@ -1795,22 +2018,14 @@ class WorkoutView:
                 color=phase_color(phase.id),
                 weight=ft.FontWeight.W_900,
             ),
-            ft.Text(display, size=19, weight=ft.FontWeight.W_900, color=C.text),
+            ft.Text(display, size=24 if zen else 19, weight=ft.FontWeight.W_900, color=C.text),
+            next_line,
             ft.Container(height=8),
             image_block,
             ft.Container(height=8) if frames else ft.Container(),
             last_row,
             ft.Container(height=10),
-            # Says out loud what now happens by itself, so the countdown that
-            # appears after a set does not look like something went wrong.
-            ft.Text(
-                f"Rest · auto {format_rest(self._rest_seconds())} after each set",
-                size=10,
-                color=C.text_muted,
-                weight=ft.FontWeight.W_700,
-            ),
-            ft.Container(height=4),
-            self.timer.build(),
+            rest_block,
             ft.Container(height=14),
             logged_note,
             prefill_note,
@@ -1974,6 +2189,10 @@ class WorkoutView:
 
         header = ft.Row(
             [
+                # Back stays first and stays labelled even in zen mode: it is
+                # the door out of the exercise screen, and therefore the door
+                # back to the navigation bar. Hiding it would turn a layout into
+                # a cage, which is the one thing zen mode must never be.
                 self._back_btn("Back", lambda _: None, raw_handler=lambda _: self._back_to_days()),
                 session_chip,
                 ft.Text(
@@ -1982,6 +2201,7 @@ class WorkoutView:
                     color=C.text_muted,
                     weight=ft.FontWeight.W_700,
                 ),
+                self._zen_toggle(),
             ],
             alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
