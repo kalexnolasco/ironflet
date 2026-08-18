@@ -141,6 +141,11 @@ def main(page: ft.Page):
         if refresh and hasattr(v, "on_show"):
             v.on_show()
         content_area.content = v.build()
+        # Zen mode: the training screen asks for the bar to go away while a set
+        # is in front of you. Read *after* build(), because the answer depends
+        # on the state build() just rendered from. Any view without the method
+        # keeps the bar, which is what every other screen wants.
+        nav_bar.visible = not (hasattr(v, "hides_nav") and v.hides_nav())
         page.update()
 
     def on_nav_change(e):
