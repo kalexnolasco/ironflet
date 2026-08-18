@@ -193,7 +193,11 @@ def _rir_row(value: str, meaning: str) -> ft.Row:
     return ft.Row(
         [
             _badge(value, tone, width=38),
-            ft.Text(meaning, size=11, color=C.text_secondary, width=_BODY_W - 52),
+            # `expand`, never a computed width: `_BODY_W` is a guess about how
+            # wide the dialog will be, and on a 1080px phone it guessed high —
+            # the scale rows read "That is failure — mark the set" with the rest
+            # clipped off. Let the Row divide its real width instead.
+            ft.Text(meaning, size=11, color=C.text_secondary, expand=True),
         ],
         spacing=8,
         vertical_alignment=ft.CrossAxisAlignment.CENTER,
