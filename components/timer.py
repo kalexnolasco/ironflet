@@ -244,6 +244,29 @@ class RestTimer:
         )
 
     # ── alerts ────────────────────────────────────────────────
+    def _audio_is_renderable(self) -> bool:
+        """Can the client on the other end actually draw an `audio` control?
+
+        Web can: `flet_web` ships the audioplayers plugin. A `flet build` APK
+        cannot — `flet-audio` only exists for the 0.86 line, which would drag
+        flet 0.86 in and break the 0.28 pin. So on Android there is no sound,
+        and pretending otherwise costs a red error panel across the screen.
+        """
+        try:
+            plataforma = getattr(self.page, "platform", None)
+            if plataforma is not None and str(plataforma).upper().endswith("ANDROID"):
+                return False
+            # An installed flet_audio means a client that understands it.
+            import flet_audio  # noqa: F401
+
+            return True
+        except ImportError:
+            # Web falls through to here and must still get sound: the browser
+            # client bundles the plugin even when the Python package is absent.
+            return bool(getattr(self.page, "web", False))
+        except Exception:
+            return False
+
     def _mount_players(self) -> None:
         """Create the audio/haptic controls and put them in `page.overlay`, once.
 
@@ -262,10 +285,20 @@ class RestTimer:
         self._mounted = True
         try:
             overlay = self.page.overlay
-            for src in (WARN_SOUND, DONE_SOUND):
-                control = _make_audio(src)
-                self._players[src] = control
-                overlay.append(control)
+            # Audio ONLY where a client can render it. The prebuilt `flet_web`
+            # bundles `audioplayers_web` and knows the `audio` control; the APK
+            # client does not, and an unknown control is not ignored — Flet
+            # paints a red "Unknown control: audio" panel over a third of the
+            # screen. Found by running the APK on an emulator, with the whole
+            # suite green: nothing in Python can see what the Dart side refuses
+            # to build.
+            if self._audio_is_renderable():
+                for src in (WARN_SOUND, DONE_SOUND):
+                    control = _make_audio(src)
+                    self._players[src] = control
+                    overlay.append(control)
+            # Haptics are core Flet, so they render everywhere — and in a noisy
+            # gym a buzz beats a beep anyway. On Android this is the whole alert.
             self._haptics = ft.HapticFeedback()
             overlay.append(self._haptics)
             self.page.update()

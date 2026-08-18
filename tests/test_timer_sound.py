@@ -458,3 +458,52 @@ async def test_explicit_store_argument_wins():
     await page.drain()
 
     assert fired == []
+
+
+# ── the red panel ────────────────────────────────────────────
+# An APK built by `flet build` has no audioplayers plugin, and Flet does not
+# ignore a control the client cannot build: it paints a red "Unknown control:
+# audio" panel over a third of the screen. The whole suite was green while that
+# happened, because nothing in Python can see what the Dart side refuses to
+# draw. These pin the platform decision so it cannot regress.
+
+
+def _timer_en(plataforma, web):
+    from unittest.mock import MagicMock
+
+    import flet as ft
+
+    from components.timer import RestTimer
+
+    page = MagicMock(spec=ft.Page)
+    page.platform, page.web, page.overlay, page.data = plataforma, web, [], {}
+    t = RestTimer(page)
+    t._mount_players()
+    return [type(c).__name__ for c in page.overlay]
+
+
+def test_android_no_monta_audio():
+    """El fallo que se vio en el emulador: un panel rojo tapando la pantalla."""
+    import flet as ft
+
+    tipos = _timer_en(ft.PagePlatform.ANDROID, False)
+    assert not [x for x in tipos if "Audio" in x], (
+        "la APK no puede dibujar un control de audio: montar uno pinta "
+        "'Unknown control: audio' sobre la pantalla de entreno"
+    )
+
+
+def test_android_conserva_la_vibracion():
+    """Sin sonido, el aviso es la vibración — y en un gimnasio ruidoso es mejor."""
+    import flet as ft
+
+    tipos = _timer_en(ft.PagePlatform.ANDROID, False)
+    assert [x for x in tipos if "Haptic" in x]
+
+
+def test_el_navegador_si_tiene_sonido():
+    """El cliente web sí trae el reproductor: ahí no hay que renunciar a nada."""
+    import flet as ft
+
+    tipos = _timer_en(ft.PagePlatform.LINUX, True)
+    assert len([x for x in tipos if "Audio" in x]) == 2
