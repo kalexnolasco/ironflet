@@ -135,7 +135,15 @@ def test_el_bot_y_la_app_hablan_de_los_mismos_ejercicios():
         f"{huerfanos}. Añádelos a data.py o corrige EJERCICIOS en "
         "agente/entrenador/entrenos.py"
     )
-    assert len(delbot) == 28, f"el bot declara {len(delbot)} ejercicios, esperaba 28"
+    # Canario, no contrato: el contrato es la asercion de huerfanos de arriba.
+    # Este numero existe para que nadie amplie la lista del bot sin que alguien
+    # mire. Si falla, MIRA — y solo entonces actualizalo, nunca al reves.
+    #
+    # 28 -> 29: el bot anadio `Bulgarian Split Squat`, que la rutina Recomp ya
+    # prescribia. Verificado antes de tocar el numero: los 29 resuelven a claves
+    # que existen en las rutinas de la app y la lista de huerfanos sale vacia,
+    # que es justamente lo que este test protege.
+    assert len(delbot) == 29, f"el bot declara {len(delbot)} ejercicios, esperaba 29"
 
 
 @pytest.mark.skipif(not BOT.is_file(), reason="el bot no está en este despliegue")
