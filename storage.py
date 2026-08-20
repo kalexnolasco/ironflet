@@ -47,11 +47,18 @@ import platform
 import sys
 import time
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+
+# NOT `from datetime import time`: this module does `import time` at the top for
+# `time.time()`, and pulling in `datetime.time` under the same name shadows it —
+# `WorkoutEntry.__post_init__` then dies with "type object 'datetime.time' has no
+# attribute 'time'" on every single write. Midnight is spelled `datetime.min.time()`
+# below instead.
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 from sqlalchemy import (
     JSON,
+    Boolean,
     Date,
     DateTime,
     Float,
@@ -63,6 +70,7 @@ from sqlalchemy import (
     event,
     func,
     select,
+    text,
 )
 from sqlalchemy.engine import URL, Engine, make_url
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
@@ -335,6 +343,184 @@ def weekly_session_minimum(routine=None) -> int:
     return max(1, min(counts, default=1))
 
 
+# ── notes ────────────────────────────────────────────────────────
+# Two different notes, and the difference is not cosmetic:
+#
+# * **An exercise note** belongs to one `entrenos` row — "hole 4 on the
+#   backrest", "left wrist complains in supination". It is about that movement
+#   on that day, so it lives in that row and dies with it.
+# * **A session note** belongs to the day — "slept 5 h, dropped the weights on
+#   purpose". It hangs off no exercise: it explains all of them at once, and it
+#   must survive deleting or re-logging any single exercise. Hence its own
+#   table, keyed by date exactly like `pesos`.
+#
+# Both are optional everywhere. Six months of history already exist with no
+# note, and every row the Telegram coach writes has none either — same rule as
+# `rir` and `type`: **absent is normal**, read it with `.get()` on a dict or
+# expect `None` off these methods, never assume it is there.
+
+# Longest note kept, in characters. Roughly 200 words — far past anything typed
+# between sets, and short enough that a paragraph never becomes a page in the
+# history list.
+#
+# Enforced in Python rather than as `String(1000)` on purpose. Postgres enforces
+# a VARCHAR width and SQLite does not (the `Entreno` docstring documents the same
+# asymmetry for exercise names), so a DDL limit would mean a long note is stored
+# whole on the phone, rejected on the desktop, and blows up later when the row
+# travels in a backup. `Text` on both engines plus one truncation point here
+# makes the two behave identically: a wall of text is trimmed, never refused.
+NOTE_MAX_LEN = 1000
+
+
+def clean_note(value: str | None) -> str | None:
+    """Normalise a note on its way to the database.
+
+    Blank in, `None` out: an empty box and a cleared box are the same intent,
+    and storing `""` would make "has a note" true for a note that says nothing.
+    """
+    if value is None:
+        return None
+    texto = str(value).strip()
+    if not texto:
+        return None
+    return texto[:NOTE_MAX_LEN].rstrip()
+
+
+# ── session duration ─────────────────────────────────────────────
+# How long the session lasted. The chronometer on the training screen used to be
+# pixels and nothing else — `WorkoutView.session_started_at` lives in memory,
+# dies with the view, and was never written anywhere. That was tolerable while
+# every session was logged as it happened. It stops being tolerable the moment a
+# session can be logged for a past day: the clock then measures how long the
+# typing took, which is not a fact about any workout.
+#
+# ## One duration per DAY, not per exercise
+#
+# The date is the session, exactly as it already is for `pesos` and
+# `notas_sesion`. Alex can now date each exercise separately, so "the Monday
+# session" is assembled from rows that were entered at different moments — but
+# they all carry the same `fecha`, and that shared date is the only thing that
+# makes them one session at all. Hanging the duration off the same key is
+# therefore not a simplification, it is the same definition of "a session" the
+# rest of this schema already uses.
+#
+# Per-exercise was considered and is wrong in four separate ways:
+#
+# * **It is not what was measured.** One start, one stop, one span. Nobody times
+#   bench press apart from the rest before it; the chronometer starts once.
+# * **Six rows would hold six copies of one number.** `get_last_sets` already
+#   documents that two rows can exist for one exercise on one day, so re-logging
+#   one exercise updates one copy and leaves the day with two answers and
+#   nothing to arbitrate between them.
+# * **Deleting an exercise would delete the duration** of a session that is
+#   still there.
+# * **No aggregation is honest.** The sum double-counts nothing and misses the
+#   rest *between* exercises, so it is shorter than the session; the max is one
+#   exercise's share presented as the whole. Both are guesses, and a guess in
+#   this table is indistinguishable from a measurement.
+#
+# Two sessions in one calendar day collapse into one row, like a second weigh-in
+# corrects the first. That is the same trade `pesos` and `notas_sesion` already
+# made; when it happens the number reads as "time trained that day", and the UI
+# should say so rather than pretend it is one continuous session.
+#
+# ## Why a table and not a column on `entrenos`
+#
+# `add_missing_columns()` cannot add a NOT NULL column, and a nullable
+# `entrenos.duracion_s` would still be all four problems above. A **table**
+# sidesteps the migration question entirely: `create_all()` does create missing
+# tables — it is only missing *columns* it ignores — so this appears on an
+# existing database, on the phone included, with no hand-written ALTER on either
+# side.
+#
+# ## Absence is normal
+#
+# Same rule as `rir`, `type` and `nota`: everything already logged and
+# everything the Telegram coach writes has no duration, and never will. No row
+# means no duration. `get_session_duration()` returns `None` and callers render
+# nothing — never `0:00`, which would claim a session took no time.
+
+#: Shortest span that counts as a duration. Anything at or below zero is
+#: "no duration" and clears the row, the same way a blank note does.
+MIN_SESSION_SECONDS = 1
+
+#: Longest span accepted, in seconds (8 h). Not a limit on ambition — a filter
+#: for the two ways a wrong number actually gets here:
+#:
+#: * a chronometer left running (the app reopened the next morning: 10-14 h);
+#: * a slipped finger in a minutes field ("1000" for "100" is 16 h 40).
+#:
+#: The longest defensible real session — a very long one, heavy singles, long
+#: rests, or a meet day — is under six hours, so eight leaves room to be wrong
+#: about that and still catch both failures.
+MAX_SESSION_SECONDS = 8 * 3600
+
+
+def clean_duration(value: int | float | None) -> int | None:
+    """Normalise a session duration on its way to the database.
+
+    Whole seconds, because that is what a chronometer counts: minutes would
+    round every value on the way in, and a float would store sub-second
+    precision that means nothing about a workout.
+
+    `None`, `""`, `0` and anything negative all come out `None` — an emptied
+    field means "no duration", not "a session that took no time". A caller can
+    therefore clear a duration by passing 0, exactly as it clears a note by
+    passing "".
+
+    **Over `MAX_SESSION_SECONDS` this raises `ValueError` rather than clamping.**
+    Clamping would store a number nobody measured, in the shape of one that was:
+    14 h capped to 8 h is not closer to the truth, it is a wrong answer that
+    now looks plausible and will be averaged with the real ones forever. This is
+    the same call the date picker makes when it refuses a future date instead of
+    quietly accepting one nothing would count — a value that will be read as
+    data but is not data has to stop and say so.
+    """
+    if value is None or value == "":
+        return None
+    try:
+        seconds = int(float(value))
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{value!r} is not a number of seconds") from exc
+    if seconds < MIN_SESSION_SECONDS:
+        return None
+    if seconds > MAX_SESSION_SECONDS:
+        raise ValueError(
+            f"A session cannot last {format_duration(seconds)} — "
+            f"the longest accepted is {format_duration(MAX_SESSION_SECONDS)}"
+        )
+    return seconds
+
+
+def format_duration(seconds: int | float | None) -> str:
+    """`4320` → `"1h 12m"`. The one rendering of a stored duration.
+
+    Here rather than in a view for the reason `plural()` sits in `shared_ui`:
+    three screens will show this number and three hand-rolled formatters would
+    disagree about the hour boundary within a month.
+
+    Deliberately **not** the chronometer's `h:mm:ss`. A clock that is still
+    running has to show seconds; a session that finished two days ago does not,
+    and "1:12:04" invites reading a recorded fact with a precision it does not
+    have. Under a minute is reported as `"<1m"` rather than `"0m"`, which would
+    read as nothing at all.
+
+    `None` and anything at or below zero give `""` — nothing to show, so the
+    caller renders nothing. Never `"0m"`.
+    """
+    if seconds is None:
+        return ""
+    total = int(seconds)
+    if total < 1:
+        return ""
+    if total < 60:
+        return "<1m"
+    hours, minutes = divmod(total // 60, 60)
+    if hours:
+        return f"{hours}h {minutes:02d}m"
+    return f"{minutes}m"
+
+
 @dataclass
 class WorkoutEntry:
     date: str
@@ -343,6 +529,10 @@ class WorkoutEntry:
     phase: int
     sets: list[dict]
     timestamp: float = 0.0
+    # Last, and defaulted: every existing construction site — views, tests, the
+    # backup importer — keeps working untouched, and `None` is what an entry
+    # written by the bot or by an older build genuinely is.
+    note: str | None = None
 
     def __post_init__(self):
         if not self.timestamp:
@@ -386,6 +576,58 @@ class Entreno(Base):
     fase: Mapped[int] = mapped_column(Integer, default=0)
     series: Mapped[list] = mapped_column(JSON, default=list)
     creado: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    # What happened with *this* exercise on this day. Nullable, and NULL on
+    # every row written before this column existed and on everything the
+    # Telegram coach writes — see the notes section above.
+    nota: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class NotaSesion(Base):
+    """One free-text note per training day, about the session as a whole.
+
+    Shaped like `Peso`: the date is the primary key, so writing twice for the
+    same day corrects the note instead of stacking two of them.
+
+    `nota` is NOT NULL, which is the whole design — a row exists *because* there
+    is something written. Clearing the note deletes the row, so "is there a note
+    for this day?" is one existence check and can never be answered by a row
+    holding NULL.
+    """
+
+    __tablename__ = "notas_sesion"
+
+    fecha: Mapped[date] = mapped_column(Date, primary_key=True)
+    nota: Mapped[str] = mapped_column(Text)
+    creado: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class DuracionSesion(Base):
+    """How long the training day lasted, in whole seconds.
+
+    Shaped like `NotaSesion` and `Peso`, and for the same reason: the date is
+    the primary key, so writing twice for one day corrects the number instead of
+    stacking two of them, and the row belongs to the *day* rather than to any
+    one `entrenos` row — it survives deleting or re-logging any single exercise.
+    See the "session duration" block above for why this is not a column on
+    `entrenos`.
+
+    `segundos` is NOT NULL, which is the same design as `notas_sesion.nota`: the
+    row exists *because* there is a duration, clearing it deletes the row, and
+    "is this session timed?" is one existence check that no row holding NULL can
+    muddy. Being a new **table** rather than a new column, that NOT NULL costs
+    nothing on an existing database — `create_all()` creates missing tables.
+
+    Nothing here enforces `MAX_SESSION_SECONDS`: the cap is a Python decision
+    (`clean_duration`) so both engines behave identically, the same asymmetry
+    `NOTE_MAX_LEN` documents. A row written by hand outside the app is read back
+    as it is stored, not silently corrected.
+    """
+
+    __tablename__ = "duraciones_sesion"
+
+    fecha: Mapped[date] = mapped_column(Date, primary_key=True)
+    segundos: Mapped[int] = mapped_column(Integer)
+    creado: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 class Peso(Base):
@@ -403,6 +645,28 @@ class Preferencia(Base):
     valor: Mapped[str] = mapped_column(Text)
 
 
+#: Preference keys that must never leave the device.
+#:
+#: `preferencias` is a general key-value bag and both exporters — the v2
+#: `Storage.export_all()` below and the v3 `backup.export_all()` — copy every
+#: row into the document verbatim. That was harmless while the only key was
+#: `routine`. It stopped being harmless the moment the in-app coach put an
+#: Anthropic API key in there: a backup is a plain JSON file Alex sends himself
+#: to move devices, and the key would have ridden along in the clear, in a file
+#: that ends up in a chat thread or a cloud drive.
+#:
+#: Excluded on **both** sides. On export because the key must not be written
+#: out; on import because a key is bound to the person who created it, not to
+#: the training history in the file — restoring someone else's backup, or an
+#: old one of his own, must not silently re-point the coach at a different
+#: account and bill it.
+#:
+#: A secret is not the same thing as `workout_draft.EPHEMERAL_PREF_KEYS`, which
+#: is about *staleness*, so it gets its own tuple rather than being smuggled
+#: into that one under a name that would stop describing it.
+SECRET_PREF_KEYS: tuple[str, ...] = ("agent_api_key",)
+
+
 class Perfil(Base):
     __tablename__ = "perfil"
 
@@ -414,12 +678,153 @@ class Perfil(Base):
     actividad: Mapped[str] = mapped_column(String(30), default="moderate")
 
 
+# ── two tables that used to belong only to the Telegram coach ─────────────
+#
+# `medidas` and `recordatorios` were declared in `../agente/entrenador/modelos.py`
+# and nowhere else. The Home screen now shows both — the waist number the plan
+# adjusts calories by, and what the coach is going to nag about today — so the
+# app has to be able to read them, and reading them means declaring them.
+#
+# DECLARING THEM PUTS THEM UNDER THE MIRROR RULE. `agente/tests/test_modelos_espejo.py`
+# compares metadata for every table present on BOTH sides, so from now on these two
+# are compared too: columns, types, nullability, defaults, primary keys, unique
+# constraints and indexes all have to match, and a change to either copy without
+# the other is a silent schema divergence. They are transcribed from the bot
+# character for character, including the things that look incidental:
+#
+#   * `clave` is UNIQUE — that is what stops the coach creating two copies of a
+#     fixed reminder when it restarts.
+#   * `proxima` and `activo` are INDEXED — the bot's due-query filters on both.
+#   * the `default=`s are Python-side, not DDL. They still have to match, because
+#     the mirror test compares them.
+#
+# On the phone these two tables will normally be EMPTY, and that is not a bug:
+# the coach runs on the PC against PostgreSQL and is what writes them. The app
+# can write `medidas` itself (see `save_measurement`) precisely so the waist
+# panel is not dead weight on a device the bot cannot reach; `recordatorios`
+# stays read-only here, because deciding when something fires is the bot's job
+# and two schedulers writing one table is how a reminder fires twice.
+class Recordatorio(Base):
+    __tablename__ = "recordatorios"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    texto: Mapped[str] = mapped_column(Text)
+    proxima: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    cron: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    clave: Mapped[str | None] = mapped_column(String(80), unique=True, nullable=True)
+    origen: Mapped[str] = mapped_column(String(20), default="usuario")
+    plantilla: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    activo: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    creado: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class Medida(Base):
+    __tablename__ = "medidas"
+
+    fecha: Mapped[date] = mapped_column(Date, primary_key=True)
+    cintura: Mapped[float | None] = mapped_column(Float, nullable=True)
+    cadera: Mapped[float | None] = mapped_column(Float, nullable=True)
+    pecho: Mapped[float | None] = mapped_column(Float, nullable=True)
+    brazo: Mapped[float | None] = mapped_column(Float, nullable=True)
+    muslo: Mapped[float | None] = mapped_column(Float, nullable=True)
+    creado: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+#: The coach's clock. `agente/entrenador/config.py` sets `TZ =
+#: ZoneInfo("Europe/Madrid")` and evaluates every cron expression in it, so any
+#: question about *its* schedule has to be asked in that zone. Resolved lazily
+#: and with a fallback because the IANA database is not guaranteed to be
+#: readable on Android — the phone never reaches this path (reminders need
+#: PostgreSQL), but an import-time explosion there would take the whole app down
+#: for a feature it does not even show.
+_MADRID_CACHE: list = []
+
+
+def _madrid():
+    if not _MADRID_CACHE:
+        try:
+            from zoneinfo import ZoneInfo
+
+            _MADRID_CACHE.append(ZoneInfo("Europe/Madrid"))
+        except Exception:  # pragma: no cover - no tzdata on this platform
+            _MADRID_CACHE.append(datetime.now().astimezone().tzinfo or timezone.utc)
+    return _MADRID_CACHE[0]
+
+
 def _hoy() -> date:
     return date.today()
 
 
 def _fecha(valor: str | date) -> date:
     return date.fromisoformat(valor) if isinstance(valor, str) else valor
+
+
+def add_missing_columns(engine: Engine) -> list[str]:
+    """Add declared columns that an existing table does not have yet.
+
+    **This is the migration step this project does not otherwise have**, and it
+    exists because `create_all()` creates missing *tables* and silently ignores
+    missing *columns*. Adding one column to a model therefore works perfectly on
+    every fresh database — every test, every new install — and breaks every
+    database that already exists, with `no such column` on the first read.
+
+    That is not hypothetical. `entrenos.nota` was added and, on the next start,
+    every query against `entrenos` failed: History, Home and the training screen
+    all read it. On the PC that is fixable with one `ALTER TABLE` typed by hand.
+    **On the phone it is not** — the APK carries its own SQLite file, it survives
+    app updates, and there is no console. The alternative was asking Alex to
+    export a backup, uninstall, reinstall and restore on every schema change,
+    which works right up to the first time he forgets.
+
+    Deliberately narrow, because a migration that guesses is worse than none:
+
+    * **Only ever ADDs.** Never drops, never renames, never changes a type. The
+      failure mode of a wrong guess here is deleted training history.
+    * **Only nullable columns without a server default.** A `NOT NULL` column
+      cannot be added to a table with rows in it, so those are reported and
+      skipped rather than half-applied — a schema change that needs thought
+      should stop and get it.
+    * **Idempotent**, so it is safe on every start, and cheap: one metadata read
+      per table, no writes when there is nothing to add.
+
+    Returns the `table.column` names it added, so a caller can log them. Never
+    raises: a database that will not describe itself must not stop the app from
+    opening, and the query that needs the column will say so far more clearly
+    than a crash at import time.
+    """
+    added: list[str] = []
+    try:
+        from sqlalchemy import inspect as sa_inspect
+
+        inspector = sa_inspect(engine)
+        existing_tables = set(inspector.get_table_names())
+    except Exception:  # pragma: no cover - a database that cannot be inspected
+        return added
+
+    for table in Base.metadata.sorted_tables:
+        if table.name not in existing_tables:
+            continue  # create_all made it, so it is already complete
+        try:
+            present = {c["name"] for c in inspector.get_columns(table.name)}
+        except Exception:  # pragma: no cover
+            continue
+        for column in table.columns:
+            if column.name in present:
+                continue
+            if not column.nullable or column.server_default is not None:
+                # Needs a considered migration, not a guess. Left alone on
+                # purpose: the query that wants it will fail loudly and name it.
+                continue
+            tipo = column.type.compile(engine.dialect)
+            try:
+                with engine.begin() as conn:
+                    conn.execute(
+                        text(f'ALTER TABLE "{table.name}" ADD COLUMN "{column.name}" {tipo}')
+                    )
+            except Exception:  # pragma: no cover - raced with another process
+                continue
+            added.append(f"{table.name}.{column.name}")
+    return added
 
 
 class Storage:
@@ -443,6 +848,7 @@ class Storage:
 
     def _init_db(self):
         Base.metadata.create_all(self._engine)
+        add_missing_columns(self._engine)
 
     # ── prefs ────────────────────────────────────────────────
     def get_pref(self, key: str, default: str | None = None) -> str | None:
@@ -528,12 +934,381 @@ class Storage:
             fila = s.scalar(select(Peso).order_by(Peso.fecha.desc()).limit(1))
         return float(fila.kg) if fila else None
 
+    # ── body measurements ───────────────────────────────────
+    #: The five columns of `medidas`, app-facing name → column name. Waist is
+    #: the one the plan acts on; the rest are here because the row already has
+    #: them and dropping them on save would delete what the coach recorded.
+    MEASUREMENTS = {
+        "waist": "cintura",
+        "hip": "cadera",
+        "chest": "pecho",
+        "arm": "brazo",
+        "thigh": "muslo",
+    }
+
+    def save_measurement(self, on_date: str | date | None = None, **values) -> dict:
+        """Record one or more tape measurements. **Omitted fields are left alone.**
+
+        That is the whole subtlety. `medidas` has one row per date and five
+        columns, the Telegram coach fills all five at a check-in, and this app
+        realistically only ever asks for the waist — the number the plan adjusts
+        calories by. Writing a fresh row with the other four unset would silently
+        delete a fortnight's measurements to record one of them.
+
+        So: `None` means "not measured now", not "measured as nothing". Pass a
+        number to set a field; pass nothing to keep whatever is there.
+
+        Raises `ValueError` on an unknown field or an implausible number, because
+        a typo'd 8.5 cm waist that quietly becomes the new baseline is worse than
+        a rejected save.
+        """
+        dia = _fecha(on_date) if on_date else _hoy()
+
+        limpio: dict[str, float] = {}
+        for nombre, valor in values.items():
+            if nombre not in self.MEASUREMENTS:
+                raise ValueError(f"Unknown measurement {nombre!r}.")
+            if valor is None or valor == "":
+                continue
+            try:
+                numero = float(valor)
+            except (TypeError, ValueError):
+                raise ValueError(f"{nombre}: {valor!r} is not a number.") from None
+            # Centimetres. A human waist is not 8 cm and not 400.
+            if not 20 <= numero <= 250:
+                raise ValueError(f"{nombre}: {numero:g} cm is outside 20–250.")
+            limpio[nombre] = round(numero, 1)
+
+        if not limpio:
+            raise ValueError("Nothing to save.")
+
+        with self._Session() as s:
+            fila = s.get(Medida, dia)
+            if fila is None:
+                fila = Medida(fecha=dia, creado=_now())
+                s.add(fila)
+            for nombre, numero in limpio.items():
+                setattr(fila, self.MEASUREMENTS[nombre], numero)
+            fila.creado = _now()
+            s.commit()
+        return {"date": dia.isoformat(), **limpio}
+
+    def get_measurements(self, limit: int = 60) -> list[dict]:
+        """Oldest first, same shape and ordering convention as `get_weights`."""
+        with self._Session() as s:
+            filas = list(s.scalars(select(Medida).order_by(Medida.fecha)))
+        return [
+            {
+                "date": m.fecha.isoformat(),
+                **{
+                    nombre: (None if getattr(m, col) is None else float(getattr(m, col)))
+                    for nombre, col in self.MEASUREMENTS.items()
+                },
+                "timestamp": _epoch(m.creado),
+            }
+            for m in filas[-limit:]
+        ]
+
+    def get_latest_measurement(self, field: str = "waist") -> dict | None:
+        """The newest row that actually carries `field`.
+
+        Not simply the newest row: a check-in that recorded only the chest would
+        otherwise answer "no waist on record" while a perfectly good waist sat
+        two rows down. The date comes back with it, because a waist from March
+        is a different fact from a waist from Sunday.
+        """
+        if field not in self.MEASUREMENTS:
+            raise ValueError(f"Unknown measurement {field!r}.")
+        columna = getattr(Medida, self.MEASUREMENTS[field])
+        with self._Session() as s:
+            fila = s.scalar(
+                select(Medida).where(columna.is_not(None)).order_by(Medida.fecha.desc()).limit(1)
+            )
+        if fila is None:
+            return None
+        return {
+            "date": fila.fecha.isoformat(),
+            field: float(getattr(fila, self.MEASUREMENTS[field])),
+        }
+
+    # ── reminders (read-only; the coach owns them) ──────────
+    def reminders_available(self) -> bool:
+        """Is there anywhere for reminders to come from on this device?
+
+        `recordatorios` is written by the Telegram coach, which runs on the PC
+        against PostgreSQL. On the phone `create_all()` cheerfully creates the
+        table in SQLite and it stays empty **forever** — so a screen that
+        decides by asking "is the list empty?" renders a permanently blank
+        panel and looks broken. It has to ask about the backend instead.
+        """
+        try:
+            return not is_sqlite_url(str(self._engine.url))
+        except Exception:  # pragma: no cover - defensive
+            return False
+
+    def get_reminders_today(self, now: datetime | None = None) -> list[dict]:
+        """What the coach is still going to send today, soonest first.
+
+        **Not "today's reminders".** `proxima` holds ONE instant — the next
+        occurrence — so the 06:45 weigh-in nudge that already went out this
+        morning now reads as tomorrow 06:45 and is correctly absent here.
+        Anything else would mean re-implementing the bot's cron expander in this
+        repo, including its vixie-cron rule that day-of-month and day-of-week
+        are OR'd when both are restricted, and then hoping the two agree.
+
+        Deliberately **no lower bound**, which mirrors `db.vencidos()` on the bot
+        side: an active reminder whose instant is already past has not been sent
+        and will go out on the next 30-second tick. Filtering those away would
+        hide the backlog the coach is about to deliver. They come back flagged
+        `overdue`.
+
+        The day boundary is **Europe/Madrid**, which is neither UTC nor the
+        device's timezone. The bot's cron is evaluated in Madrid wall-clock, so
+        `45 6 * * *` is 06:45 there all year and its UTC value moves with DST;
+        a window built in any other zone is an hour wrong on the two changeover
+        Sundays, which is exactly when the 06:45 and 21:45 rows sit near it.
+        """
+        if not self.reminders_available():
+            return []
+
+        zona = _madrid()
+        ahora = (now or datetime.now(timezone.utc)).astimezone(zona)
+        hoy = ahora.date()
+        # `datetime.combine(day + 1, time.min)`, never `inicio + timedelta(days=1)`
+        # on an aware datetime: the second one adds 24 hours, and a DST day is
+        # not 24 hours long.
+        inicio = datetime.combine(hoy, datetime.min.time(), tzinfo=zona)
+        fin = datetime.combine(hoy + timedelta(days=1), datetime.min.time(), tzinfo=zona)
+
+        with self._Session() as s:
+            filas = list(
+                s.scalars(
+                    select(Recordatorio)
+                    .where(Recordatorio.activo.is_(True), Recordatorio.proxima < fin)
+                    .order_by(Recordatorio.proxima)
+                )
+            )
+
+        salida = []
+        for r in filas:
+            cuando = r.proxima
+            if cuando.tzinfo is None:  # SQLite hands back naive values
+                cuando = cuando.replace(tzinfo=timezone.utc)
+            local = cuando.astimezone(zona)
+            salida.append(
+                {
+                    "id": r.id,
+                    # For a row with a `plantilla` the coach regenerates the body
+                    # at send time, so this is a title, not the message he will
+                    # receive. The view labels it as such.
+                    "text": r.texto,
+                    "at": local.strftime("%H:%M"),
+                    "when": local.isoformat(),
+                    "overdue": local < inicio,
+                    "recurring": bool(r.cron),
+                    "fixed": r.origen == "fijo",
+                    "template": r.plantilla,
+                }
+            )
+        return salida
+
+    # ── notes ───────────────────────────────────────────────
+    def get_session_note(self, on_date: str | date | None = None) -> str | None:
+        """The whole-session note for a day, or `None` when there is none.
+
+        `None` is the normal answer: no day has one until Alex writes it, and no
+        day the coach logged ever will.
+        """
+        dia = _fecha(on_date) if on_date else _hoy()
+        with self._Session() as s:
+            fila = s.get(NotaSesion, dia)
+        return fila.nota if fila else None
+
+    def set_session_note(self, note: str | None, on_date: str | date | None = None) -> str | None:
+        """Write (or clear) the session note for a day. Returns what was stored.
+
+        Blank or `None` deletes the row — an emptied box means "no note", not "a
+        note that is empty". The return value is the text **as stored**, so a
+        caller that sent more than `NOTE_MAX_LEN` characters can render the
+        trimmed version back instead of showing text the database does not hold.
+
+        Needs no workout rows: a session note can be written for a day with
+        nothing logged yet, and stays put when the exercises are logged later.
+        """
+        dia = _fecha(on_date) if on_date else _hoy()
+        limpia = clean_note(note)
+        with self._Session() as s:
+            fila = s.get(NotaSesion, dia)
+            if limpia is None:
+                if fila:
+                    s.delete(fila)
+            elif fila:
+                fila.nota = limpia
+                fila.creado = _now()
+            else:
+                s.add(NotaSesion(fecha=dia, nota=limpia, creado=_now()))
+            s.commit()
+        return limpia
+
+    def get_session_notes(self, limit: int = 60) -> list[dict]:
+        """The most recent session notes, oldest first. Same shape as `get_weights`."""
+        with self._Session() as s:
+            filas = list(s.scalars(select(NotaSesion).order_by(NotaSesion.fecha)))
+        return [
+            {"date": n.fecha.isoformat(), "note": n.nota, "timestamp": _epoch(n.creado)}
+            for n in filas[-limit:]
+        ]
+
+    def get_exercise_note(self, exercise: str, on_date: str | date | None = None) -> str | None:
+        """The note attached to one exercise on one day, or `None`.
+
+        Reads the newest row for that pair, the same way `get_last_sets` picks
+        its row: nothing stops two rows existing for one exercise on one day, and
+        the last one written is the one on screen.
+        """
+        dia = _fecha(on_date) if on_date else _hoy()
+        with self._Session() as s:
+            fila = s.scalar(
+                select(Entreno)
+                .where(Entreno.ejercicio == exercise, Entreno.fecha == dia)
+                .order_by(Entreno.id.desc())
+                .limit(1)
+            )
+        return fila.nota if fila else None
+
+    def set_exercise_note(
+        self, exercise: str, note: str | None, on_date: str | date | None = None
+    ) -> bool:
+        """Attach (or clear) a note on a logged exercise. `False` if there is no row.
+
+        The note lives *in* the `entrenos` row, so there has to be one: this
+        cannot invent a workout. `False` means "that exercise is not logged on
+        that date" — the caller either logs it first (`WorkoutEntry.note` carries
+        a note in with the sets) or writes a session note instead. Returning it
+        rather than raising keeps the failure visible without a `try` at every
+        call site.
+        """
+        dia = _fecha(on_date) if on_date else _hoy()
+        limpia = clean_note(note)
+        with self._Session() as s:
+            fila = s.scalar(
+                select(Entreno)
+                .where(Entreno.ejercicio == exercise, Entreno.fecha == dia)
+                .order_by(Entreno.id.desc())
+                .limit(1)
+            )
+            if fila is None:
+                return False
+            fila.nota = limpia
+            s.commit()
+        return True
+
+    def get_day_notes(self, on_date: str | date | None = None) -> dict:
+        """Everything written about one day, in one call and one session.
+
+        `{"session": str | None, "exercises": {exercise: note}}`. Only exercises
+        that actually have a note appear in the inner dict, so it is read with
+        `.get(name)` and a missing key is the normal case, not an error.
+        """
+        dia = _fecha(on_date) if on_date else _hoy()
+        with self._Session() as s:
+            sesion = s.get(NotaSesion, dia)
+            filas = list(
+                s.scalars(select(Entreno).where(Entreno.fecha == dia).order_by(Entreno.id))
+            )
+        return {
+            "session": sesion.nota if sesion else None,
+            "exercises": {f.ejercicio: f.nota for f in filas if f.nota},
+        }
+
+    # ── session duration ────────────────────────────────────
+    def get_session_duration(self, on_date: str | date | None = None) -> int | None:
+        """How long that day's session lasted, in seconds, or `None`.
+
+        `None` is the ordinary answer and always will be for most days: every
+        session logged before this existed has no duration, and neither does
+        anything the Telegram coach writes. Render nothing for it — never
+        `"0m"`, which claims a workout took no time.
+        """
+        dia = _fecha(on_date) if on_date else _hoy()
+        with self._Session() as s:
+            fila = s.get(DuracionSesion, dia)
+        return int(fila.segundos) if fila else None
+
+    def set_session_duration(
+        self, seconds: int | float | None, on_date: str | date | None = None
+    ) -> int | None:
+        """Write (or clear) the duration of a day's session. Returns what was stored.
+
+        `None` or anything at or below zero deletes the row: an emptied field
+        means "no duration", and a row saying zero would be a session that took
+        no time. The return value is the number **as stored**, so a caller can
+        render it back instead of the value it sent.
+
+        Raises `ValueError` when the span is longer than `MAX_SESSION_SECONDS` —
+        see `clean_duration` for why that is a refusal and not a clamp. The
+        message is user-facing English and can be shown as it is.
+
+        Needs no workout rows, like `set_session_note`. That matters more here
+        than it does for notes: with the date now chosen per exercise, the
+        duration can be set before the first exercise of that day is logged,
+        and it stays put as the exercises arrive.
+        """
+        dia = _fecha(on_date) if on_date else _hoy()
+        limpio = clean_duration(seconds)
+        with self._Session() as s:
+            fila = s.get(DuracionSesion, dia)
+            if limpio is None:
+                if fila:
+                    s.delete(fila)
+            elif fila:
+                fila.segundos = limpio
+                fila.creado = _now()
+            else:
+                s.add(DuracionSesion(fecha=dia, segundos=limpio, creado=_now()))
+            s.commit()
+        return limpio
+
+    def get_session_durations(self, limit: int = 60) -> list[dict]:
+        """The most recent timed days, oldest first. Same shape as `get_weights`.
+
+        `{"date": iso, "seconds": int, "timestamp": float}`. Only days that were
+        actually timed appear, so the list is shorter than the training history
+        and a missing day is the normal case, not a gap to explain.
+        """
+        with self._Session() as s:
+            filas = list(s.scalars(select(DuracionSesion).order_by(DuracionSesion.fecha)))
+        return [
+            {"date": d.fecha.isoformat(), "seconds": int(d.segundos), "timestamp": _epoch(d.creado)}
+            for d in filas[-limit:]
+        ]
+
+    def get_duration_map(self) -> dict[str, int]:
+        """Every timed day as `{iso date: seconds}`, in one query.
+
+        For a screen that renders many days at once: History would otherwise ask
+        per card, which is one round trip per session on a list that can be a
+        year long. Unlimited on purpose — the table holds at most one small row
+        per training day, so a full year is a couple of hundred rows, and a
+        `limit` here would silently blank the durations on the oldest cards
+        while the rest of the card rendered fine.
+
+        Read it with `.get(iso)`: a day with no row is a day that was not timed.
+        """
+        with self._Session() as s:
+            filas = list(s.scalars(select(DuracionSesion)))
+        return {d.fecha.isoformat(): int(d.segundos) for d in filas}
+
     # ── backup / restore ────────────────────────────────────
     BACKUP_VERSION = 2
 
     def export_all(self) -> dict:
         with self._Session() as s:
-            prefs = {p.clave: p.valor for p in s.scalars(select(Preferencia))}
+            prefs = {
+                p.clave: p.valor
+                for p in s.scalars(select(Preferencia))
+                if p.clave not in SECRET_PREF_KEYS
+            }
             entrenos = list(s.scalars(select(Entreno).order_by(Entreno.id)))
             pesos = list(s.scalars(select(Peso).order_by(Peso.fecha)))
         return {
@@ -570,7 +1345,12 @@ class Storage:
             if wipe:
                 s.execute(delete(Entreno))
                 s.execute(delete(Peso))
-                s.execute(delete(Preferencia))
+                # Everything except the secrets: a key belongs to this device
+                # and this person, not to the document being restored. Wiping
+                # it would log the coach out on the exact operation people
+                # perform when they have just moved to a new phone and are
+                # least able to go and find the key again.
+                s.execute(delete(Preferencia).where(Preferencia.clave.notin_(SECRET_PREF_KEYS)))
                 s.execute(delete(Perfil))
                 s.commit()
 
@@ -589,6 +1369,12 @@ class Storage:
                 counts["profile"] = 1
 
             for k, v in (data.get("prefs") or {}).items():
+                # Belt and braces with the export side: a document written
+                # before `SECRET_PREF_KEYS` existed still carries the key, and
+                # importing one must not point this device's coach at whoever
+                # made that backup — nor bill them for it.
+                if str(k) in SECRET_PREF_KEYS:
+                    continue
                 s.merge(Preferencia(clave=str(k), valor=str(v)))
                 counts["prefs"] += 1
 
@@ -615,6 +1401,15 @@ class Storage:
                         creado=_as_local(
                             datetime.fromtimestamp(float(wo.get("timestamp") or time.time()))
                         ),
+                        # v2 documents have no notes and never will — this is the
+                        # frozen four-table format. Read anyway, with `.get()`, so
+                        # a hand-assembled document that carries one is not
+                        # silently stripped. `notas_sesion` and
+                        # `duraciones_sesion` are deliberately left alone by this
+                        # importer: a v2 file cannot restore either, so wiping
+                        # them here would destroy data with nothing to put back.
+                        # Use `backup.py` for a full restore.
+                        nota=clean_note(wo.get("note")),
                     )
                 )
                 counts["workouts"] += 1
@@ -623,13 +1418,24 @@ class Storage:
 
     # ── destructive operations ──────────────────────────────
     def clear_workouts(self):
+        """Drop the training history — session notes and durations included.
+
+        A session note is *about* a session: leaving `notas_sesion` behind would
+        keep "slept 5 h, dropped the weights" for a day with no workout left to
+        explain, and the next export would carry it to the new phone. A duration
+        is about a session in exactly the same way — "1h 12m" for a day with no
+        exercises left is a session that, as far as this database is concerned,
+        never happened.
+        """
         with self._Session() as s:
             s.execute(delete(Entreno))
+            s.execute(delete(NotaSesion))
+            s.execute(delete(DuracionSesion))
             s.commit()
 
     def clear_all(self):
         with self._Session() as s:
-            for modelo in (Entreno, Peso, Perfil, Preferencia):
+            for modelo in (Entreno, NotaSesion, DuracionSesion, Peso, Perfil, Preferencia):
                 s.execute(delete(modelo))
             s.commit()
 
@@ -644,9 +1450,48 @@ class Storage:
                     fase=entry.phase,
                     series=entry.sets,
                     creado=_as_local(datetime.fromtimestamp(entry.timestamp)),
+                    nota=clean_note(entry.note),
                 )
             )
             s.commit()
+
+    def replace_workout(self, entry: WorkoutEntry) -> int:
+        """Save `entry`, replacing any row already holding that exercise/date.
+
+        `save_workout()` always INSERTs, which is right for the training screen:
+        it owns the session it is writing and writes it once. It is wrong for
+        anything that can be *re-*submitted — the in-app coach's confirmation
+        card, where Alex can tap Save, notice a typo, correct it and tap Save
+        again. Two rows for one exercise on one day double every metric that
+        sums them, and nothing raises: `entrenos` has no unique constraint on
+        (fecha, ejercicio) because a superset legitimately produces two rows
+        under different names.
+
+        Returns how many rows it removed, so a caller can say "replaced" rather
+        than "saved" and Alex can see that something was overwritten.
+        """
+        day = _fecha(entry.date)
+        with self._Session() as s:
+            existing = list(
+                s.scalars(
+                    select(Entreno).where(Entreno.fecha == day, Entreno.ejercicio == entry.exercise)
+                )
+            )
+            for fila in existing:
+                s.delete(fila)
+            s.add(
+                Entreno(
+                    fecha=day,
+                    ejercicio=entry.exercise,
+                    grupo=entry.muscle_group,
+                    fase=entry.phase,
+                    series=entry.sets,
+                    creado=_as_local(datetime.fromtimestamp(entry.timestamp)),
+                    nota=clean_note(entry.note),
+                )
+            )
+            s.commit()
+        return len(existing)
 
     # ── reads ─────────────────────────────────────────────────
     @staticmethod
@@ -659,6 +1504,7 @@ class Storage:
                 phase=f.fase,
                 sets=f.series or [],
                 timestamp=_epoch(f.creado),
+                note=f.nota,
             )
             for f in filas
         ]
@@ -731,14 +1577,31 @@ class Storage:
             dates = list(s.scalars(select(func.distinct(Entreno.fecha))))
         return analytics.training_streak(dates, min_sessions=min_sessions)
 
-    def get_last_sets(self, exercise: str) -> list[dict] | None:
+    def get_last_sets(self, exercise: str, before: date | None = None) -> list[dict] | None:
+        """The sets from the previous time `exercise` was trained.
+
+        `before` is the date of the session being *logged*, and it exists
+        because sessions are not always logged on the day they happened —
+        forgetting the phone at home and typing Monday's workout in on
+        Wednesday is a case this app supports on purpose.
+
+        Without it the query returns the newest row in the table, full stop, so
+        back-dating Monday would prefill it with Wednesday's numbers: weights
+        from a session that, from Monday's point of view, has not happened yet.
+        Silently wrong in the worst place, since the prefill is what gets
+        confirmed with one tap and becomes the record.
+
+        Left optional and defaulting to the old behaviour: today's session,
+        which is the common case, wants the latest row and passing nothing
+        still gets it.
+        """
         with self._Session() as s:
-            fila = s.scalar(
-                select(Entreno)
-                .where(Entreno.ejercicio == exercise)
-                .order_by(Entreno.fecha.desc(), Entreno.id.desc())
-                .limit(1)
-            )
+            consulta = select(Entreno).where(Entreno.ejercicio == exercise)
+            if before is not None:
+                # Strictly earlier: a row already saved for the same day is
+                # this very session being edited, not the previous one.
+                consulta = consulta.where(Entreno.fecha < before)
+            fila = s.scalar(consulta.order_by(Entreno.fecha.desc(), Entreno.id.desc()).limit(1))
         return (fila.series or []) if fila else None
 
     def get_exercise_history(self, exercise: str, limit: int = 20) -> list[WorkoutEntry]:
