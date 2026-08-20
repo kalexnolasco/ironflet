@@ -32,7 +32,7 @@ dependencies:
   # main.dart re-reads it and (re)schedules through this plugin. All recurrence
   # arithmetic stays in Python, where it is tested — this side only ever sees a
   # flat list of absolute instants.
-  flutter_local_notifications: ^18.0.1
+  flutter_local_notifications: ^19.0.0
   timezone: ^0.10.0
 
 dependency_overrides:
