@@ -1,16 +1,17 @@
-"""Whole-database backup: twelve tables out, twelve tables back in.
+"""Whole-database backup: fourteen tables out, fourteen tables back in.
 
 `Storage.export_all()` (BACKUP_VERSION = 2) covers four tables — workouts,
-weights, profile and prefs. The database has **twelve**: `nutrition.py` adds
-`foods`, `servings`, `food_log` and `nutrition_targets`, and `routine_builder.py`
+weights, profile and prefs. The database has **fourteen**: `nutrition.py` adds
+`foods`, `servings`, `food_log` and `nutrition_targets`, `routine_builder.py`
 adds `user_routines`, `user_routine_phases`, `user_routine_days` and
-`user_routine_exercises`. A backup taken on the desktop and restored on the
-phone therefore arrived with the whole food diary and every hand-written routine
+`user_routine_exercises`, and `storage.py` also holds `notas_sesion` and
+`duraciones_sesion`. A backup taken on the desktop and restored on the phone
+therefore arrived with the whole food diary and every hand-written routine
 missing, and nothing said so — the restore reported success. On mobile the
 backup file *is* the only bridge between two devices, so that silent hole is
 the difference between moving your data and losing it.
 
-This module is the complete one, version 3. It is a separate file rather than a
+This module is the complete one. It is a separate file rather than a
 rewrite of `Storage.export_all()` because the four-table version has to stay
 exactly as it is: it defines what a version-2 document looks like, and this
 module still has to read those.
@@ -22,6 +23,16 @@ Version 3 is a **superset** of version 2 — `app`, `version`, `exported_at`,
 new sections, `nutrition` and `routines`, and some provenance metadata
 (`app_version`, `engine`, `exported_at_iso`) so a file found in six months can
 be traced back to the device that wrote it.
+
+Version 4 is a superset of that, and only adds notes: an optional `note` on
+every entry of `workouts`, and a `session_notes` section of
+`{date, note, timestamp}`. Both are absent from a v2 or v3 file, which parses to
+"no notes" — the same story as the sections above.
+
+Version 5 adds one more section, `session_durations`, of
+`{date, seconds, timestamp}` — how long each training day lasted. Absent from a
+v2, v3 or v4 file, which parses to "nothing was timed", which is the truth about
+every session logged before the chronometer was written down at all.
 
 ## No primary keys travel
 
@@ -62,11 +73,13 @@ An import happens in two phases:
 ## Merging, when `wipe=False`
 
 One rule, applied everywhere: **the backup fills gaps, it never overwrites a
-row that is already there.** An existing food slug, weight date, target start
-date, pref key or profile is kept as-is; log rows (workouts, food entries) are
-appended unless an identical row already exists, so importing the same file
-twice does not double the history. Stored routines have no natural key — two
-routines called "PPL" are two routines — so they are always inserted fresh.
+row that is already there.** An existing food slug, weight date, session-note
+date, session-duration date, target start date, pref key or profile is kept
+as-is; an exercise note rides inside its workout row and is appended or skipped
+with it; log rows (workouts, food entries) are appended unless an identical row
+already exists, so importing the same file twice does not double the history.
+Stored routines have no natural key — two routines called "PPL" are two
+routines — so they are always inserted fresh.
 
 `wipe=True`, the default and what the restore button does, gives an exact copy
 of the source database instead.
@@ -106,23 +119,51 @@ from routine_builder import (
     sync_user_routines,
     user_routine_id,
 )
-from storage import Base, Entreno, Perfil, Peso, Preferencia, Storage
+from storage import (
+    SECRET_PREF_KEYS,
+    Base,
+    DuracionSesion,
+    Entreno,
+    NotaSesion,
+    Perfil,
+    Peso,
+    Preferencia,
+    Storage,
+    clean_duration,
+    clean_note,
+)
 from workout_draft import EPHEMERAL_PREF_KEYS
 
 # Bumped from Storage.BACKUP_VERSION = 2, which only knew four tables. Anything
 # that changes the *meaning* of a field must bump this again; adding an
 # optional field does not, since the reader tolerates missing keys.
-BACKUP_VERSION = 3
+#
+# v4 adds notes: `workouts[].note` and the `session_notes` section. That is
+# strictly an addition, so by the rule above it need not have bumped — and it
+# bumped anyway, deliberately. "The reader tolerates missing keys" cuts the
+# wrong way here: a v3 build handed a file with notes would import it happily
+# and drop every note on the floor without a word, which is the same silent loss
+# that made v2 lose the food diary. Refusing the file outright ("update IronFlet
+# and try again") is the loud version of the same event. Old files keep
+# importing — `_parse` accepts anything up to BACKUP_VERSION.
+#
+# v5 adds `session_durations` and bumps for exactly the same reason as v4: it is
+# a hand-entered fact nothing can recompute, and a v4 build reading a v5 file
+# would import the workouts, drop every duration and report success. There is no
+# clock to re-run afterwards — the session is over.
+BACKUP_VERSION = 5
 
 APP_NAME = "ironflet"
 # "ironlog" is what the pre-rename builds wrote. Storage.import_all accepts it,
 # so a document this module produces has to be readable under the same rule.
 ACCEPTED_APPS = ("ironflet", "ironlog")
 
-# The twelve tables, in the order the counts dict reports them.
+# The fourteen tables, in the order the counts dict reports them.
 TABLES = (
     "workouts",
     "weights",
+    "session_notes",
+    "session_durations",
     "profile",
     "prefs",
     "foods",
@@ -162,7 +203,7 @@ def _app_version() -> str:
 
 
 def _ensure_schema(store: Storage) -> None:
-    """`create_all` over all twelve tables, whatever the import order was.
+    """`create_all` over all fourteen tables, whatever the import order was.
 
     `Storage.__init__` only creates the tables registered on `Base` *at that
     moment*, and `nutrition` / `routine_builder` may well be imported later —
@@ -182,10 +223,10 @@ def _sessions(store: Storage):
 
 
 def export_all(store: Storage) -> dict:
-    """Every row of all twelve tables as one JSON-serialisable dict.
+    """Every row of all fourteen tables as one JSON-serialisable dict.
 
-    Read in a single session so the twelve tables are a consistent snapshot
-    rather than twelve reads racing the Telegram coach writing between them.
+    Read in a single session so the fourteen tables are a consistent snapshot
+    rather than fourteen reads racing the Telegram coach writing between them.
     """
     _ensure_schema(store)
     Session = _sessions(store)
@@ -199,10 +240,17 @@ def export_all(store: Storage) -> dict:
         prefs = {
             p.clave: p.valor
             for p in s.scalars(select(Preferencia))
-            if p.clave not in EPHEMERAL_PREF_KEYS
+            # Two different exclusions with two different reasons, and they are
+            # kept separate on purpose: EPHEMERAL is about staleness (an
+            # in-progress session is nobody else's business), SECRET is about a
+            # credential that must never be written into a file Alex might send
+            # himself over a chat app. See `storage.SECRET_PREF_KEYS`.
+            if p.clave not in EPHEMERAL_PREF_KEYS and p.clave not in SECRET_PREF_KEYS
         }
         workouts = list(s.scalars(select(Entreno).order_by(Entreno.id)))
         weights = list(s.scalars(select(Peso).order_by(Peso.fecha)))
+        session_notes = list(s.scalars(select(NotaSesion).order_by(NotaSesion.fecha)))
+        session_durations = list(s.scalars(select(DuracionSesion).order_by(DuracionSesion.fecha)))
         perfil = s.get(Perfil, 1)
         nutrition = _export_nutrition(s)
         routines = _export_routines(s)
@@ -232,12 +280,37 @@ def export_all(store: Storage) -> dict:
                 # here would be this module inventing history it did not write.
                 "sets": e.series or [],
                 "timestamp": e.creado.timestamp(),
+                # Absent on every row logged before notes existed and on
+                # everything the bot writes. Exported as the null it is rather
+                # than as "", so the far side stores the same absence.
+                "note": e.nota,
             }
             for e in workouts
         ],
         "weights": [
             {"date": p.fecha.isoformat(), "kg": float(p.kg), "timestamp": p.creado.timestamp()}
             for p in weights
+        ],
+        # The one table that is nothing but notes. Its own section rather than a
+        # field on `workouts`, because a session note belongs to the day and can
+        # exist for a day with no exercise rows at all.
+        "session_notes": [
+            {"date": n.fecha.isoformat(), "note": n.nota, "timestamp": n.creado.timestamp()}
+            for n in session_notes
+        ],
+        # Keyed by day, like `session_notes` and for the same reason: the
+        # duration belongs to the training day, not to any one `entrenos` row,
+        # so it cannot ride along inside `workouts` without being duplicated
+        # once per exercise. Most days have no entry at all — nothing logged
+        # before the chronometer was stored has one, and neither does anything
+        # the bot writes.
+        "session_durations": [
+            {
+                "date": d.fecha.isoformat(),
+                "seconds": int(d.segundos),
+                "timestamp": d.creado.timestamp(),
+            }
+            for d in session_durations
         ],
         "nutrition": nutrition,
         "routines": routines,
@@ -449,6 +522,18 @@ def _opt_text(value, limit: int) -> str | None:
     return None if value is None else str(value)[:limit]
 
 
+def _note(value) -> str | None:
+    """A note as the database would have stored it.
+
+    `storage.clean_note` and nothing else: trimming and the length cap are one
+    decision, and a second copy here would let a hand-edited document put a
+    20 000-character note into a column the app itself would have cut at
+    `NOTE_MAX_LEN`. Blank and missing both come out `None`, which is what the
+    column holds for "no note".
+    """
+    return clean_note(value if value is None else str(value))
+
+
 def _day(value, where: str) -> date:
     if isinstance(value, date):
         return value
@@ -504,6 +589,11 @@ def _parse(data) -> dict:
         "prefs": _parse_prefs(data.get("prefs")),
         "workouts": _parse_workouts(data),
         "weights": _parse_weights(data),
+        # v2 and v3 documents have no `session_notes` key; absent parses to an
+        # empty list, exactly like `nutrition` and `routines` below.
+        "session_notes": _parse_session_notes(data),
+        # Same again for v2, v3 and v4 and `session_durations`.
+        "session_durations": _parse_session_durations(data),
     }
     # v2 documents simply have no "nutrition" / "routines" keys. That is the
     # entire backwards-compatibility story: absent sections parse to empty.
@@ -557,6 +647,8 @@ def _parse_workouts(data: Mapping) -> list[dict]:
                 "phase": _int(w.get("phase"), f"{where}.phase"),
                 "sets": sets,
                 "created": _moment(w.get("timestamp"), f"{where}.timestamp"),
+                # Absent in every v2 and v3 file, and on any row the bot wrote.
+                "note": _note(w.get("note")),
             }
         )
     return out
@@ -574,6 +666,62 @@ def _parse_weights(data: Mapping) -> list[dict]:
             }
         )
     return out
+
+
+def _parse_session_notes(data: Mapping) -> list[dict]:
+    """The `session_notes` section, one entry per day.
+
+    A note that is blank after cleaning is dropped rather than stored: the table
+    is NOT NULL and a row saying nothing is a row nobody can act on. Two entries
+    for one date would violate the primary key, so the last one wins here instead
+    of aborting the transaction with a database error nobody can read.
+    """
+    by_day: dict[date, dict] = {}
+    for i, n in enumerate(_rows(data, "session_notes", "session_notes")):
+        where = f"session_notes[{i}]"
+        nota = _note(n.get("note"))
+        if nota is None:
+            continue
+        day = _day(n.get("date"), f"{where}.date")
+        by_day[day] = {
+            "date": day,
+            "note": nota,
+            "created": _moment(n.get("timestamp"), f"{where}.timestamp"),
+        }
+    return [by_day[k] for k in sorted(by_day)]
+
+
+def _parse_session_durations(data: Mapping) -> list[dict]:
+    """The `session_durations` section, one entry per timed day.
+
+    Same three rules as `_parse_session_notes`, for the same reasons: a value
+    that cleans to nothing is dropped rather than stored (the column is NOT NULL
+    and a zero-second session is not a session), and two entries for one date
+    would violate the primary key, so the last one wins here instead of aborting
+    the transaction with a database error nobody can read.
+
+    The one difference is the cap. `clean_duration` raises `ValueError` past
+    `MAX_SESSION_SECONDS`, and here that becomes a `BackupError` naming the
+    entry — a hand-edited file saying a session lasted three days is a corrupt
+    file, and importing it silently clamped would put a number nobody measured
+    into the history under the name of a measurement.
+    """
+    by_day: dict[date, dict] = {}
+    for i, d in enumerate(_rows(data, "session_durations", "session_durations")):
+        where = f"session_durations[{i}]"
+        try:
+            seconds = clean_duration(d.get("seconds"))
+        except ValueError as exc:
+            raise _fail(f"{where}.seconds", str(exc)) from exc
+        if seconds is None:
+            continue
+        day = _day(d.get("date"), f"{where}.date")
+        by_day[day] = {
+            "date": day,
+            "seconds": seconds,
+            "created": _moment(d.get("timestamp"), f"{where}.timestamp"),
+        }
+    return [by_day[k] for k in sorted(by_day)]
 
 
 def _parse_foods(nutrition: Mapping) -> list[dict]:
@@ -769,7 +917,7 @@ def _parse_routines(data: Mapping) -> list[dict]:
 
 
 def import_all(store: Storage, data, *, wipe: bool = True) -> dict:
-    """Restore a v2 or v3 document. Returns a row count per table.
+    """Restore any document up to `BACKUP_VERSION`. Returns a row count per table.
 
     The counts are keyed by `TABLES` and are meant to be shown to the user —
     `summary_line()` turns them into "47 workouts, 120 food entries, 2 routines".
@@ -815,7 +963,7 @@ def import_all(store: Storage, data, *, wipe: bool = True) -> dict:
 
 
 def _wipe(s) -> None:
-    """Empty all twelve tables, children before parents.
+    """Empty all fourteen tables, children before parents.
 
     Explicit ordering rather than trusting `ondelete="CASCADE"`: SQLite does not
     enforce foreign keys unless `PRAGMA foreign_keys` is on (it is off by
@@ -833,11 +981,17 @@ def _wipe(s) -> None:
         NutritionTarget,
         Food,
         Entreno,
+        NotaSesion,
+        DuracionSesion,
         Peso,
         Perfil,
-        Preferencia,
     ):
         s.execute(delete(model))
+    # Preferences last and filtered: `SECRET_PREF_KEYS` survives a restore.
+    # The API key belongs to this device and this person, not to the document —
+    # and a restore is exactly what someone does on a new phone, when going to
+    # find the key again is hardest.
+    s.execute(delete(Preferencia).where(Preferencia.clave.notin_(SECRET_PREF_KEYS)))
 
 
 def _write_routines(s, routines: list[dict], counts: dict) -> dict[int, int]:
@@ -1013,7 +1167,13 @@ def _entry_key(day, meal, name, grams, created) -> tuple:
 
 
 def _write_training(s, parsed: dict, counts: dict, *, wipe: bool) -> None:
-    """Profile, workouts and body weight."""
+    """Profile, workouts, body weight, session notes and session durations.
+
+    Exercise notes need no pass of their own: each one rides in the `entrenos`
+    row it belongs to, and is inserted with it. Durations do need one — they are
+    keyed by day, not by exercise, and a timed day can have no `entrenos` rows
+    at all.
+    """
     profile = parsed["profile"]
     if profile is not None and (wipe or s.get(Perfil, 1) is None):
         s.merge(
@@ -1056,9 +1216,36 @@ def _write_training(s, parsed: dict, counts: dict, *, wipe: bool) -> None:
                 fase=w["phase"],
                 series=w["sets"],
                 creado=w["created"],
+                nota=w["note"],
             )
         )
         counts["workouts"] += 1
+
+    # Same gap-filling rule as weights: on a merge the note already on this
+    # device wins. It was written here, about a session trained here; a note
+    # from another device cannot know better than the one in front of you.
+    have_notes: set[date] = set()
+    if not wipe:
+        have_notes = set(s.scalars(select(NotaSesion.fecha)))
+    for n in parsed["session_notes"]:
+        if n["date"] in have_notes:
+            continue
+        have_notes.add(n["date"])
+        s.add(NotaSesion(fecha=n["date"], nota=n["note"], creado=n["created"]))
+        counts["session_notes"] += 1
+
+    # And once more for durations. Same gap-filling rule, same argument: a
+    # session timed on this device was timed *here*, and a number from another
+    # device is not a better answer about how long it took.
+    have_durations: set[date] = set()
+    if not wipe:
+        have_durations = set(s.scalars(select(DuracionSesion.fecha)))
+    for d in parsed["session_durations"]:
+        if d["date"] in have_durations:
+            continue
+        have_durations.add(d["date"])
+        s.add(DuracionSesion(fecha=d["date"], segundos=d["seconds"], creado=d["created"]))
+        counts["session_durations"] += 1
 
 
 def _write_prefs(s, parsed: dict, counts: dict, routine_map: dict[int, int], *, wipe: bool) -> None:
@@ -1075,7 +1262,7 @@ def _write_prefs(s, parsed: dict, counts: dict, routine_map: dict[int, int], *, 
         # Belt and braces with the export side: a v3 file written before this
         # exclusion existed still carries the draft, and importing one must not
         # drop someone else's half-finished session onto this device.
-        if key in EPHEMERAL_PREF_KEYS:
+        if key in EPHEMERAL_PREF_KEYS or key in SECRET_PREF_KEYS:
             continue
         if key in have:
             continue
@@ -1156,11 +1343,18 @@ def default_filename(when: float | None = None) -> str:
 
 # ── reporting ────────────────────────────────────────────────
 
-# The five counts worth showing. The other seven (servings, phases, days…) are
+# The seven counts worth showing. The other seven (servings, phases, days…) are
 # in the dict, but nobody restores a backup wondering how many servings moved.
 _HEADLINE = (
     ("workouts", "workout", "workouts"),
     ("weights", "weigh-in", "weigh-ins"),
+    # Worth a line of its own even though it is a small table: it is one of the
+    # two things in the file Alex entered by hand and nothing can regenerate.
+    ("session_notes", "session note", "session notes"),
+    # The other one. Listed for the same reason and with more at stake: a note
+    # that failed to arrive is at least missed when the day is read back, while
+    # a missing duration looks exactly like a session that was never timed.
+    ("session_durations", "session time", "session times"),
     ("food_log", "food entry", "food entries"),
     ("foods", "food", "foods"),
     ("routines", "routine", "routines"),

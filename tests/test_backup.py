@@ -1,6 +1,6 @@
 """The backup is the only bridge between the phone and the desktop.
 
-`Storage.export_all()` covers four of the twelve tables, so a restore used to
+`Storage.export_all()` covers four of the fourteen tables, so a restore used to
 land with the food diary and every user-written routine missing — silently, and
 reported as a success. `backup.py` is the complete one; this suite is what says
 so.
@@ -46,7 +46,17 @@ from routine_builder import (
     save_draft,
     user_routine_id,
 )
-from storage import Entreno, Perfil, Peso, Storage, WorkoutEntry
+from storage import (
+    MAX_SESSION_SECONDS,
+    NOTE_MAX_LEN,
+    DuracionSesion,
+    Entreno,
+    NotaSesion,
+    Perfil,
+    Peso,
+    Storage,
+    WorkoutEntry,
+)
 
 # Whole seconds on purpose: a float timestamp survives `fromtimestamp` exactly
 # only if it has no sub-microsecond tail, and the round-trip test compares two
@@ -192,7 +202,7 @@ def add_routine(store: Storage, name: str, *, exercises=("Squat", "Barbell Bench
 
 
 def populate(store: Storage) -> dict:
-    """Fill all twelve tables. Returns the handful of ids a test may need."""
+    """Fill all fourteen tables. Returns the handful of ids a test may need."""
     store.set_profile("Alex", "1990-05-01", 178.0, "male", "moderate")
 
     store.save_workout(
@@ -203,6 +213,7 @@ def populate(store: Storage) -> dict:
             phase=2,
             sets=[{"weight": 100.0, "reps": 8}, {"weight": 20.0, "reps": 10, "type": "warmup"}],
             timestamp=T0.timestamp(),
+            note="Hole 4 on the backrest.",
         )
     )
     store.save_workout(
@@ -213,8 +224,15 @@ def populate(store: Storage) -> dict:
             phase=2,
             sets=[{"weight": 80.0, "reps": 5, "rir": 2}],
             timestamp=(T0 - timedelta(days=2)).timestamp(),
+            # No note, like every row written before the column existed and
+            # everything the Telegram coach writes.
         )
     )
+    store.set_session_note("Slept 5 h, dropped the weights on purpose.", DAY)
+    # One duration, for the day — not one per exercise row. The session two
+    # days earlier is deliberately left untimed, which is what every row
+    # logged before this existed looks like.
+    store.set_session_duration(4320, DAY)
 
     add_weight(store, DAY, 82.4)
     add_weight(store, DAY - timedelta(days=7), 83.1)
@@ -268,10 +286,12 @@ def comparable(doc: dict) -> dict:
 
 
 def counts_of(store: Storage) -> dict[str, int]:
-    """Row counts straight off the twelve tables, bypassing every facade."""
+    """Row counts straight off the fourteen tables, bypassing every facade."""
     models = {
         "workouts": Entreno,
         "weights": Peso,
+        "session_notes": NotaSesion,
+        "session_durations": DuracionSesion,
         "profile": Perfil,
         "foods": Food,
         "servings": Serving,
@@ -304,7 +324,7 @@ def test_round_trip_loses_nothing(store, other):
     assert comparable(export_all(other)) == comparable(doc)
 
 
-def test_round_trip_covers_all_twelve_tables(store, other):
+def test_round_trip_covers_all_thirteen_tables(store, other):
     """The bug this module exists for: v2 moved 4 tables and claimed success."""
     populate(store)
     import_all(other, export_all(store))
@@ -323,6 +343,8 @@ def test_counts_report_every_table(store, other):
     assert set(counts) == set(backup.TABLES)
     assert counts["workouts"] == 2
     assert counts["weights"] == 2
+    assert counts["session_notes"] == 1
+    assert counts["session_durations"] == 1
     assert counts["profile"] == 1
     assert counts["prefs"] == 2
     assert counts["foods"] == 2
@@ -339,9 +361,15 @@ def test_summary_line_is_showable(store, other):
     populate(store)
     counts = import_all(other, export_all(store))
 
-    assert summary_line(counts) == "2 workouts, 2 weigh-ins, 3 food entries, 2 foods, 1 routine"
+    assert summary_line(counts) == (
+        "2 workouts, 2 weigh-ins, 1 session note, 1 session time, "
+        "3 food entries, 2 foods, 1 routine"
+    )
     assert summary_line({}) == "nothing"
     assert summary_line({"workouts": 1}) == "1 workout"
+    assert summary_line({"session_notes": 4}) == "4 session notes"
+    assert summary_line({"session_durations": 1}) == "1 session time"
+    assert summary_line({"session_durations": 9}) == "9 session times"
 
 
 def test_export_carries_provenance(store):
@@ -349,7 +377,7 @@ def test_export_carries_provenance(store):
     doc = export_all(store)
 
     assert doc["app"] == "ironflet"
-    assert doc["version"] == BACKUP_VERSION == 3
+    assert doc["version"] == BACKUP_VERSION == 5
     assert doc["engine"] == "sqlite"
     assert doc["exported_at"] > 0
     assert doc["exported_at_iso"].startswith("20")
@@ -405,10 +433,13 @@ def test_version_2_backup_still_imports(store, other):
     assert counts["workouts"] == 2
     assert counts["weights"] == 2
     assert counts["profile"] == 1
-    # A v2 file simply has no nutrition or routines. Absent, not zeroed out.
+    # A v2 file simply has no nutrition, routines or notes. Absent, not zeroed
+    # out — and absent must parse, not raise.
     assert counts["foods"] == 0
     assert counts["food_log"] == 0
     assert counts["routines"] == 0
+    assert counts["session_notes"] == 0
+    assert counts["session_durations"] == 0
 
     after = counts_of(other)
     assert after["workouts"] == 2
@@ -433,12 +464,63 @@ def test_version_2_import_drops_a_dangling_routine_pref(store, other):
     assert other.get_pref("units") == "kg"
 
 
-def test_version_3_is_refused_by_the_old_importer(store, other):
-    """An old app must refuse a v3 file outright, not import half of it.
+def test_a_version_3_file_still_imports(store, other):
+    """The format before notes existed. Old files must keep working, forever.
 
-    `Storage.import_all()` is the version shipped today. Pointed at a v3
-    document it has to raise on the version check — *before* its wipe, which it
-    commits in a transaction of its own and could not undo.
+    Built by hand rather than by an old exporter, because there is no longer one
+    to call: a v3 document is exactly today's minus `session_notes`, minus
+    `session_durations` and minus `workouts[].note`, and the importer must read
+    it as "no notes and nothing timed", not refuse it and not raise on the
+    missing keys.
+    """
+    populate(store)
+    doc = export_all(store)
+    doc["version"] = 3
+    doc.pop("session_notes")
+    doc.pop("session_durations")
+    for workout in doc["workouts"]:
+        workout.pop("note")
+
+    counts = import_all(other, doc)
+
+    assert counts["workouts"] == 2
+    assert counts["session_notes"] == 0
+    assert counts["session_durations"] == 0
+    assert other.get_session_note(DAY) is None
+    assert other.get_exercise_note("Squat", DAY) is None
+    assert other.get_session_duration(DAY) is None
+    # …and everything a v3 file did carry arrived untouched.
+    assert counts_of(other)["food_log"] == 3
+
+
+def test_a_version_4_file_still_imports(store, other):
+    """The format before durations existed — every backup Alex has taken so far.
+
+    A v4 document is today's minus `session_durations`. Absent parses to
+    "nothing was timed", which is the truth about every one of those sessions,
+    and the notes v4 *did* carry have to arrive untouched alongside.
+    """
+    populate(store)
+    doc = export_all(store)
+    doc["version"] = 4
+    doc.pop("session_durations")
+
+    counts = import_all(other, doc)
+
+    assert counts["workouts"] == 2
+    assert counts["session_notes"] == 1
+    assert counts["session_durations"] == 0
+    assert other.get_session_duration(DAY) is None
+    assert other.get_session_note(DAY) == "Slept 5 h, dropped the weights on purpose."
+    assert other.get_exercise_note("Squat", DAY) == "Hole 4 on the backrest."
+
+
+def test_current_format_is_refused_by_the_old_importer(store, other):
+    """An old app must refuse a newer file outright, not import half of it.
+
+    `Storage.import_all()` is the four-table version shipped today. Pointed at a
+    document from this module it has to raise on the version check — *before* its
+    wipe, which it commits in a transaction of its own and could not undo.
     """
     assert BACKUP_VERSION > Storage.BACKUP_VERSION
 
@@ -809,3 +891,284 @@ def test_imported_routine_is_spliced_into_data_routines(store):
     # The pref came back with it, so the app reopens on the routine that was
     # active when the backup was taken.
     assert data.active_routine().id == store.get_pref("routine")
+
+
+# ── 6. notes ─────────────────────────────────────────────────
+
+
+def test_both_notes_survive_the_round_trip(store, other):
+    """The point of v4. A note that does not travel is a note lost on the phone.
+
+    Six months into a 24-week plan, "hole 4 on the backrest" is not recoverable
+    from anywhere else — no metric implies it and nobody remembers it.
+    """
+    populate(store)
+    import_all(other, export_all(store))
+
+    assert other.get_exercise_note("Squat", DAY) == "Hole 4 on the backrest."
+    assert other.get_session_note(DAY) == "Slept 5 h, dropped the weights on purpose."
+    # The exercise note rides on its own row, so the workout without one still
+    # has none — absence has to survive as faithfully as presence.
+    assert other.get_exercise_note("Barbell Bench Press", DAY - timedelta(days=2)) is None
+    assert other.get_session_note(DAY - timedelta(days=2)) is None
+
+
+def test_a_session_note_travels_without_any_workout(store, other):
+    """It hangs off the day, not off an exercise — including a day with none."""
+    store.set_session_note("Gym closed, walked instead.", date(2026, 4, 1))
+
+    counts = import_all(other, export_all(store))
+
+    assert counts["session_notes"] == 1
+    assert counts["workouts"] == 0
+    assert other.get_session_note(date(2026, 4, 1)) == "Gym closed, walked instead."
+
+
+def test_merge_keeps_the_session_note_already_on_this_device(store, other):
+    """Gap-filling, same rule as weights: what is here was written here."""
+    other.set_session_note("Mine, typed on this phone.", DAY)
+    populate(store)
+
+    import_all(other, export_all(store), wipe=False)
+
+    assert other.get_session_note(DAY) == "Mine, typed on this phone."
+    # A day the target had nothing for is filled in.
+    store.set_session_note("Free day.", date(2026, 4, 2))
+    import_all(other, export_all(store), wipe=False)
+    assert other.get_session_note(date(2026, 4, 2)) == "Free day."
+
+
+def test_wipe_replaces_the_session_note(store, other):
+    other.set_session_note("Stale, from the old database.", DAY)
+    populate(store)
+
+    import_all(other, export_all(store), wipe=True)
+
+    assert other.get_session_note(DAY) == "Slept 5 h, dropped the weights on purpose."
+
+
+def test_an_overlong_note_in_a_document_is_truncated_not_refused(store):
+    """A hand-edited file cannot smuggle in a note longer than the app writes.
+
+    Truncating is the same thing `Storage` does on the way in, and it has to
+    happen here too: `Text` has no width on either engine, so without this the
+    document decides the column length.
+    """
+    doc = {
+        "app": "ironflet",
+        "version": 4,
+        "workouts": [
+            {
+                "date": DAY.isoformat(),
+                "exercise": "Squat",
+                "sets": [],
+                "timestamp": T0.timestamp(),
+                "note": "x" * (NOTE_MAX_LEN + 500),
+            }
+        ],
+        "session_notes": [{"date": DAY.isoformat(), "note": "y" * (NOTE_MAX_LEN + 500)}],
+    }
+
+    import_all(store, doc)
+
+    assert store.get_exercise_note("Squat", DAY) == "x" * NOTE_MAX_LEN
+    assert store.get_session_note(DAY) == "y" * NOTE_MAX_LEN
+
+
+def test_blank_and_duplicate_notes_do_not_reach_the_database(store):
+    """`notas_sesion.nota` is NOT NULL and its date is the primary key.
+
+    A blank note is no note; two entries for one day would abort the whole
+    transaction with a constraint error instead of importing the file.
+    """
+    doc = {
+        "app": "ironflet",
+        "version": 4,
+        "session_notes": [
+            {"date": DAY.isoformat(), "note": "   "},
+            {"date": "2026-03-03", "note": "first"},
+            {"date": "2026-03-03", "note": "second"},
+            {"date": "2026-03-04", "note": None},
+        ],
+    }
+
+    counts = import_all(store, doc)
+
+    assert counts["session_notes"] == 1
+    assert store.get_session_note(DAY) is None
+    assert store.get_session_note(date(2026, 3, 3)) == "second"
+    assert store.get_session_note(date(2026, 3, 4)) is None
+
+
+def test_a_malformed_note_section_fails_before_any_write(store):
+    populate(store)
+    before = counts_of(store)
+    doc = export_all(store)
+    doc["session_notes"] = [{"date": "not-a-date", "note": "whatever"}]
+
+    with pytest.raises(BackupError, match="session_notes\\[0\\].date"):
+        import_all(store, doc, wipe=True)
+
+    assert counts_of(store) == before
+
+
+# ── 7. session durations ─────────────────────────────────────
+
+
+def test_the_duration_survives_the_round_trip(store, other):
+    """The point of v5. A duration that does not travel is lost on the phone.
+
+    Unlike a weight or a volume there is nothing to re-derive it from: the
+    session is over and the clock is not going to run again.
+    """
+    populate(store)
+    import_all(other, export_all(store))
+
+    assert other.get_session_duration(DAY) == 4320
+    # A day that was never timed must arrive untimed, not zeroed.
+    assert other.get_session_duration(DAY - timedelta(days=2)) is None
+    assert other.get_duration_map() == {DAY.isoformat(): 4320}
+
+
+def test_a_duration_travels_without_any_workout(store, other):
+    """Keyed by the day, like a session note — including a day with no rows."""
+    store.set_session_duration(2700, date(2026, 4, 1))
+
+    counts = import_all(other, export_all(store))
+
+    assert counts["session_durations"] == 1
+    assert counts["workouts"] == 0
+    assert other.get_session_duration(date(2026, 4, 1)) == 2700
+
+
+def test_one_duration_per_day_not_one_per_exercise(store, other):
+    """Two exercises on one date export one entry, and import one row.
+
+    With the date now chosen per exercise this is the case that matters: the
+    rows of a session arrive separately, but they share a `fecha` and therefore
+    share the one span that was actually measured.
+    """
+    for name in ("Squat", "Barbell Bench Press", "Barbell Row"):
+        store.save_workout(
+            WorkoutEntry(
+                date=DAY.isoformat(),
+                exercise=name,
+                muscle_group="Test",
+                phase=1,
+                sets=[{"weight": 100.0, "reps": 5}],
+                timestamp=T0.timestamp(),
+            )
+        )
+    store.set_session_duration(4500, DAY)
+
+    doc = export_all(store)
+    assert len(doc["workouts"]) == 3
+    assert doc["session_durations"] == [
+        {
+            "date": DAY.isoformat(),
+            "seconds": 4500,
+            "timestamp": pytest.approx(doc["exported_at"], abs=60),
+        }
+    ]
+
+    counts = import_all(other, doc)
+    assert counts["workouts"] == 3
+    assert counts["session_durations"] == 1
+
+
+def test_merge_keeps_the_duration_already_on_this_device(store, other):
+    """Gap-filling, same rule as notes and weights: this one was timed here."""
+    other.set_session_duration(1800, DAY)
+    populate(store)
+
+    import_all(other, export_all(store), wipe=False)
+
+    assert other.get_session_duration(DAY) == 1800
+    # A day the target had nothing for is filled in.
+    store.set_session_duration(3300, date(2026, 4, 2))
+    import_all(other, export_all(store), wipe=False)
+    assert other.get_session_duration(date(2026, 4, 2)) == 3300
+
+
+def test_wipe_replaces_the_duration(store, other):
+    other.set_session_duration(60, DAY)
+    populate(store)
+
+    import_all(other, export_all(store), wipe=True)
+
+    assert other.get_session_duration(DAY) == 4320
+
+
+def test_an_impossible_duration_in_a_document_is_refused(store):
+    """Not clamped. A hand-edited file claiming a three-day session is corrupt.
+
+    Importing it capped at 8 h would put a number nobody measured into the
+    history wearing the face of a measurement — the same argument
+    `clean_duration` makes, enforced at the file boundary too.
+    """
+    populate(store)
+    before = counts_of(store)
+    doc = export_all(store)
+    doc["session_durations"] = [{"date": DAY.isoformat(), "seconds": 3 * 24 * 3600}]
+
+    with pytest.raises(BackupError, match=r"session_durations\[0\].seconds"):
+        import_all(store, doc, wipe=True)
+
+    assert counts_of(store) == before
+    assert store.get_session_duration(DAY) == 4320
+
+
+def test_the_cap_itself_imports(store):
+    doc = {
+        "app": "ironflet",
+        "version": BACKUP_VERSION,
+        "session_durations": [{"date": DAY.isoformat(), "seconds": MAX_SESSION_SECONDS}],
+    }
+    assert import_all(store, doc)["session_durations"] == 1
+    assert store.get_session_duration(DAY) == MAX_SESSION_SECONDS
+
+
+def test_blank_and_duplicate_durations_do_not_reach_the_database(store):
+    """`duraciones_sesion.segundos` is NOT NULL and its date is the primary key.
+
+    Zero is no duration; two entries for one day would abort the whole
+    transaction with a constraint error instead of importing the file.
+    """
+    doc = {
+        "app": "ironflet",
+        "version": BACKUP_VERSION,
+        "session_durations": [
+            {"date": DAY.isoformat(), "seconds": 0},
+            {"date": "2026-03-03", "seconds": 1800},
+            {"date": "2026-03-03", "seconds": 2400},
+            {"date": "2026-03-04", "seconds": None},
+        ],
+    }
+
+    counts = import_all(store, doc)
+
+    assert counts["session_durations"] == 1
+    assert store.get_session_duration(DAY) is None
+    assert store.get_session_duration(date(2026, 3, 3)) == 2400
+    assert store.get_session_duration(date(2026, 3, 4)) is None
+
+
+def test_a_malformed_duration_section_fails_before_any_write(store):
+    populate(store)
+    before = counts_of(store)
+    doc = export_all(store)
+    doc["session_durations"] = [{"date": "not-a-date", "seconds": 1800}]
+
+    with pytest.raises(BackupError, match=r"session_durations\[0\].date"):
+        import_all(store, doc, wipe=True)
+
+    assert counts_of(store) == before
+
+
+def test_the_v2_exporter_still_ignores_durations(store):
+    """`Storage.export_all()` is the frozen four-table format. Leave it frozen."""
+    populate(store)
+    doc = store.export_all()
+
+    assert "session_durations" not in doc
+    assert doc["version"] == 2
