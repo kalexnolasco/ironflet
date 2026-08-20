@@ -1,6 +1,6 @@
 [project]
 name = "ironflet"
-version = "0.9.0"
+version = "0.10.0"
 description = "English-only weight-training tracker built with Flet — runs on Android, desktop and web from a single Python codebase."
 readme = "README.md"
 license = { file = "LICENSE" }

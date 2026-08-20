@@ -96,6 +96,66 @@ DARK = Palette(
 )
 
 
+# Modelled on symmetry.club, at Alex's request, from values sampled off the live
+# site rather than eyeballed: page `#121212`, surfaces `#1A1A1A`, one blue
+# accent `#3781FA` used at full strength for actions and at ~10-30% alpha for
+# tints and borders, `#9CA3AF` for secondary text, hairline low-alpha borders,
+# **no shadows at all**, and heavy rounding — pills and 24 px.
+#
+# TWO DELIBERATE DEVIATIONS, both because the source fails WCAG AA and this
+# repo's `tests/test_theme.py` will not let it through:
+#
+#   * White on `#3781FA` is **3.70:1**. Button labels are 14 px bold, which is
+#     not "large text", so the bar is 4.5. And there is no way to have both: to
+#     read as text on a `#121212` page the accent needs luminance >= 0.2022, to
+#     carry white it needs <= 0.1833. The ranges do not overlap. So `on_accent`
+#     is near-black, exactly as `DARK` already does with its light orange.
+#   * Their `#6B7280` body grey is **3.60:1** on a card. It is kept, but demoted
+#     to `border_strong` (a 3:1 role), and the text greys move up one step to
+#     `#D1D5DB` / `#9CA3AF`, which is where the site uses them most anyway.
+#
+# Worst text pair: 4.71:1.
+SYMMETRY = Palette(
+    name="symmetry",
+    bg_page="#121212",
+    bg_surface="#1A1A1A",
+    bg_sunken="#0E0E0E",
+    bg_nav="#121212",
+    # gray-700 at 50% composited over the page — the site draws depth with
+    # hairline borders and background tints instead of shadows.
+    border="#242A32",
+    border_strong="#6B7280",
+    text="#FFFFFF",
+    text_secondary="#D1D5DB",
+    text_muted="#9CA3AF",
+    accent="#3781FA",
+    # A LIGHTER blue, not a deeper one, and the constraint decided it rather
+    # than taste: `primary_button` paints a gradient between the two accents and
+    # the label on top is near-black, so a darker second stop drops that label
+    # to 3.70:1. This is one of the site's own blues (blue-400) and keeps the
+    # button reading as flat rather than as a novelty gradient.
+    accent_2="#60A5FA",
+    # The accent at 10% over the page. 16% looked better and dropped the accent
+    # sitting on it to 4.22:1.
+    accent_soft="#161D29",
+    on_accent="#04101F",
+    success="#4ADE80",
+    warning="#FBBF24",
+    danger="#F87171",
+    chart_bar="#3781FA",
+    shadow="#000000",
+    phase=("#2DD4BF", "#60A5FA", "#A78BFA", "#FCD34D", "#F472B6", "#FB7185", "#38BDF8"),
+)
+
+
+#: THE DEFAULT IS NOW DARK, and that reverses a decision this file used to
+#: state the other way round ("this app is used in daylight, in a gym, on a
+#: phone"). Alex asked for the look of symmetry.club, which is dark, and it is
+#: his app. The daylight argument did not stop being true, so `LIGHT` is intact,
+#: fully tested, and one tap away in Settings → Appearance.
+DEFAULT_PALETTE = SYMMETRY
+
+
 class _Proxy:
     """Reads through to the active palette.
 
@@ -103,7 +163,7 @@ class _Proxy:
     at render time, so `set_palette()` takes effect without reimporting anything.
     """
 
-    _p: Palette = LIGHT
+    _p: Palette = DEFAULT_PALETTE
 
     def __getattr__(self, nombre: str):
         return getattr(_Proxy._p, nombre)
@@ -120,13 +180,24 @@ def set_palette(paleta: Palette) -> None:
     _Proxy._p = paleta
 
 
-def apply_theme(page: ft.Page, paleta: Palette = LIGHT) -> None:
+#: Every palette the app can be set to, keyed by the name stored in
+#: `preferencias`. Adding one here is all it takes to reach the Settings picker.
+PALETTES: dict[str, Palette] = {}
+
+
+def palette_for(name: str | None) -> Palette:
+    """The stored choice, or the default. Never raises on a stale name."""
+    return PALETTES.get((name or "").strip().lower(), DEFAULT_PALETTE)
+
+
+def apply_theme(page: ft.Page, paleta: Palette | None = None) -> None:
     """Sets the palette AND the Material scheme.
 
     All three assignments are needed: without an explicit ColorScheme, Flet
     derives a tonal Material 3 palette from a seed colour and every dialog,
     text field and dropdown comes out in shades that do not match anything.
     """
+    paleta = paleta or DEFAULT_PALETTE
     set_palette(paleta)
     page.theme_mode = ft.ThemeMode.LIGHT if paleta.name == "light" else ft.ThemeMode.DARK
     page.bgcolor = paleta.bg_page
@@ -151,7 +222,15 @@ class Space:
 
 
 class Radius:
-    sm, md, lg, xl, pill = 8, 10, 12, 16, 999
+    """Corner radii, sized after symmetry.club: pills and 24 px do the work.
+
+    Sampled from the live site: `9999px` was the most common value by far (32
+    uses), then `24px` (21). Everything here moved up a step to match, which
+    restyles all ten screens at once — no view sets a radius of its own, the
+    same reason no view sets a colour.
+    """
+
+    sm, md, lg, xl, pill = 10, 14, 20, 24, 999
 
 
 # ── widget factories ─────────────────────────────────────────
@@ -164,7 +243,7 @@ def card(*controls, padding=16, margin=None, border_color=None, **kw) -> ft.Cont
         content=ft.Column(list(controls), spacing=6, tight=True),
         bgcolor=kw.pop("bgcolor", C.bg_surface),
         border=ft.border.all(1, border_color or C.border),
-        border_radius=kw.pop("border_radius", Radius.lg),
+        border_radius=kw.pop("border_radius", Radius.xl),
         padding=padding,
         margin=margin,
         **kw,
@@ -175,7 +254,7 @@ def chip(text: str, color=None, bg=None, size=11) -> ft.Container:
     return ft.Container(
         content=ft.Text(text, size=size, color=color or C.text_secondary),
         bgcolor=bg or C.bg_sunken,
-        border_radius=Radius.sm,
+        border_radius=Radius.pill,
         padding=ft.padding.symmetric(horizontal=8, vertical=4),
     )
 
@@ -194,7 +273,7 @@ def primary_button(
             end=ft.alignment.bottom_right,
             colors=[C.accent, C.accent_2],
         ),
-        border_radius=Radius.lg,
+        border_radius=Radius.pill,
         padding=ft.padding.symmetric(horizontal=20, vertical=14),
         alignment=ft.alignment.center,
         on_click=on_click,
@@ -214,7 +293,7 @@ def ghost_button(text: str, on_click=None, expand=False, **kw) -> ft.Container:
             text_align=ft.TextAlign.CENTER,
         ),
         border=ft.border.all(1, C.border_strong),
-        border_radius=Radius.md,
+        border_radius=Radius.pill,
         padding=ft.padding.symmetric(horizontal=18, vertical=12),
         alignment=ft.alignment.center,
         on_click=on_click,
@@ -237,3 +316,6 @@ def muted_text(text: str, size=11) -> ft.Text:
 # constants bound to LIGHT at import time, any view that imported one silently
 # stopped following the active palette, which is how two dialogs ended up
 # painting a white card in dark mode.
+
+
+PALETTES.update({p.name: p for p in (SYMMETRY, LIGHT, DARK)})

@@ -671,6 +671,11 @@ class Preferencia(Base):
 #: from here is a decision about a credential, never tidying.
 SECRET_PREF_KEYS: tuple[str, ...] = ("agent_openrouter_key", "agent_api_key")
 
+#: Which palette to paint in. Read before the first frame in `main.py`; an
+#: unknown or missing value falls back to the default rather than raising, so a
+#: backup from a build with a palette this one has never heard of still opens.
+THEME_PREF = "theme"
+
 
 class Perfil(Base):
     __tablename__ = "perfil"

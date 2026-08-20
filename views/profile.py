@@ -22,9 +22,13 @@ from health import (
     tdee,
     water_target_l,
 )
-from storage import Storage
+from storage import THEME_PREF, Storage
 from theme import (
+    DEFAULT_PALETTE,
+    PALETTES,
     C,
+    Radius,
+    apply_theme,
     card,
     ghost_button,
     primary_button,
@@ -121,7 +125,7 @@ class ProfileView:
             color=C.text,
             text_size=14,
         )
-        err = ft.Text("", size=11, color=C.accent_2)
+        err = ft.Text("", size=11, color=C.danger)
 
         def save(_):
             try:
@@ -385,19 +389,25 @@ class ProfileView:
                     on_click=lambda _: self.page.close(dlg),
                     style=ft.ButtonStyle(color=C.text_secondary),
                 ),
-                ft.TextButton(
-                    action_key, on_click=confirmed, style=ft.ButtonStyle(color=C.accent_2)
-                ),
+                ft.TextButton(action_key, on_click=confirmed, style=ft.ButtonStyle(color=C.danger)),
             ],
             actions_alignment=ft.MainAxisAlignment.END,
         )
         self.page.open(dlg)
 
     def _danger_row(self, icon, label_key: str, on_click) -> ft.Control:
+        """A row that deletes something. `C.danger`, and it has to be.
+
+        This used `C.accent_2` and looked right for a year, because in the light
+        palette that token happened to be a crimson. The Symmetry palette made
+        it a light blue and "Clear all data" turned friendly overnight — the
+        role and the colour had never actually matched, the hue just covered for
+        it. Any row that destroys data reads `danger`, whatever the theme.
+        """
         return ft.Container(
             content=ft.Row(
                 [
-                    ft.Icon(icon, color=C.accent_2, size=18),
+                    ft.Icon(icon, color=C.danger, size=18),
                     ft.Container(
                         content=ft.Text(
                             label_key, size=12, color=C.text_secondary, weight=ft.FontWeight.W_700
@@ -631,6 +641,92 @@ class ProfileView:
             ],
         )
         self.page.open(dlg)
+
+    def _appearance_section(self) -> ft.Control:
+        """Pick a palette. Dark is the default; daylight is one tap away.
+
+        This exists because the default flipped. `theme.py` used to say, in as
+        many words, that light was the default because the app is used in
+        daylight in a gym — and that argument did not stop being true when Alex
+        asked for the look of symmetry.club. So the dark theme ships as the
+        default and the old one is still here, still tested, still one tap away
+        rather than deleted to make the new decision look cleaner.
+        """
+        actual = (self.store.get_pref(THEME_PREF) or "").strip().lower()
+        if actual not in PALETTES:
+            actual = DEFAULT_PALETTE.name
+
+        def elegir(nombre):
+            def go(_):
+                self.store.set_pref(THEME_PREF, nombre)
+                # Repaint now: `apply_theme` also sets the Material ColorScheme,
+                # and without it every dialog and text field keeps the old one.
+                apply_theme(self.page, PALETTES[nombre])
+                self.page.data["refresh_current"]()
+
+            return go
+
+        ETIQUETAS = {
+            "symmetry": ("Dark", "Near-black and blue"),
+            "light": ("Daylight", "Easier to read in the sun"),
+            "dark": ("Warm dark", "The original dark theme"),
+        }
+        filas = []
+        for nombre in PALETTES:
+            titulo, pie = ETIQUETAS.get(nombre, (nombre.title(), ""))
+            elegido = nombre == actual
+            paleta = PALETTES[nombre]
+            filas.append(
+                ft.Container(
+                    content=ft.Row(
+                        [
+                            # A swatch of the palette being offered, painted in
+                            # its OWN colours rather than the active ones — the
+                            # point of the row is to show what it looks like.
+                            ft.Container(
+                                width=34,
+                                height=34,
+                                bgcolor=paleta.bg_page,
+                                border=ft.border.all(1, paleta.border_strong),
+                                border_radius=Radius.md,
+                                content=ft.Container(
+                                    width=12,
+                                    height=12,
+                                    bgcolor=paleta.accent,
+                                    border_radius=Radius.pill,
+                                ),
+                                alignment=ft.alignment.center,
+                            ),
+                            ft.Column(
+                                [
+                                    ft.Text(
+                                        titulo, size=13, weight=ft.FontWeight.W_700, color=C.text
+                                    ),
+                                    ft.Text(pie, size=10, color=C.text_muted),
+                                ],
+                                spacing=0,
+                                tight=True,
+                                expand=True,
+                            ),
+                            ft.Icon(
+                                ft.Icons.CHECK_CIRCLE_ROUNDED
+                                if elegido
+                                else ft.Icons.CIRCLE_OUTLINED,
+                                size=18,
+                                color=C.accent if elegido else C.text_muted,
+                            ),
+                        ],
+                        spacing=10,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                    ),
+                    on_click=elegir(nombre),
+                    ink=True,
+                    padding=ft.padding.symmetric(horizontal=10, vertical=8),
+                    border_radius=Radius.lg,
+                    bgcolor=C.accent_soft if elegido else None,
+                )
+            )
+        return card(*filas, padding=10)
 
     def _coach_section(self) -> ft.Control:
         """Where Alex types the API key, once.
@@ -1237,6 +1333,10 @@ class ProfileView:
                 section_title("Weight"),
                 ft.Container(height=4),
                 self._weight_section(),
+                ft.Container(height=14),
+                section_title("Appearance"),
+                ft.Container(height=4),
+                self._appearance_section(),
                 ft.Container(height=14),
                 section_title("Waist"),
                 ft.Container(height=4),

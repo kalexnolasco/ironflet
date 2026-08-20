@@ -4,6 +4,42 @@ Todos los cambios notables de IronFlet.
 El formato sigue [Keep a Changelog](https://keepachangelog.com/) y el proyecto
 usa [SemVer](https://semver.org/).
 
+## [0.10.0] — 2026-08-20
+
+**Nueva piel, con el aspecto de symmetry.club.** Fondo casi negro, un solo azul,
+esquinas muy redondeadas y cero sombras.
+
+### Cambiado
+
+- Paleta nueva por defecto, con valores **medidos del sitio real**, no a ojo:
+  fondo `#121212`, superficies `#1A1A1A`, acento `#3781FA`, gris secundario
+  `#9CA3AF`, bordes de 1 px a baja opacidad y ninguna sombra.
+- Esquinas: tarjetas a 24 px y botones y chips en **píldora** — en el sitio,
+  `9999px` era el radio más usado (32 veces) y `24px` el segundo (21).
+- **Ajustes → Appearance** para cambiar de tema. Se guarda y se aplica al vuelo.
+
+Como ninguna vista escribe un color ni un radio propio, esto reviste **las diez
+pantallas de una vez**. Esa regla existía justo para esto.
+
+### Dos desviaciones a propósito, porque el original no cumple AA
+
+- **Blanco sobre su azul da 3,70:1** y el mínimo para una etiqueta de botón de
+  14 px en negrita es 4,5. Y no hay forma de tener las dos: para leerse sobre un
+  fondo `#121212` el acento necesita luminancia ≥ 0,2022 y para llevar blanco
+  encima ≤ 0,1833 — los rangos no se tocan. Así que la etiqueta va en negro,
+  igual que ya hacía el tema oscuro anterior.
+- **Su gris de texto `#6B7280` da 3,60:1** sobre tarjeta. Se conserva, pero
+  degradado a borde, y los grises de texto suben un escalón.
+
+Peor par de la paleta nueva: 4,71:1. Los tres temas pasan el test de contraste.
+
+### Arreglado
+
+- **"Clear all data" se había vuelto azul.** Las filas destructivas usaban
+  `C.accent_2`, que en el tema claro *era* carmesí por casualidad — el rol y el
+  color nunca habían coincidido y el tono lo tapaba. Ahora usan `C.danger`, y
+  hay un test que lo exige.
+
 ## [0.9.0] — 2026-08-20
 
 **El coach va por OpenRouter y eliges el modelo.** Una sola clave y ~350

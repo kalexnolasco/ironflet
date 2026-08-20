@@ -9,8 +9,8 @@ import flet as ft
 import flet_reconnect
 from data import set_active_routine
 from routine_builder import ensure_tables, sync_user_routines
-from storage import Storage
-from theme import LIGHT, C, apply_theme
+from storage import THEME_PREF, Storage
+from theme import C, apply_theme, palette_for
 from views.agent_view import AgentView
 from views.browse import BrowseView
 from views.data_view import DataView
@@ -87,7 +87,13 @@ def main(page: ft.Page):
     page.title = "IronFlet"
     # One call sets the palette, the theme mode and the Material ColorScheme.
     # Doing it piecemeal leaves dialogs and text fields on the previous theme.
-    apply_theme(page, LIGHT)
+    #
+    # The palette is read from `preferencias` BEFORE the first render, and the
+    # store is opened a few lines below — so this is deliberately done twice:
+    # a default now so nothing paints unstyled, and the stored choice as soon as
+    # there is a database to ask. Anything else flashes the wrong theme on every
+    # cold start.
+    apply_theme(page)
     page.padding = 0
     page.window.width = 420
     page.window.height = 820
@@ -100,6 +106,7 @@ def main(page: ft.Page):
     ensure_tables(store)
     sync_user_routines(store)
     set_active_routine(store.get_pref("routine", "cambiatufisico") or "cambiatufisico")
+    apply_theme(page, palette_for(store.get_pref(THEME_PREF)))
 
     current_tab = {"idx": 0}
 
