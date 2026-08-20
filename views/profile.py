@@ -602,9 +602,13 @@ class ProfileView:
         render()
 
         buscador = ft.TextField(
-            hint_text="Search 348 models…",
+            # NO autofocus. With it, the soft keyboard opens with the dialog and
+            # covers everything below the fourth row — a picker of 348 things
+            # that shows four of them. The list is already sorted cheapest-first,
+            # which is what most people came to look at; the keyboard appears
+            # when he taps the box, which is when he actually wants it.
+            hint_text=f"Search {len(catalogo)} models…",
             dense=True,
-            autofocus=True,
             border_color=C.border,
             color=C.text,
             on_change=lambda e: (render(e.control.value), self.page.update()),
