@@ -33,6 +33,7 @@ from datetime import date
 
 import flet as ft
 
+from analytics import MEASUREMENT_EVERY_DAYS, MIN_TREND_DAYS, waist_summary, weight_trend
 from dates import day_name, month_name
 from exercises import phase_color
 from nutrition import day_totals, targets_for
@@ -57,6 +58,7 @@ from theme import (
     section_title,
 )
 from views.plan import next_session, open_start_date_dialog, start_caveat, week_headline
+from views.shared_ui import db_error_screen, plural
 
 # main.py owns the routing table; naming the indices here keeps the calls
 # readable and makes it obvious what breaks if that table is reordered.
@@ -65,6 +67,9 @@ VIEW_WORKOUT = 2
 VIEW_BROWSE = 3
 VIEW_PROFILE = 5
 VIEW_NUTRITION = 6
+#: The in-app coach. Appended after Backup (8) — indices are frozen, so a new
+#: screen goes on the end and never in the middle. See trap #1 in CLAUDE.md.
+VIEW_COACH = 9
 
 # Trailing window behind get_week_stats(); shown so the three numbers below it
 # are not read as "all time".
@@ -117,7 +122,15 @@ class HomeView:
         # One query per activation, held for `build()` — `program_week` asks for
         # this explicitly, and every refresh path in main.py comes through
         # `navigate_to`, which calls `on_show()` before rebuilding.
-        self._week = current_program_week(self.store)
+        #
+        # Caught, not raised: `on_show()` runs *before* `build()` inside
+        # `navigate_to`, so an exception here takes the navigation down rather
+        # than one screen — Home would refuse to open at all. Dropping the held
+        # week makes `build()` retry it and report the failure properly.
+        try:
+            self._week = current_program_week(self.store)
+        except Exception:
+            self._week = None
 
     def _program_week(self) -> ProgramWeek:
         """The held answer, computed on demand if `on_show()` never ran."""
@@ -165,6 +178,215 @@ class HomeView:
             tooltip=tooltip,
         )
 
+    # ── the day panel ────────────────────────────────────────
+    def _day_tile(
+        self,
+        label: str,
+        value: str,
+        caption: str = "",
+        *,
+        tone: str | None = None,
+        on_click=None,
+        tooltip: str | None = None,
+    ) -> ft.Control:
+        """A number with its label AND its caption. The caption is the point.
+
+        `_stat_card` above deliberately has no third line — "Sessions / 2" needs
+        none. Everything in the day panel does: a body weight without "today" or
+        "3 days ago" beside it reads as current when it is not, and a waist
+        without its age is the same lie with a fortnight's worth of drift behind
+        it. So this tile has room for the qualifier and `_stat_card` stays as it
+        is rather than growing an argument nobody else passes.
+        """
+        return ft.Container(
+            content=ft.Column(
+                [
+                    ft.Text(label, size=10, weight=ft.FontWeight.W_800, color=C.text_secondary),
+                    ft.Text(
+                        value,
+                        size=19,
+                        weight=ft.FontWeight.W_900,
+                        color=tone or (C.text if value != "—" else C.text_muted),
+                    ),
+                    ft.Text(caption, size=10, color=C.text_secondary),
+                ],
+                spacing=1,
+                tight=True,
+            ),
+            bgcolor=C.bg_surface,
+            border=ft.border.all(1, C.border),
+            border_radius=Radius.xl,
+            padding=ft.padding.symmetric(horizontal=12, vertical=10),
+            expand=True,
+            on_click=on_click,
+            ink=on_click is not None,
+            tooltip=tooltip,
+        )
+
+    def _weight_tile(self) -> ft.Control:
+        """Today's weigh-in, the rolling average and the rate — or what is missing.
+
+        The plan steers on the average and adjusts at ±0.3 kg/week, so the raw
+        number is the least interesting thing here and gets the caption, not the
+        headline, once there is a rate to show.
+        """
+        nav = self.page.data["navigate_to"]
+        try:
+            pesos = self.store.get_weights(limit=90)
+        except Exception:
+            pesos = []
+
+        hoy = date.today().isoformat()
+        de_hoy = next((p for p in reversed(pesos) if p["date"] == hoy), None)
+        media, ritmo = weight_trend(pesos)
+
+        if de_hoy is not None:
+            valor, tono = f"{de_hoy['kg']:g} kg", C.success
+        elif pesos:
+            ultimo = pesos[-1]
+            dias = (date.today() - date.fromisoformat(ultimo["date"])).days
+            valor, tono = f"{ultimo['kg']:g} kg", C.warning
+            return self._day_tile(
+                "WEIGHT",
+                valor,
+                f"{plural(dias, 'day')} ago · not today",
+                tone=tono,
+                on_click=lambda _: nav(VIEW_PROFILE),
+            )
+        else:
+            return self._day_tile(
+                "WEIGHT",
+                "—",
+                "never logged · tap to add",
+                on_click=lambda _: nav(VIEW_PROFILE),
+            )
+
+        if ritmo is not None:
+            pie = f"avg {media:.1f} · {ritmo:+.2f} kg/wk"
+        elif media is not None:
+            pie = f"avg {media:.1f} · rate needs {MIN_TREND_DAYS}d"
+        else:
+            pie = "weighed in today"
+        return self._day_tile("WEIGHT", valor, pie, tone=tono, on_click=lambda _: nav(VIEW_PROFILE))
+
+    def _waist_tile(self) -> ft.Control:
+        """Waist, its age, and how far it has drifted — with no verdict.
+
+        The plan calls the waist "el freno" and cuts 150 kcal at +1 cm, but it
+        says that twice and the two statements disagree about the window (from
+        the initial measurement, or fortnight over fortnight). `waist_summary`
+        returns both on purpose; the caption shows the baseline one because that
+        is the wording in the goal section and the more conservative reading,
+        and the tooltip carries the other. Picking one silently would make this
+        tile the first place in the system where an ambiguous rule becomes a
+        number Alex acts on.
+        """
+        nav = self.page.data["navigate_to"]
+        try:
+            resumen = waist_summary(self.store.get_measurements(limit=30))
+        except Exception:
+            resumen = waist_summary([])
+
+        if not resumen.known:
+            return self._day_tile(
+                "WAIST",
+                "—",
+                "no baseline · tap to add",
+                tone=C.warning,
+                on_click=lambda _: nav(VIEW_PROFILE),
+            )
+
+        if resumen.vs_baseline is None:
+            pie = f"baseline · {plural(resumen.days_ago or 0, 'day')} ago"
+            consejo = "One measurement is the baseline, not a change."
+        else:
+            pie = f"{resumen.vs_baseline:+.1f} cm vs start · {plural(resumen.days_ago or 0, 'day')} ago"
+            consejo = (
+                f"{resumen.vs_baseline:+.1f} cm since {resumen.baseline_on} "
+                f"(vs the initial measurement)\n"
+                f"{resumen.vs_previous:+.1f} cm since {resumen.previous_on} "
+                f"(vs the previous one)\n"
+                f"The plan cuts 150 kcal at +1.0 cm, and states the window both ways — "
+                f"so both are here. Tape noise is about ±0.5 cm.\n"
+                f"Measured every {MEASUREMENT_EVERY_DAYS} days."
+            )
+        if resumen.due:
+            pie += " · due"
+        return self._day_tile(
+            "WAIST",
+            f"{resumen.latest:g} cm",
+            pie,
+            tone=C.warning if resumen.due else None,
+            on_click=lambda _: nav(VIEW_PROFILE),
+            tooltip=consejo,
+        )
+
+    def _reminders_card(self) -> ft.Control | None:
+        """What the coach is still going to send today. `None` when it cannot know.
+
+        Returns `None` rather than an empty card on the phone. `recordatorios`
+        is written by the Telegram coach against PostgreSQL; on Android
+        `create_all()` makes the table and it stays empty for the life of the
+        install, so a panel that decides by counting rows would be a permanently
+        blank box that reads as broken. `reminders_available()` asks about the
+        backend instead.
+
+        An empty list on the PC is a different fact and does get a card: it
+        means nothing else is due today, which is worth saying.
+        """
+        try:
+            if not self.store.reminders_available():
+                return None
+            avisos = self.store.get_reminders_today()
+        except Exception:
+            return None
+
+        if not avisos:
+            return card(
+                ft.Row(
+                    [
+                        ft.Icon(ft.Icons.NOTIFICATIONS_NONE_ROUNDED, size=16, color=C.text_muted),
+                        ft.Text("Nothing else due today", size=12, color=C.text_secondary),
+                    ],
+                    spacing=8,
+                ),
+                padding=12,
+            )
+
+        filas: list[ft.Control] = []
+        for a in avisos:
+            # The first line only. A template reminder's `texto` is a title the
+            # coach re-renders at send time, and the fixed ones are several
+            # paragraphs of Markdown — pasting those in would bury the screen.
+            titulo = (a["text"] or "").splitlines()[0].strip() or "(no text)"
+            filas.append(
+                ft.Row(
+                    [
+                        ft.Text(
+                            "!" if a["overdue"] else a["at"],
+                            size=11,
+                            weight=ft.FontWeight.W_800,
+                            color=C.warning if a["overdue"] else C.accent,
+                            width=42,
+                        ),
+                        ft.Text(titulo, size=12, color=C.text, expand=True, max_lines=2),
+                    ],
+                    spacing=6,
+                    vertical_alignment=ft.CrossAxisAlignment.START,
+                )
+            )
+        return card(
+            ft.Text(
+                "STILL TO COME TODAY",
+                size=10,
+                weight=ft.FontWeight.W_800,
+                color=C.text_secondary,
+            ),
+            ft.Container(height=4),
+            *filas,
+            padding=12,
+        )
+
     def _streak_card(self, streak: int) -> ft.Control:
         return card(
             ft.Text("🔥", size=18, text_align=ft.TextAlign.CENTER),
@@ -176,7 +398,7 @@ class HomeView:
                 text_align=ft.TextAlign.CENTER,
             ),
             ft.Text(
-                "week" if streak == 1 else "weeks",
+                "week" if streak == 1 else "weeks",  # the number is above it, so noun only
                 size=9,
                 weight=ft.FontWeight.W_700,
                 color=C.text_muted,
@@ -265,7 +487,7 @@ class HomeView:
             # None when this phase does not have that day, and then the count is
             # simply not claimed.
             day = training_day_for_label(focus, phase)
-            tip = f"{len(day.exercises)} exercises" if day else None
+            tip = plural(len(day.exercises), "exercise") if day else None
 
         lines: list[ft.Control] = [
             ft.Text(
@@ -292,7 +514,7 @@ class HomeView:
         if pw.stale:
             lines.append(
                 ft.Text(
-                    f"Nothing logged for {pw.weeks_idle} weeks — see Plan to restart",
+                    f"Nothing logged for {plural(pw.weeks_idle, 'week')} — see Plan to restart",
                     size=10,
                     color=C.warning,
                 )
@@ -477,12 +699,27 @@ class HomeView:
 
     # ── screen ───────────────────────────────────────────────
     def build(self) -> ft.Control:
+        try:
+            return self._screen()
+        except Exception as exc:
+            # Home is the first screen of the app: if it raises, the app opens
+            # on nothing at all and there is no way to reach Profile or Plan to
+            # find out why. A card that names the failure and offers a retry is
+            # the difference between "the server is off" and "it is broken".
+            return db_error_screen("IronFlet", exc, on_retry=self._reload)
+
+    def _screen(self) -> ft.Control:
         streak = self.store.get_streak()
         stats = self.store.get_week_stats()
         today = self.store.get_today()
 
         vol = stats["volume"]
+        # `12.3k` with a nine-point "Vol (kg)" under it does not say whether it
+        # is 12.3 thousand kilos or something else entirely. The tile keeps the
+        # short form — it has room for five characters — and the tooltip
+        # carries the whole number, its unit and how it was worked out.
         vol_str = f"{vol / 1000:.1f}k" if vol >= 1000 else f"{int(vol)}"
+        vol_tooltip = f"Weight × reps, added up over {STATS_WINDOW_LABEL.lower()}: {vol:,.0f} kg"
 
         nav = self.page.data["navigate_to"]
         profile_btn = ft.Container(
@@ -498,6 +735,19 @@ class HomeView:
             tooltip="Settings",
         )
 
+        coach_btn = ft.Container(
+            content=ft.Icon(ft.Icons.CHAT_BUBBLE_OUTLINE_ROUNDED, color=C.accent, size=18),
+            bgcolor=C.bg_surface,
+            border=ft.border.all(1, C.border),
+            border_radius=Radius.sm,
+            width=34,
+            height=34,
+            alignment=ft.alignment.center,
+            on_click=lambda _: nav(VIEW_COACH),
+            ink=True,
+            tooltip="Coach",
+        )
+
         header = ft.Row(
             [
                 ft.Column(
@@ -509,7 +759,7 @@ class HomeView:
                     expand=True,
                 ),
                 ft.Row(
-                    [profile_btn, self._streak_card(streak)],
+                    [coach_btn, profile_btn, self._streak_card(streak)],
                     spacing=6,
                     vertical_alignment=ft.CrossAxisAlignment.CENTER,
                     tight=True,
@@ -524,8 +774,10 @@ class HomeView:
                 # The window is named once, above the row, so the tooltips only
                 # have to say what each number counts.
                 self._stat_card(str(stats["sessions"]), "Sessions", tooltip="Days you trained"),
-                self._stat_card(str(stats["sets"]), "Sets", tooltip="Sets logged"),
-                self._stat_card(vol_str, "Vol (kg)", tooltip="Weight × reps"),
+                self._stat_card(
+                    str(stats["sets"]), "Sets", tooltip="Working sets logged — warm-ups excluded"
+                ),
+                self._stat_card(vol_str, "Vol (kg)", tooltip=vol_tooltip),
             ],
             spacing=8,
         )
@@ -574,6 +826,29 @@ class HomeView:
                 alignment=ft.alignment.center,
             )
 
+        # THE ORDER IS THE FEATURE. Alex asked to "see my whole day when I open
+        # it", so the screen reads top to bottom as the day does: which session
+        # is today → the button that starts it → the rest of the day's numbers
+        # (body, food, what the coach still has queued) → last week's totals →
+        # what has actually been logged.
+        #
+        # Two things moved to get there. The Start/Exercises row came UP to sit
+        # directly under the session card, because it is the action that card
+        # asks for and it had drifted below a block of statistics. The food card
+        # came up into the day panel, where it belongs with the other "how is
+        # today going" numbers rather than floating between the buttons and the
+        # log. `Last 7 days` stays below all of it: it is history, and history is
+        # not what the app is opened for.
+        dia: list[ft.Control] = [
+            ft.Row([self._weight_tile(), self._waist_tile()], spacing=8),
+            ft.Container(height=Space.x1),
+            self._nutrition_card(),
+        ]
+        avisos = self._reminders_card()
+        if avisos is not None:
+            dia.append(ft.Container(height=Space.x1))
+            dia.append(avisos)
+
         return ft.Column(
             [
                 header,
@@ -581,14 +856,16 @@ class HomeView:
                 # Above the numbers on purpose: the numbers are last week, this
                 # is the next hour.
                 self._today_card(),
+                ft.Container(height=Space.x2),
+                ft.Row([start_btn, browse_btn], spacing=8),
+                ft.Container(height=Space.x4),
+                section_title("Your day"),
+                ft.Container(height=Space.x1),
+                *dia,
                 ft.Container(height=Space.x4),
                 muted_text(STATS_WINDOW_LABEL),
                 ft.Container(height=Space.x1),
                 stats_row,
-                ft.Container(height=Space.x4),
-                ft.Row([start_btn, browse_btn], spacing=8),
-                ft.Container(height=Space.x4),
-                self._nutrition_card(),
                 ft.Container(height=Space.x4),
                 # "Today" twice on one screen would be two different meanings of
                 # the word: the card at the top is the *plan*, this is what was

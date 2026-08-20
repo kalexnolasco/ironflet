@@ -709,3 +709,171 @@ def moving_average(weights: Iterable[Any], days: int = 7) -> list[dict]:
         window = [kg for other, kg in series[: i + 1] if other >= floor]
         out.append({"date": d.isoformat(), "kg": round(sum(window) / len(window), 2)})
     return out
+
+
+#: A week of daily weigh-ins is not enough to read a rate through ±1 kg of
+#: water noise. Two are. Below this the rate is `None` rather than a number
+#: nobody should act on.
+MIN_TREND_DAYS = 14
+
+
+def weight_trend(
+    weights: Iterable[Any], days: int = 7, min_days: int = MIN_TREND_DAYS
+) -> tuple[float | None, float | None]:
+    """`(rolling average now, kg per week)` — either may be `None`.
+
+    **The number the whole plan steers by.** `../plan_recomposicion.md` targets
+    +0.2 kg/week and adjusts calories at ±0.3, which is well inside the kilo the
+    scale swings on water and gut content, so the rate has to be read off
+    `moving_average` and never off two raw weigh-ins.
+
+    It lives here because it was previously implemented three times: as a
+    private method on `ProfileView` (unimportable from anywhere else), a second,
+    divergent copy inside the in-app coach, and Home was about to be the third.
+    Three answers to one question, on three screens, none of them wrong-looking.
+
+    `None` for the rate means "not enough span to say", which is a different
+    statement from "no change" and is rendered differently everywhere.
+    """
+    series = moving_average(weights, days=days)
+    if not series:
+        return None, None
+
+    newest = series[-1]
+    average = newest["kg"]
+
+    end = _as_date(newest["date"])
+    start = _as_date(series[0]["date"])
+    if end is None or start is None or (end - start).days < min_days:
+        return average, None
+
+    # The averaged point nearest a week back, not the raw weigh-in that day:
+    # comparing an average against a single reading puts back exactly the noise
+    # the average exists to take out.
+    target = end - timedelta(days=7)
+    previous = min(series, key=lambda p: abs(((_as_date(p["date"]) or end) - target).days))
+    span = (end - (_as_date(previous["date"]) or end)).days
+    if span <= 0:
+        return average, None
+    return average, (average - previous["kg"]) / span * 7
+
+
+#: The plan measures the tape every two weeks, on a Sunday
+#: (`../plan_recomposicion.md` §5). Past this, the number on screen is stale
+#: enough that its age matters more than its value.
+MEASUREMENT_EVERY_DAYS = 14
+
+#: The ceiling the plan treats as "cut 150 kcal". A one-way limit: there is no
+#: documented rule for a waist that shrinks.
+WAIST_LIMIT_CM = 1.0
+
+
+@dataclass(frozen=True)
+class WaistSummary:
+    """Waist, its age, and BOTH readings of the plan's rule — never a verdict.
+
+    ## Why there is no verdict
+
+    `../plan_recomposicion.md` states the waist rule twice and the two do not
+    agree:
+
+    * §goal: *"cintura como freno: si sube más de ~1 cm **respecto a la medición
+      inicial**"* — cumulative drift from the plan's baseline.
+    * §rules: *"revisión cada 2 semanas ... o cintura +1 cm"* — the fortnightly
+      window, this measurement against the one before.
+
+    On a lean bulk that is working those give materially different answers, and
+    nothing in the repo picks one. So this returns `vs_baseline` **and**
+    `vs_previous`, labelled, and the screen shows both. Silently choosing would
+    make this the first place in the system where an ambiguous rule became a
+    number Alex acts on.
+
+    ## Why there is no trend
+
+    Tape noise is roughly ±0.5 cm — half the trigger. Two fortnightly points are
+    a line segment, not a trend, and interpolating between them invents 13
+    measurements nobody took. `count` is exposed so a caller can refuse to draw
+    anything until there are three.
+    """
+
+    count: int = 0
+    latest: float | None = None
+    on: date | None = None
+    days_ago: int | None = None
+    baseline: float | None = None
+    baseline_on: date | None = None
+    vs_baseline: float | None = None
+    previous: float | None = None
+    previous_on: date | None = None
+    vs_previous: float | None = None
+
+    @property
+    def known(self) -> bool:
+        return self.latest is not None
+
+    @property
+    def due(self) -> bool:
+        """Is a fresh measurement owed? True when there has never been one.
+
+        Nothing in the coach nudges for measurements — `plan.AVISOS_FIJOS` seeds
+        five reminders and none of them is the fortnightly tape. So whatever
+        renders this is the only thing in the system that will ever say so.
+        """
+        return self.days_ago is None or self.days_ago >= MEASUREMENT_EVERY_DAYS
+
+    @property
+    def headroom(self) -> float | None:
+        """Centimetres left before the baseline reading of the rule trips.
+
+        Uses `vs_baseline` because that is the wording in the goal section, and
+        it is the more conservative of the two. Negative means already over.
+        """
+        if self.vs_baseline is None:
+            return None
+        return WAIST_LIMIT_CM - self.vs_baseline
+
+
+def waist_summary(measurements: Iterable[Any], today: date | None = None) -> WaistSummary:
+    """Build a `WaistSummary` from `Storage.get_measurements()` rows.
+
+    Rows whose waist is empty are skipped rather than counted: a check-in that
+    recorded only the chest is not a waist measurement, and treating it as one
+    would make the newest waist look older than it is.
+    """
+    today = today or date.today()
+
+    puntos: list[tuple[date, float]] = []
+    for row in measurements or []:
+        valor = _num(_field(row, "waist"))
+        cuando = _as_date(_field(row, "date"))
+        if valor is not None and cuando is not None:
+            puntos.append((cuando, valor))
+    puntos.sort()
+
+    if not puntos:
+        return WaistSummary()
+
+    on, latest = puntos[-1]
+    baseline_on, baseline = puntos[0]
+    resumen = {
+        "count": len(puntos),
+        "latest": latest,
+        "on": on,
+        "days_ago": (today - on).days,
+        "baseline": baseline,
+        "baseline_on": baseline_on,
+    }
+    # A single measurement IS the baseline, so the drift against it is zero by
+    # construction and saying "+0.0 cm vs baseline" would dress up "we have one
+    # number" as a comparison.
+    if len(puntos) >= 2:
+        previous_on, previous = puntos[-2]
+        resumen.update(
+            {
+                "vs_baseline": round(latest - baseline, 1),
+                "previous": previous,
+                "previous_on": previous_on,
+                "vs_previous": round(latest - previous, 1),
+            }
+        )
+    return WaistSummary(**resumen)

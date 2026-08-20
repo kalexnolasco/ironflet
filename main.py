@@ -11,6 +11,7 @@ from data import set_active_routine
 from routine_builder import ensure_tables, sync_user_routines
 from storage import Storage
 from theme import LIGHT, C, apply_theme
+from views.agent_view import AgentView
 from views.browse import BrowseView
 from views.data_view import DataView
 from views.history import HistoryView
@@ -111,6 +112,7 @@ def main(page: ft.Page):
     nutrition_view = NutritionView(page, store)
     routines_view = RoutineEditorView(page, store)
     data_view = DataView(page, store)
+    agent_view = AgentView(page, store)
     view_list = [
         home_view,
         plan_view,
@@ -121,6 +123,9 @@ def main(page: ft.Page):
         nutrition_view,
         routines_view,
         data_view,
+        # Appended, never inserted: `home.py` navigates by number and the
+        # indices above are frozen. See trap #1 in CLAUDE.md.
+        agent_view,
     ]
     # The bar shows five of them. This indirection exists because home.py calls
     # navigate_to(2) and navigate_to(5) by number, so view indices are frozen —

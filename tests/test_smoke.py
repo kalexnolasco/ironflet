@@ -14,6 +14,7 @@ import pytest
 
 from data import ROUTINES, set_active_routine
 from storage import Storage
+from views.agent_view import AgentView
 from views.browse import BrowseView
 from views.history import HistoryView
 from views.home import HomeView
@@ -69,7 +70,15 @@ def store():
 def test_all_views_build(routine_id, page_mock, store):
     page_mock.data["store"] = store
     set_active_routine(routine_id)
-    for cls in [HomeView, PlanView, WorkoutView, BrowseView, HistoryView, ProfileView]:
+    for cls in [
+        HomeView,
+        PlanView,
+        WorkoutView,
+        BrowseView,
+        HistoryView,
+        ProfileView,
+        AgentView,
+    ]:
         view = cls(page_mock, store)
         if hasattr(view, "on_show"):
             view.on_show()
