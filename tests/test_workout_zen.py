@@ -311,7 +311,7 @@ def test_next_set_hint_says_nothing_it_does_not_know(view):
 
 def test_next_set_hint_reports_an_exercise_already_written(view):
     view._logged_ex.add(view.ex_idx)
-    assert view._next_set_hint() == "LOGGED — MOVE ON"
+    assert view._next_set_hint() == "REGISTRADO — SIGUE"
 
 
 def test_the_hint_is_on_the_zen_screen_and_only_there(view):

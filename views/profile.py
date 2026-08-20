@@ -1062,9 +1062,19 @@ class ProfileView:
             return f"{v:.{digits}f}{unit}"
 
         age_row = self._stat("Edad", fmt(age, "y"))
-        bmi_row = self._stat("BMI", fmt(b, "", 1), bcat if bcat else "")
+        bmi_row = self._stat("IMC", fmt(b, "", 1), bcat if bcat else "")
         bmr_row = self._stat("BMR", f"{fmt(bmr, ' kcal')}" if bmr else "—")
-        tdee_row = self._stat("TDEE", f"{fmt(tdv, ' kcal')}" if tdv else "—", activity)
+        tdee_row = self._stat(
+            "TDEE",
+            f"{fmt(tdv, ' kcal')}" if tdv else "—",
+            {
+                "sedentary": "sedentario",
+                "light": "ligero",
+                "moderate": "moderado",
+                "active": "activo",
+                "very_active": "muy activo",
+            }.get(activity, activity),
+        )
         protein_txt = f"{prot[0]:g}–{prot[1]:g} g" if prot else "—"
         prot_row = self._stat("Proteína", protein_txt, "1.6–2.2 g/kg")
         water_row = self._stat("Agua", f"{fmt(water, ' L', 1)}" if water else "—", "~35 ml/kg")
@@ -1272,11 +1282,18 @@ class ProfileView:
             ("F", "Mujer"),
             ("", "Prefiero no decirlo"),
         ]
-        activity_options = [(k, k) for k in ACTIVITY_KEYS]
+        etiquetas_actividad = {
+            "sedentary": "Sedentario",
+            "light": "Ligero",
+            "moderate": "Moderado",
+            "active": "Activo",
+            "very_active": "Muy activo",
+        }
+        activity_options = [(k, etiquetas_actividad.get(k, k)) for k in ACTIVITY_KEYS]
 
         name_field = self._text_input("Nombre", "name")
         dob_field = self._text_input(
-            "Birthdate (YYYY-MM-DD)",
+            "Nacimiento (AAAA-MM-DD)",
             "birthdate",
         )
         height_field = self._text_input(

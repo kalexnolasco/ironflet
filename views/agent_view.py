@@ -170,6 +170,17 @@ class AgentView:
     def _bubble(self, b: Bubble) -> ft.Control:
         mine = b.who == "me"
         bad = b.who == "error"
+        # Flet no tiene max-width: un Container suelto en un Row crece con la
+        # línea y una respuesta larga se salía de la pantalla del móvil (se
+        # vio en el emulador: "…indica Smith Be" cortado). Fijar el ancho solo
+        # cuando el texto no cabe deja las burbujas cortas ("Con barra") a su
+        # medida y da a las largas todo el ancho útil para envolver.
+        ancho = None
+        if len(b.text) > 42:
+            try:
+                ancho = min((self.page.width or 420) - 56, 640)
+            except Exception:
+                ancho = 364
         return ft.Row(
             [
                 ft.Container(
@@ -179,6 +190,7 @@ class AgentView:
                         color=C.on_accent if mine else (C.danger if bad else C.text),
                         selectable=True,
                     ),
+                    width=ancho,
                     bgcolor=C.accent if mine else (C.bg_sunken if bad else C.bg_surface),
                     border=None if mine else ft.border.all(1, C.danger if bad else C.border),
                     border_radius=12,

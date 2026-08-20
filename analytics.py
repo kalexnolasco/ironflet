@@ -233,9 +233,9 @@ class PRKind(str, Enum):
 
 #: UI labels. Kept next to the enum so a new kind cannot be added without one.
 PR_LABELS: dict[PRKind, str] = {
-    PRKind.E1RM: "Estimated 1RM",
-    PRKind.MAX_WEIGHT: "Heaviest weight",
-    PRKind.SESSION_VOLUME: "Best session volume",
+    PRKind.E1RM: "1RM estimado",
+    PRKind.MAX_WEIGHT: "Peso más alto",
+    PRKind.SESSION_VOLUME: "Mejor volumen de sesión",
 }
 
 

@@ -386,7 +386,7 @@ def test_detect_new_records_ignores_a_warmup_pr_attempt():
 
 def test_record_carries_a_ui_label():
     pr = personal_records([entry(THURSDAY, "Squat", [s(100, 5)])], "Squat")
-    assert pr.e1rm.label == "Estimated 1RM"
+    assert pr.e1rm.label == "1RM estimado"
 
 
 # ── muscle resolution ────────────────────────────────────────────────────

@@ -756,7 +756,7 @@ class HomeView:
             # None when this phase does not have that day, and then the count is
             # simply not claimed.
             day = training_day_for_label(focus, phase)
-            tip = plural(len(day.exercises), "exercise") if day else None
+            tip = plural(len(day.exercises), "ejercicio") if day else None
 
         lines: list[ft.Control] = [
             ft.Text(
@@ -1046,7 +1046,7 @@ class HomeView:
                 # have to say what each number counts.
                 self._stat_card(str(stats["sessions"]), "Sesiones", tooltip="Días que entrenaste"),
                 self._stat_card(
-                    str(stats["sets"]), "Sets", tooltip="Series efectivas — calentamientos fuera"
+                    str(stats["sets"]), "Series", tooltip="Series efectivas — calentamientos fuera"
                 ),
                 self._stat_card(vol_str, "Vol (kg)", tooltip=vol_tooltip),
             ],

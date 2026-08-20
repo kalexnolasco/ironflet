@@ -465,7 +465,7 @@ def test_the_dialog_warns_that_the_day_already_has_rows(page):
     v._set_log_date(day)
 
     v._open_date_dialog()
-    assert _said(_last_dialog(page), "already logged that day")
+    assert _said(_last_dialog(page), "ya registrados ese día")
 
 
 def test_the_dialog_warns_when_it_would_move_the_program_start(page):

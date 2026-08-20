@@ -972,8 +972,8 @@ class WorkoutView:
         if names:
             shown = ", ".join(names[:3]) + ("…" if len(names) > 3 else "")
             out.append(
-                f"{plural(len(names), 'exercise')} already logged that "
-                f"day ({shown}). Saving adds rows — it never replaces them."
+                f"{plural(len(names), 'ejercicio')} ya registrados ese "
+                f"día ({shown}). Guardar añade filas — nunca las reemplaza."
             )
         # Only when the start date is a *guess*. A start Alex pinned himself is
         # a fact and no amount of back-dating moves it.
@@ -3270,7 +3270,7 @@ class WorkoutView:
                     [
                         ft.Icon(ft.Icons.EMOJI_EVENTS, color=C.warning, size=16),
                         ft.Text(
-                            f"New PR — {entry.exercise}: {details}",
+                            f"Nuevo récord — {entry.exercise}: {details}",
                             size=12,
                             color=C.text,
                             weight=ft.FontWeight.W_700,
@@ -3516,7 +3516,7 @@ class WorkoutView:
                         content=ft.Column(
                             [
                                 ft.Text(
-                                    f"PHASE {p.id}",
+                                    f"FASE {p.id}",
                                     size=10,
                                     # `p.color` is the raw hex from data.py,
                                     # picked against a black background: on a
@@ -3579,7 +3579,7 @@ class WorkoutView:
                                             color=C.text,
                                         ),
                                         ft.Text(
-                                            plural(len(d.exercises), "exercise"),
+                                            plural(len(d.exercises), "ejercicio"),
                                             size=11,
                                             color=C.text_secondary,
                                         ),
@@ -3802,7 +3802,7 @@ class WorkoutView:
         days = active_routine().days_for_phase(self.phase_id)
         name = days[self.day_idx].name if 0 <= self.day_idx < len(days) else "Entreno"
         done = len(self.completed)
-        detail = f"{done} logged · {self._format_elapsed(self._session_elapsed_s())}"
+        detail = f"{done} en el registro · {self._format_elapsed(self._session_elapsed_s())}"
         return ft.Container(
             content=ft.Column(
                 [
@@ -3812,7 +3812,7 @@ class WorkoutView:
                             ft.Column(
                                 [
                                     ft.Text(
-                                        f"In progress · {name}",
+                                        f"En curso · {name}",
                                         size=13,
                                         weight=ft.FontWeight.W_900,
                                         color=C.text,
@@ -4005,7 +4005,7 @@ class WorkoutView:
         waiting to be written, and once written there is nothing left to do here.
         """
         if self.ex_idx in self._logged_ex:
-            return "LOGGED — MOVE ON"
+            return "REGISTRADO — SIGUE"
         rows = self.sets
         total = len(rows)
         for i, row in enumerate(rows):
@@ -5196,7 +5196,7 @@ class WorkoutView:
             spacing=5,
         )
         add_btn = ft.Container(
-            content=ft.Text("+ Set", size=11, color=C.text_muted, weight=ft.FontWeight.W_700),
+            content=ft.Text("+ Serie", size=11, color=C.text_muted, weight=ft.FontWeight.W_700),
             border=ft.border.all(1, C.border),
             border_radius=8,
             padding=8,
@@ -5281,7 +5281,7 @@ class WorkoutView:
                     [
                         ft.Icon(ft.Icons.CHECK_CIRCLE, size=13, color=C.success),
                         ft.Text(
-                            "Logged in this session",
+                            "Registrado en esta sesión",
                             size=10,
                             color=C.success,
                             weight=ft.FontWeight.W_700,
