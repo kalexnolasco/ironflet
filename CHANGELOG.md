@@ -4,6 +4,52 @@ Todos los cambios notables de IronFlet.
 El formato sigue [Keep a Changelog](https://keepachangelog.com/) y el proyecto
 usa [SemVer](https://semver.org/).
 
+## [0.11.0] — 2026-08-20
+
+**Los avisos suenan en el móvil, y toda la app habla español.**
+
+### Añadido
+
+- **Notificaciones locales de recordatorios en la APK.** Flet no expone ninguna
+  API de notificaciones a Python, así que el puente es un fichero:
+  `notificaciones.py` expande cada aviso (diario o semanal, en hora de pared de
+  Madrid) a 30 días de instantes UTC absolutos y escribe `notifications.json`;
+  el `main.dart` de la plantilla forkeada lo relee por mtime cada 3 s y lo
+  reprograma con `flutter_local_notifications` — alarmas exactas si Android lo
+  permite, inexactas si no, y sobreviven al reinicio del móvil.
+- **Gestión de avisos en Inicio**: crear (una vez / diario / semanal con días de
+  la semana), pausar y borrar los tuyos. Los fijos del bot se ven, con su icono
+  de robot, y no se pueden borrar desde aquí: los re-sembraría el bot igual.
+- **Un planificador por base de datos, nunca dos.** En el PostgreSQL compartido
+  entrega el bot por Telegram y `proxima` es suya; en el SQLite del móvil
+  entrega Android y la app refresca `proxima` al sincronizar. La puerta vieja
+  `reminders_available()` pasa a llamarse `bot_delivers_reminders()`, porque esa
+  era la única pregunta que respondía de verdad.
+- Tests nuevos de la aritmética del puente: subconjunto de cron, expansión en
+  pared de Madrid (incluido el cambio de hora de marzo), payload, CRUD y las dos
+  guardas de `sync()`.
+
+### Cambiado
+
+- **Todo lo que ve el usuario está en español.** Las diez pantallas, diálogos,
+  tooltips, avisos, estados vacíos, el glosario de métricas, la ayuda de tipos
+  de serie, las guías, los errores de copia de seguridad, las razones de la
+  progresión y las pistas de discos. La letra de calentamiento pasa de W a C
+  para casar con su palabra; los cubos de músculo, las comidas y las fechas
+  también.
+- **Lo que NO se tradujo, a propósito**, porque es contrato de datos y no
+  interfaz: nombres de ejercicios y sus claves (compartidas con el bot), los
+  nombres de día que se escriben en `entrenos.grupo`, las claves de tipo de
+  serie, y las cadenas `scheme`/`rest` de las fases que parsean
+  `parse_scheme`/`parse_prescribed_rest`.
+- **Dos parsers de prosa se hicieron bilingües** para no perder funciones en el
+  cambio: `parse_rir` y `parse_prescribed_step` reconocen ahora español e inglés
+  (las marcas de descarga ya lo eran). Verificado contra todas las fases de
+  serie: mismos objetivos, mismas descargas, la regla 5 intacta.
+- **El descanso del modo zen ya no se come la pantalla del móvil**: dial de
+  128 px/36 pt → 104 px/28 pt, trazo más fino, y la etiqueta DESCANSO fuera del
+  anillo en vez de apretada dentro. En reposo un guion; al acabar, ¡YA!
+
 ## [0.10.0] — 2026-08-20
 
 **Nueva piel, con el aspecto de symmetry.club.** Fondo casi negro, un solo azul,

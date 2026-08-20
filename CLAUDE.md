@@ -4,14 +4,24 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-IronFlet — **English-only** weight-training tracker (default routine: 7-phase, 24-week periodized program from CambiaTuFísico) with a food diary on top. Built with **Flet** (`flet[all]>=0.25,<0.30`) on Python `>=3.10,<3.13`.
+IronFlet — weight-training tracker whose **entire user-facing surface is Spanish** (default routine: 7-phase, 24-week periodized program from CambiaTuFísico) with a food diary on top. Built with **Flet** (`flet[all]>=0.25,<0.30`) on Python `>=3.10,<3.13`.
 
-There is no translation layer. `i18n.py` was deleted: no `t()`, no `t_exercise()`, no `ES` dict, no language toggle, no `lang` preference. All user-visible strings are plain English literals in the views. Two helpers survived that move and are **not** translation:
+There is **still no translation layer** — the language flipped, the architecture did not. `i18n.py` stays deleted: no `t()`, no `ES` dict, no language toggle, no `lang` preference. All user-visible strings are plain Spanish literals in the views (Alex asked for it: "cambiemos a Español todo lo que ve el usuario"). What stays **English on purpose, because it is data contract rather than chrome**:
+
+- **Exercise names and their keys** — `exercise_key()` values are shared with the bot's `entrenos.ejercicio` rows.
+- **`TrainingDay.name`** — written verbatim to `entrenos.grupo` ("Chest-Biceps"); a Spanish day name would split History's grouping vocabulary.
+- **Set-type keys** (`warmup`/`drop`/`failure`) — only `LABELS`/`SHORT_LABELS` are Spanish (the warm-up letter is **C**, not W).
+- **Phase `scheme`/`rest` strings** — parsed by `parse_scheme`/`parse_prescribed_rest`.
+- **Internal status literals** (`"empty"`, `"logged"`, `DateSource` names…).
+
+Phase `name`/`subtitle`/`notes` ARE display and ARE Spanish — which is why the three prose parsers in `progression.py` (`parse_rir`, `parse_prescribed_step`, `_DELOAD_MARKS`) are **bilingual**: they must keep reading old English user-routine notes and the new Spanish built-ins alike. Losing one language there raises nothing; the RIR target just vanishes from every set row.
+
+Two helpers that survived the old i18n purge and are **not** translation:
 
 - `exercises.py` — `exercise_key()` (the DB key contract, see below) and `phase_color()`.
-- `dates.py` — `day_name(idx)`, `month_name(idx)`, `weekday_label(idx)` and the `DAYS`/`MONTHS`/`WEEKDAYS` arrays. Not in `data.py`, not in `home.py`.
+- `dates.py` — `day_name(idx)`, `month_name(idx)`, `weekday_label(idx)` and the `DAYS`/`MONTHS`/`WEEKDAYS` arrays — Spanish, lowercase on purpose ("jue, 20 ago"; capitalising them is the anglicism). Not in `data.py`, not in `home.py`.
 
-**Storage is PostgreSQL, not SQLite.** The database is shared with a Telegram coaching bot in `../agente/`, so both write the same training history, nutrition log and user routines. The app needs the database reachable — see Storage below. Desktop and web work; an offline APK does not, since it would have no database to talk to.
+**Storage is PostgreSQL on the PC, SQLite on the phone.** On the PC the database is shared with a Telegram coaching bot in `../agente/`, so both write the same training history, nutrition log and user routines — the app needs it reachable (see Storage below). The sideloaded APK runs on its **own SQLite file** (`is_sqlite_url()` is the backend question everywhere it matters: reminders delivery, `proxima` ownership, backups are how data crosses between the two islands).
 
 ## Commands
 
@@ -46,7 +56,7 @@ CI (`.github/workflows/ci.yml`) runs, on Python 3.12:
 uv sync --group dev
 uv run ruff check .
 uv run ruff format --check .
-uv run pytest -q          # 1631 tests
+uv run pytest -q          # 1707 tests
 ```
 
 ## Architecture
@@ -211,6 +221,34 @@ Three more rules that are not obvious:
 
 Adding a tool means adding it to `_READ_TOOLS` **or** `_PROPOSE_TOOLS` and to `tool_schemas()`; `test_las_herramientas_declaradas_existen_todas` fails if the two drift.
 
+### Reminders → Android notifications — `notificaciones.py`
+
+Flet 0.28.3 exposes no notification API to Python, so the bridge is a file:
+`notificaciones.py` expands every active `recordatorios` row into the next 30
+days of **absolute UTC instants** (Madrid wall-clock, so `45 6 * * *` is 06:45
+all year and the UTC instant shifts with DST) and atomically writes
+`notifications.json` into `FLET_APP_STORAGE_DATA`. The forked template's
+`main.dart` polls the file's mtime every 3 s and cancels-all + reschedules via
+`flutter_local_notifications` — exact alarms when `canScheduleExactNotifications`
+says yes, inexact otherwise, and a boot receiver survives restarts.
+
+The split is deliberate: **all recurrence arithmetic lives in Python**, where
+the tests are; Dart knows nothing of cron or weekdays, it schedules a flat
+list. The app only *writes* two cron shapes — `M H * * *` and `M H * * d,d`
+(vixie convention, 0/7 = Sunday, same dialect the bot parses) — and only
+*expands* those two; a richer bot-written cron falls back to its single
+`proxima` occurrence rather than being guessed at.
+
+**One scheduler per database, never two.** Shared PostgreSQL: the bot delivers
+via Telegram and owns `proxima` — `sync()` must not touch it there (it checks
+`is_sqlite_url`). Phone SQLite: Android delivers and the app refreshes
+`proxima` via `touch_reminder()` so a fired daily reminder doesn't read
+"¡ya!" forever on Home. `bot_delivers_reminders()` (né `reminders_available()`)
+answers *who delivers*; it is no longer a gate — the reminders card renders on
+both backends, and `Storage` grew the user CRUD (`add_reminder`,
+`delete_reminder`, `set_reminder_active`, `get_all_reminders`), which refuses
+to delete `origen="fijo"` rows because the bot would just re-seed them.
+
 ### Theme
 
 `theme.py` no longer exports loose colour constants. **The compatibility aliases (`ACCENT`, `CARD_BG`, `TEXT`, …) were deleted** — being module constants bound to `LIGHT` at import time, any view importing one silently stopped following the active palette.
@@ -297,7 +335,23 @@ Things that break quietly if you do not know them:
 22. **Putting the system prompt in a top-level `system` field.** That is the Anthropic shape. OpenRouter ignores it, and you get a coach with no instructions rather than an error.
 23. **Restricting `target_arch` to two architectures.** serious_python packages `libpythonsitepackages.so` for the **first entry only**, so `["arm64-v8a", "x86_64"]` ships an x86_64 slice with a CPython and no site-packages. The build reports success and the app opens on *"ModuleNotFoundError: No module named 'certifi'"*. All three, or exactly one. See the note in `[tool.flet.android]`.
 24. **Trusting logcat to tell you the app crashed.** Flet renders a Python traceback *into the UI*, so `adb logcat | grep Traceback` comes back empty while the phone shows a purple error page. Screenshot the thing.
-25. **Adding a package to `[project] dependencies` that carries compiled code.** That list is pip-installed into the APK against `pypi.flet.dev`. The list is currently free of third-party binaries and that is worth keeping: it means no upgrade can be blocked by a missing wheel for an ABI almost nobody targets. If you must, check for a `cp312-…-android_24_arm64_v8a` wheel there *first* and pin so the resolver cannot wander off it.
+25. **Writing `proxima` from the app on PostgreSQL.** That column is the bot's
+    cursor there; `notificaciones.sync()` refreshes it **only under SQLite**. A
+    second writer on the shared table is how one reminder fires twice.
+26. **Translating a data-contract string.** Exercise names/keys, `TrainingDay.name`
+    (→ `entrenos.grupo`), set-type keys, phase `scheme`/`rest`. The UI is Spanish;
+    those are not UI. See the Project section's list before touching any literal.
+27. **Bumping `flutter_local_notifications` or `timezone` separately in the
+    template's pubspec.** They are a matched pair (fln 19 ⇢ timezone ^0.10; fln
+    18 ⇢ ^0.9). Mismatch them and pub does not error — it silently resolves fln
+    down to some ancient version whose API breaks `main.dart` at compile time
+    ("uiLocalNotificationDateInterpretation must be provided" = you got fln ≤18).
+28. **Adding phase prose only one parser understands.** `parse_rir`,
+    `parse_prescribed_step` and `_DELOAD_MARKS` are bilingual (es/en). New
+    Spanish phrasing that no regex matches doesn't raise — the RIR target or the
+    prescribed step just silently vanishes. `tests/test_progression.py` pins the
+    shipped phases.
+29. **Adding a package to `[project] dependencies` that carries compiled code.** That list is pip-installed into the APK against `pypi.flet.dev`. The list is currently free of third-party binaries and that is worth keeping: it means no upgrade can be blocked by a missing wheel for an ABI almost nobody targets. If you must, check for a `cp312-…-android_24_arm64_v8a` wheel there *first* and pin so the resolver cannot wander off it.
 
 ### Flet version caveat
 
@@ -305,11 +359,11 @@ Pinned to `flet[all]>=0.25,<0.30` — `flet[all]`, not plain `flet`, because web
 
 ## Tests
 
-`.venv/bin/python -m pytest -q` — **1631 tests**, `testpaths = ["tests"]`, `asyncio_mode = "auto"`:
+`.venv/bin/python -m pytest -q` — **1707 tests**, `testpaths = ["tests"]`, `asyncio_mode = "auto"`:
 
-`test_agent.py`, `test_analytics.py`, `test_asset_manager.py`, `test_backup.py`, `test_chart_baseline.py`, `test_column_migration.py`, `test_dialog_layout.py`, `test_draft_dates.py`, `test_draft_substitution.py`, `test_exercise_images.py`, `test_exercise_key.py`, `test_flet_reconnect.py`, `test_gym_tools.py`, `test_health.py`, `test_help_dialog.py`, `test_history_notes.py`, `test_history_view.py`, `test_home_view.py`, `test_image_delivery.py`, `test_nutrition.py`, `test_nutrition_view.py`, `test_percent_table.py`, `test_prefill_por_fecha.py`, `test_profile_db_down.py`, `test_program_week.py`, `test_progression.py`, `test_routine_builder.py`, `test_session_duration.py`, `test_session_plan.py`, `test_set_types.py`, `test_shared_ui.py`, `test_smoke.py`, `test_sqlite_backend.py`, `test_storage_metrics.py`, `test_substitutions.py`, `test_theme.py`, `test_timer_sound.py`, `test_weight_trend.py`, `test_workout_date.py`, `test_workout_draft.py`, `test_workout_exercise_date.py`, `test_workout_notes.py`, `test_workout_notes_swap.py`, `test_workout_plan_rows.py`, `test_workout_resume.py`, `test_workout_session_time.py`, `test_workout_tools.py`, `test_workout_zen.py`.
+`test_agent.py`, `test_analytics.py`, `test_asset_manager.py`, `test_backup.py`, `test_chart_baseline.py`, `test_column_migration.py`, `test_dialog_layout.py`, `test_draft_dates.py`, `test_draft_substitution.py`, `test_exercise_images.py`, `test_exercise_key.py`, `test_flet_reconnect.py`, `test_gym_tools.py`, `test_health.py`, `test_help_dialog.py`, `test_history_notes.py`, `test_history_view.py`, `test_home_view.py`, `test_image_delivery.py`, `test_notificaciones.py`, `test_nutrition.py`, `test_nutrition_view.py`, `test_percent_table.py`, `test_prefill_por_fecha.py`, `test_profile_db_down.py`, `test_program_week.py`, `test_progression.py`, `test_routine_builder.py`, `test_session_duration.py`, `test_session_plan.py`, `test_set_types.py`, `test_shared_ui.py`, `test_smoke.py`, `test_sqlite_backend.py`, `test_storage_metrics.py`, `test_substitutions.py`, `test_theme.py`, `test_timer_sound.py`, `test_weight_trend.py`, `test_workout_date.py`, `test_workout_draft.py`, `test_workout_exercise_date.py`, `test_workout_notes.py`, `test_workout_notes_swap.py`, `test_workout_plan_rows.py`, `test_workout_resume.py`, `test_workout_session_time.py`, `test_workout_tools.py`, `test_workout_zen.py`.
 
-Without `DATABASE_URL` the run is `1415 passed, 211 skipped`: the skips are every test that needs PostgreSQL. Judge a run by the skip count, not the pass count — a green suite that skipped 211 tests has verified nothing about storage. With the database up it is `1625 passed, 1 skipped`.
+Without `DATABASE_URL` the run is `1496 passed, 211 skipped`: the skips are every test that needs PostgreSQL. Judge a run by the skip count, not the pass count — a green suite that skipped 211 tests has verified nothing about storage. With the database up it is `1706 passed, 1 skipped`.
 
 `tests/conftest.py` gives each pytest process its own database (`ironflet_test_<pid>`), created and dropped per run, because the fixtures wipe rows and two concurrent runs used to delete each other's data mid-query — red runs with a different set of failures each time, in files unrelated to whatever was being changed.
 

@@ -1,7 +1,7 @@
 [project]
 name = "ironflet"
-version = "0.10.0"
-description = "English-only weight-training tracker built with Flet — runs on Android, desktop and web from a single Python codebase."
+version = "0.11.0"
+description = "Registro de entrenos en español construido con Flet — corre en Android, escritorio y web desde una sola base Python."
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.10,<3.13"
