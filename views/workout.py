@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import time
 from datetime import date, timedelta
 
@@ -13,9 +14,32 @@ from analytics import Record, detect_new_records
 from components.timer import RestTimer
 from data import active_routine
 from dates import day_name, month_name
-from exercise_images import image_frames
+from exercise_images import image_frames_props
 from exercises import exercise_key, phase_color
+from gym_tools import (
+    DEFAULT_BAR,
+    DEFAULT_INVENTORY,
+    Bar,
+    PlateInventory,
+    WarmupSet,
+    bar_for_exercise,
+    loadable_options,
+    round_to_loadable,
+    warmup_plan,
+)
 from program_week import StartSource, load_program_start
+from progression import (
+    Action,
+    Equipment,
+    Recommendation,
+    RirTarget,
+    Scheme,
+    classify_equipment,
+    parse_scheme,
+    recommend,
+    rir_for_phase,
+)
+from session_plan import ProposedSet, SessionPlan, plan_sets, to_draft_rows
 from set_types import (
     TYPE_KEY,
     SetType,
@@ -29,7 +53,28 @@ from set_types import (
     warmup_sets,
     working_sets,
 )
-from storage import Storage, WorkoutEntry
+from storage import (
+    MAX_SESSION_SECONDS,
+    MIN_SESSION_SECONDS,
+    NOTE_MAX_LEN,
+    Storage,
+    WorkoutEntry,
+    clean_note,
+    format_duration,
+)
+from substitutions import (
+    Alternative,
+    Scope,
+    StartingPoint,
+    Substitution,
+    active_substitutions,
+    alternatives,
+    clear_substitution,
+    key_to_log,
+    set_substitution,
+    starting_point,
+    swap_prescription,
+)
 from theme import (
     C,
     Radius,
@@ -39,12 +84,43 @@ from theme import (
     primary_button,
 )
 from views.help_dialog import help_icon
-from workout_draft import DraftStore, WorkoutDraft, is_blank_row
+from views.shared_ui import dialog_height, dialog_width, plural
+from workout_draft import (
+    MAX_BACKDATE_DAYS,
+    DateSource,
+    DraftStore,
+    LogDate,
+    ResolvedDate,
+    WorkoutDraft,
+    is_blank_row,
+)
 
 #: `get_exercise_history` keeps the last 20 sessions by default. A record has to
 #: beat *everything*, so ask for the whole history of the exercise — otherwise a
 #: best from 21 sessions ago is forgotten and the app invents a PR.
 _PR_HISTORY_LIMIT = 100_000
+
+#: Preference keys for the gym's own hardware, both plain strings in
+#: `preferencias` (see `views/profile.py`). Neither needs a schema change, which
+#: is why they are preferences and not columns — the shared-database rule in
+#: CLAUDE.md makes a new column a two-repo commit.
+#:
+#: `bar_kg` is the *fallback* bar and `plates` is `PlateInventory.to_text()`.
+#: Both are optional: absent or unreadable falls back to the 20 kg Olympic bar
+#: and the default Spanish-gym rack, which is what Alex actually trains on.
+BAR_PREF = "bar_kg"
+PLATES_PREF = "plates"
+
+#: How many past sessions the in-place history panel shows. Five covers a
+#: month of a twice-weekly movement — far enough back to see a trend, short
+#: enough to read without scrolling past the set rows.
+HISTORY_SESSIONS = 5
+
+#: How much history the recommendation reads. `progression.recommend` only
+#: looks at the last two sessions, but the panel above shares this one query
+#: (one round-trip per exercise instead of two), so it asks for the panel's
+#: worth plus a little slack.
+HISTORY_LIMIT = 12
 
 #: A row seeded from the previous session carries this key until the user
 #: vouches for it. **Present means "suggested, not lifted yet"; absent means
@@ -75,12 +151,45 @@ ZEN_PREF = "zen_mode"
 #: on read anyway, so the two can never disagree in a way that costs a date.
 LOG_DATE_PREF = "workout_log_date"
 
-#: How far back a session may be filed. Alex's case is "I forgot my phone" —
-#: hours, or a couple of days. A month is generous for that and still refuses
-#: the realistic typo: `2025-08-16` for `2026-08-16` is a year-old date that
-#: would move the inferred program start (see `_backdate_warnings`) and drag the
-#: Plan screen with it, and it is far easier to catch here than to undo later.
-MAX_BACKDATE_DAYS = 30
+#: Preference key holding the notes typed during the session in progress.
+#:
+#: The value is JSON: ``{"date": "<log date>", "notes": {<exercise key>: text}}``.
+#: Its own key rather than a field on `WorkoutDraft` for exactly the reason
+#: `LOG_DATE_PREF` is one — the draft payload is versioned (`DRAFT_VERSION`) and
+#: named in `backup.py`'s skip list, so a new field there is a format bump in a
+#: module this screen does not own.
+#:
+#: Only **exercise** notes live here, and only until their exercise is written.
+#: A session note has a table of its own (`notas_sesion`) and needs no workout
+#: row, so it goes straight to the database the moment it is typed; an exercise
+#: note lives *inside* the `entrenos` row (`entrenos.nota`) and therefore cannot
+#: be stored until that row exists.
+NOTES_PREF = "workout_notes"
+
+#: How much of a note the collapsed chip shows. Long enough to recognise which
+#: note it is, short enough not to wrap on a 420 px row.
+NOTE_PREVIEW_CHARS = 48
+
+# MAX_BACKDATE_DAYS — how far back a session may be filed — is **imported from
+# `workout_draft`, not redeclared here**.
+#
+# Alex's case is "I forgot my phone": hours, or a couple of days. A month is
+# generous for that and still refuses the realistic typo — `2025-08-16` for
+# `2026-08-16` is a year-old date that would move the inferred program start
+# (see `_backdate_warnings`) and drag the Plan screen with it, and it is far
+# easier to catch here than to undo later.
+#
+# It moved because `clamp_log_date` and `LogDate.in_window` enforce the same
+# window on the draft's own dates. Two copies of the number would be two
+# windows, and the one that disagreed would only be found by a date this screen
+# accepted and the restore silently threw away. The import re-exports it, so
+# `from views.workout import MAX_BACKDATE_DAYS` still resolves.
+
+#: The longest session the minutes field will take, as minutes. Derived, never
+#: retyped: `storage.clean_duration` is the thing that actually refuses, and a
+#: field that let a value through only to have the write reject it would be a
+#: worse error message in a worse place.
+MAX_SESSION_MINUTES = MAX_SESSION_SECONDS // 60
 
 
 def _num_text(value) -> str:
@@ -95,6 +204,24 @@ def _num_text(value) -> str:
     if isinstance(value, (int, float)):
         return f"{value:g}"
     return str(value).strip()
+
+
+def _num_value(text) -> float | None:
+    """A field's text as a number, or None. The inverse of `_num_text`.
+
+    Kept here rather than reaching for `gym_tools._num`: that one is private,
+    and this side has its own rule — a comma is a decimal point, because the
+    Android keyboard on a Spanish phone offers a comma and typing "82,5" is
+    not a mistake anybody should be punished for.
+    """
+    if isinstance(text, bool) or text is None:
+        return None
+    if isinstance(text, (int, float)):
+        return float(text)
+    try:
+        return float(str(text).strip().replace(",", "."))
+    except (TypeError, ValueError):
+        return None
 
 
 def _date_label(day: date, today: date | None = None) -> str:
@@ -167,6 +294,51 @@ class WorkoutView:
         # `save_workout` INSERTs, it does not upsert, so a second press on an
         # exercise already logged would fork today's history into two rows.
         self._logged_ex: set[int] = set()
+        # Past sessions of each exercise, and the recommendation built from
+        # them. Memoised for the same two reasons `_last_sets_cache` is: one
+        # database round-trip per exercise instead of one per render, and a
+        # recommendation that cannot change under the user halfway through the
+        # exercise it is describing. Both are keyed by position and both are
+        # dropped by `_ensure_scope`.
+        self._history_cache: dict[int, list] = {}
+        self._rec_cache: dict[int, Recommendation | None] = {}
+        # What `session_plan.plan_sets` says each exercise opens with. Memoised
+        # like the two above and for the third of the same reasons: the plan is
+        # read on every render (the row targets come off it) and it must not
+        # change under the user halfway through the exercise it describes.
+        self._plan_cache: dict[int, SessionPlan | None] = {}
+        # `substitutions.starting_point` for a swapped exercise. Two
+        # `recommend_from_store` calls live behind it, so it is memoised like
+        # everything else on this path rather than run on every render.
+        self._start_cache: dict[int, StartingPoint | None] = {}
+        # Substitutions in force, keyed by the *prescribed* exercise. `None`
+        # means "not read yet"; an empty dict means "read, and there are none",
+        # which is the 99 % case and must cost no round-trip to re-establish.
+        self._subs_cache: dict[str, Substitution] | None = None
+        # Exercise notes typed but not yet written, keyed by position. They go
+        # into `entrenos.nota` with the sets when the exercise is saved, and
+        # straight through `set_exercise_note` when it already is.
+        self._notes_by_ex: dict[int, str] = {}
+        # Is the note box unfolded? Same shape as `_show_history` below: a mode,
+        # reset when the exercise changes, flipped in place without a rebuild.
+        self._show_note: bool = False
+        self._note_body: ft.Control | None = None
+        self._note_chip: ft.Text | None = None
+        # The whole-session note for `log_date`. It lives in `notas_sesion`, not
+        # in a workout row, so it is read from and written to the database
+        # directly; `None` here means "not read yet", which is not "empty".
+        self._session_note_cache: str | None = None
+        # Is the "last sessions" panel unfolded? A single flag, not one per
+        # exercise: it is a mode ("show me the numbers"), and it is reset when
+        # the exercise changes so it never silently costs screen height on a
+        # movement he did not ask about.
+        self._show_history: bool = False
+        # Controls whose *visibility* is flipped in place, without rebuilding
+        # the tree. That is the whole point: a rebuild under an open keyboard
+        # takes the focus and the caret with it, mid-number.
+        self._history_body: ft.Control | None = None
+        self._history_arrow: ft.Icon | None = None
+        self._reason_text: ft.Control | None = None
         # (routine, phase, day) the buffer describes. `main.set_routine()`
         # rewrites `phase_id`/`day_idx` on this instance from the outside, so
         # the buffer has to be able to notice on its own that it now belongs to
@@ -192,13 +364,42 @@ class WorkoutView:
         # The real calendar day on which `log_date` was last chosen. `None` means
         # "never chosen", i.e. plain today, and is the state a fresh view is in.
         self._log_date_chosen_on: date | None = None
+        # Per-exercise overrides of the two lines above, keyed by the exercise's
+        # canonical name — never by position, for the reason `pending` is keyed
+        # that way: editing the routine must not move Monday onto a different
+        # movement. Empty is the ordinary state; every exercise then inherits
+        # `log_date`. Resolution lives in `WorkoutDraft.resolve_date`, never
+        # here — see `_date_state`.
+        self._dates_by_key: dict[str, LogDate] = {}
+        # `{iso date: seconds}` for every day that was ever timed, read through
+        # `Storage.get_duration_map()` — one query, no limit. `None` is "not
+        # read yet", which is **not** the same as "nothing timed"; a day simply
+        # missing from the dict is the normal "that session was never timed".
+        # Dropped by `_forget_durations()` after every write so the summary
+        # screen always paints what the table actually holds.
+        self._duration_cache: dict[str, int] | None = None
 
         # Image animation state (frame-swap loop)
         self._anim_tick_id: int = 0
         self._anim_image: ft.Image | None = None
+        #: Both frames, mounted at once. The animation toggles `visible`
+        #: between them instead of re-sending the picture — see `_animate_loop`.
+        self._anim_layers: list[ft.Image] = []
         self._anim_frames: tuple[str, str] | None = None
 
+        # The gym's hardware, read from `preferencias` once per workout — see
+        # `_ensure_gear`. `None` means "not read yet", which is not the same as
+        # "no preference": the plate hint runs on every keystroke and must
+        # never turn a character into a database round-trip.
+        self._plate_inventory: PlateInventory | None = None
+        self._bar_override: float | None = None
+
         # Session chronometer
+        #: True once the clock's own answer actually reached the table. NOT the
+        #: same as "the clock was entitled to answer": an existing row is never
+        #: overwritten, and the caption has to describe the number on screen
+        #: rather than the one that would have been written.
+        self._duration_written: bool = False
         self.session_started_at: float | None = None
         self.session_ended_at: float | None = None
         self._session_tick_id: int = 0
@@ -288,13 +489,37 @@ class WorkoutView:
     #   * The only `wakelock` in the Python package is a property of `Video`,
     #     and `Video` has no implementation in this client's Dart side at all.
     #
-    # So the honest answer is "not from here". Closing it needs either a Flet
-    # extension or ~3 lines in the build template's `main.dart` calling
-    # `WakelockPlus.enable()` — `tool.flet.template.url` accepts a plain local
-    # directory, so that fork costs a copy, not a hosted repo. Until then the
-    # mitigation is the one already built: the rest timer beeps and vibrates at
-    # zero, so a dark screen does not mean a missed set. That is why the mute
-    # button survives the decluttering in `build_large()`.
+    # Re-verified against the installed 0.28.3 while wiring up the gym tools,
+    # because "the screen must stay on" was asked for again and a second-hand
+    # answer is not an answer:
+    #
+    #   * `flet.core.page.Page` exposes no screen/wake/keep-awake member of any
+    #     kind, and `flet.core.window` does not exist in this version — the
+    #     desktop window API lives on `Page` and is desktop-only regardless.
+    #   * `_invoke_method` is still called with exactly those nine names.
+    #   * `wakelock` still appears in precisely one Python file,
+    #     `flet/core/video.py`, as an attribute of a control this client cannot
+    #     render.
+    #
+    # There is no supported call, and there is no unsupported one either — Flet
+    # 0.28.3 offers no JavaScript evaluation, so even the web build cannot ask
+    # the browser for a Screen Wake Lock. **The app cannot keep the screen on.
+    # Anything that claimed otherwise would be pretending.**
+    #
+    # Where it *is* solved, because it is closer than it looks and because the
+    # answer must not read as "impossible" when it is only impossible from here:
+    # `build/flutter/pubspec.yaml` already carries `wakelock_plus: ^1.2.10`, so
+    # the plugin has been shipping inside the APK with nobody calling it. Three
+    # lines of Dart close that, and `tool.flet.template.url` accepts a plain
+    # local directory — which is what `build_template/` in this repo is. Its
+    # `lib/main.dart` calls `WakelockPlus.enable()` on Android and iOS at
+    # start-up. **That is a build-system change, not a Python one**, which is
+    # exactly why there is no code for it in this file rather than a stub
+    # pretending to do something.
+    #
+    # The mitigation this view owns either way: the rest timer beeps and
+    # vibrates at zero, so a screen that did go dark never means a missed set.
+    # That is why the mute button survives the decluttering in `build_large()`.
 
     def _zen_pref(self) -> bool:
         """The remembered choice. Missing, unreadable or junk all read as ON."""
@@ -400,6 +625,54 @@ class WorkoutView:
     # this one), and — when the program start is being *inferred* from the
     # earliest logged session — a date older than that start moves the whole
     # program back and can change the week Plan reports.
+    #
+    # ── ONE DATE PER EXERCISE ─────────────────────────────────────────────
+    #
+    # Alex: *"hoy es miércoles, pero quiero poner mi entreno del lunes y
+    # martes"* — two sessions, one sitting. So the date is no longer one value
+    # for the whole workout: `log_date` is now the session **default**, and
+    # `_dates_by_key` holds the exercises that were filed somewhere else.
+    #
+    # He was told, in as many words, that this is the easiest possible way to
+    # put a set on the wrong day without noticing, and chose it anyway. **The
+    # mitigation is therefore the feature**, and it is three rules:
+    #
+    #   1. `resolve_date` never returns a bare date. It returns a `ResolvedDate`
+    #      carrying a `DateSource`, so nothing on screen can print a day without
+    #      saying whether it belongs to this exercise or to the whole session. A
+    #      reader who has to *attribute* a date is a reader who will attribute
+    #      it wrong.
+    #   2. Once any date is in play, **every exercise screen carries its own day
+    #      line** — including the exercises that resolve to today. That is
+    #      `_backdate_strip`, and zen mode does not get to hide it. The
+    #      dangerous state is not "Monday is on screen", it is "Monday is on
+    #      exercise 2 and nothing on exercise 3 says otherwise".
+    #   3. The session says out loud, before the write and again at Finish, when
+    #      it spans more than one day (`_dates_in_use`, `_is_multi_day` —
+    #      `WorkoutDraft`'s, not a second implementation).
+    #
+    # WHERE THE RULES LIVE. Not here. `workout_draft.WorkoutDraft` owns the
+    # default chain (exercise → session → today), the clamping, the expiry
+    # stamp and the multi-day question; this view holds the two fields and asks
+    # (`_date_state`). A second copy of "which day does this exercise go to"
+    # is exactly how the screen and the restored draft would come to disagree
+    # about a day nobody could see was in dispute.
+    #
+    # ── HOW LONG THE SESSION LASTED ───────────────────────────────────────
+    #
+    # The chronometer used to be pixels: it ticked, it was read, and it died
+    # with the view. `storage.duraciones_sesion` gives it somewhere to go — one
+    # row per **day**, never per exercise, because what it measures is one
+    # start and one stop.
+    #
+    # Which makes the back-dating above a problem rather than a detail: filling
+    # Monday in on Wednesday, the clock measures how long the typing took. That
+    # is not a datum, it is noise wearing a datum's clothes, and averaged into
+    # the real ones it never comes out again. So the measurement is **only
+    # proposed when nothing was back-dated at all** (`_duration_is_measured`);
+    # otherwise the field opens empty and says why. And a session that writes to
+    # two days proposes nothing to either: no arithmetic divides one
+    # chronometer between two sessions honestly.
 
     def _min_log_date(self, today: date | None = None) -> date:
         return (today or date.today()) - timedelta(days=MAX_BACKDATE_DAYS)
@@ -416,11 +689,16 @@ class WorkoutView:
         return _date_label(self.log_date)
 
     def _set_log_date(self, day: date, *, persist: bool = True) -> date:
-        """Point the session at `day`. Returns the date actually adopted.
+        """Point the *session* at `day`. Returns the date actually adopted.
 
         Clamped rather than trusted. The dialog validates and explains before
         ever calling this, so the clamp is for programmatic callers and for the
         day-rollover corner where "today" moved under a value already held.
+
+        Exercises carrying a date of their own are deliberately left alone:
+        each was chosen against that exercise, and wiping them from here would
+        undo work that is no longer on screen. Same rule, and the same reason,
+        as `WorkoutDraft.with_session_date`.
         """
         today = date.today()
         chosen = min(max(day, self._min_log_date(today)), today)
@@ -430,6 +708,7 @@ class WorkoutView:
         self._log_date_chosen_on = None if chosen == today else today
         if persist:
             self._persist_log_date()
+        self._forget_dated_reads()
         return chosen
 
     def _reset_log_date(self, *, persist: bool = True):
@@ -437,6 +716,182 @@ class WorkoutView:
         self._log_date_chosen_on = None
         if persist:
             self._persist_log_date()
+        self._forget_dated_reads()
+
+    # ── The day of each exercise ──────────────────────────────
+    def _session_log_date(self) -> LogDate | None:
+        """The session default as `workout_draft` spells it. `None` is today.
+
+        Driven by `log_date` first and the stamp second, **not the other way
+        round**. The two are set together by `_set_log_date` and `_load_log_date`
+        and can only come apart if something assigns the field directly — and
+        when they do, the honest reading of "log_date is Monday, stamp missing"
+        is "Monday, chosen just now", never "ignore Monday". Keying off the
+        stamp instead made a directly-assigned date invisible to every consumer
+        that goes through `resolve_date`, which is all of them: the row would
+        still have been written to Monday while the prefill, the recommendation
+        and the strip all quietly went on describing today.
+        """
+        if self.log_date == date.today() and self._log_date_chosen_on is None:
+            return None
+        return LogDate(self.log_date, self._log_date_chosen_on or date.today())
+
+    def _date_state(self) -> WorkoutDraft:
+        """This view's dates, in the object that owns the rules about them.
+
+        Built on demand rather than held, because the two fields behind it are
+        the state and this is only a lens onto them — a cached copy would be a
+        second place for the dates to live, and the whole point of going through
+        `WorkoutDraft` is that there is one.
+
+        Cheap: a dataclass over two small dicts. It buys `resolve_date`,
+        `with_date`, `dates_in_use` and `is_multi_day` without a single one of
+        their rules being retyped here.
+        """
+        return WorkoutDraft(
+            routine_id=active_routine().id,
+            phase_id=self.phase_id,
+            day_idx=max(self.day_idx, 0),
+            day_name="",
+            ex_idx=max(self.ex_idx, 0),
+            exercise="",
+            session_date=self._session_log_date(),
+            dates=dict(self._dates_by_key),
+        )
+
+    def _key_at(self, ex_idx: int | None = None) -> str:
+        """The **prescribed** key of a position — the one dates are filed under.
+
+        Prescribed, not performed: `fit_to_routine` prunes the draft's date map
+        against the routine's own exercises, so a date stored under a
+        substitute's name would be dropped on the next restore. The substitution
+        decides what goes in `entrenos.ejercicio`; it does not decide which slot
+        the user pointed at a day.
+        """
+        idx = self.ex_idx if ex_idx is None else ex_idx
+        keys = self._exercise_keys()
+        return keys[idx] if 0 <= idx < len(keys) else ""
+
+    def _resolve_date(self, ex_idx: int | None = None) -> ResolvedDate:
+        """Which day an exercise is filed under, **and where that came from**.
+
+        The source is not a nicety: it is what lets the strip say "this exercise
+        only" instead of printing a date the reader has to attribute.
+        """
+        return self._date_state().resolve_date(self._key_at(ex_idx))
+
+    def _date_for(self, ex_idx: int | None = None) -> date:
+        """`_resolve_date(...).day`, for the callers that only write a row."""
+        return self._resolve_date(ex_idx).day
+
+    def _any_date_chosen(self) -> bool:
+        """Has anything in this session been pointed at a day on purpose?
+
+        The switch behind rule 2 in the block above: while this is False the
+        ordinary workout pays nothing for the feature, and the moment it is True
+        every exercise screen starts carrying its own day line.
+        """
+        return self._log_date_chosen_on is not None or bool(self._dates_by_key)
+
+    def _dates_in_use(self) -> tuple[date, ...]:
+        """Every distinct day this session would write to, oldest first.
+
+        Asked over the whole day's exercises, not only the dated ones: the half
+        a per-exercise picker makes easy to forget is the exercises still
+        sitting on the default.
+        """
+        return self._date_state().dates_in_use(self._exercise_keys())
+
+    def _is_multi_day(self) -> bool:
+        return len(self._dates_in_use()) > 1
+
+    def _multi_day_text(self) -> str:
+        """ "This session writes to 2 days — Mon 17 Aug, Today." or "".
+
+        Said *before* the save, which is the only place it is still cheap.
+        """
+        days = self._dates_in_use()
+        if len(days) < 2:
+            return ""
+        names = ", ".join(_date_label(d).split(" · ")[0] for d in days)
+        return f"This session writes to {plural(len(days), 'day')} — {names}."
+
+    def _scope_text(self, resolved: ResolvedDate) -> str:
+        """ "this exercise only" / "the whole session" — never left to be guessed."""
+        if resolved.source is DateSource.EXERCISE:
+            return "this exercise only"
+        if self._dates_by_key:
+            # Some other exercise was moved, so "the whole session" would be a
+            # lie by exactly the amount that matters.
+            return "the rest of this session"
+        return "the whole session"
+
+    def _forget_dated_reads(self, ex_idx: int | None = None):
+        """Drop everything that was read *as of* a date that has just moved.
+
+        `_last_sets`, the history, the recommendation, the plan and the
+        substitution starting point are all answers to "as of the day being
+        logged". Leaving them cached after the day changed is how a prefill from
+        the wrong side of the move ends up one tap from the history.
+
+        **Typed rows are never touched.** Changing the day of an exercise must
+        not cost what is already in the boxes — that is half of what Alex asked
+        for. Rows that are still nothing but suggestions *are* dropped, because
+        those came from the old date and would otherwise stay on screen
+        contradicting the new one; the property re-seeds them on next read.
+        """
+        if ex_idx is not None:
+            targets = {ex_idx}
+        else:
+            # The session default moved, so everything that *inherits* it did.
+            # Exercises with a date of their own did not, and must keep the
+            # history they were read against.
+            keys = self._exercise_keys()
+            targets = {i for i, key in enumerate(keys) if key not in self._dates_by_key}
+        for idx in targets:
+            for cache in (
+                self._last_sets_cache,
+                self._history_cache,
+                self._rec_cache,
+                self._plan_cache,
+                self._start_cache,
+            ):
+                cache.pop(idx, None)
+            rows = self._sets_by_ex.get(idx)
+            if rows is not None and not any(
+                not self._is_suggested(r) and self._has_content(r) for r in rows
+            ):
+                self._sets_by_ex.pop(idx, None)
+
+    def _set_exercise_date(self, ex_idx: int, day: date) -> date:
+        """File one exercise under `day`, leaving everything typed where it is.
+
+        Straight through `WorkoutDraft.with_date`, which clamps into the legal
+        window, stamps the choice with today so it can expire by itself, and
+        *removes* the override when it lands back on what the exercise would
+        inherit anyway — including the case that looks harmless and is not:
+        "today" on a session filed under Monday is a real override and is kept.
+        """
+        key = self._key_at(ex_idx)
+        if not key:
+            return self._date_for(ex_idx)
+        state = self._date_state().with_date(key, day, chosen_on=date.today())
+        self._dates_by_key = dict(state.dates)
+        self._forget_dated_reads(ex_idx)
+        # `force=True`: a date is never a keystroke. Coalescing one opens a
+        # window in which the screen says Monday and the stored draft does not.
+        self._persist_draft()
+        return self._date_for(ex_idx)
+
+    def _clear_exercise_date(self, ex_idx: int) -> date:
+        """Put one exercise back on the session default."""
+        key = self._key_at(ex_idx)
+        if not key or key not in self._dates_by_key:
+            return self._date_for(ex_idx)
+        self._dates_by_key = dict(self._date_state().without_date(key).dates)
+        self._forget_dated_reads(ex_idx)
+        self._persist_draft()
+        return self._date_for(ex_idx)
 
     def _persist_log_date(self):
         """Mirror the choice into `preferencias`, or clear the row.
@@ -485,12 +940,22 @@ class WorkoutView:
         goes stale while nothing is calling anything — the clock passes
         midnight, the app sits on a tab — so the render is the first moment
         anybody could notice.
+
+        Every stamp is checked, not just the session's: a workout dated only per
+        exercise has `_log_date_chosen_on is None` and would otherwise keep
+        yesterday's choices forever. Newest wins, so one fresh tap keeps the
+        whole set alive — the alternative expires half a session and leaves the
+        other half on screen looking chosen.
         """
-        if self._log_date_chosen_on is None or self._log_date_chosen_on == date.today():
+        stamps = [d.chosen_on for d in self._dates_by_key.values()]
+        if self._log_date_chosen_on is not None:
+            stamps.append(self._log_date_chosen_on)
+        if not stamps or max(stamps) == date.today():
             return
         if self._workout_in_progress():
-            # Open session: the strip is on screen and the date is still his.
+            # Open session: the strip is on screen and the dates are still his.
             return
+        self._dates_by_key = {}
         self._reset_log_date()
 
     def _backdate_warnings(self, chosen: date, entries: list, start) -> list[str]:
@@ -507,7 +972,7 @@ class WorkoutView:
         if names:
             shown = ", ".join(names[:3]) + ("…" if len(names) > 3 else "")
             out.append(
-                f"{len(names)} exercise{'' if len(names) == 1 else 's'} already logged that "
+                f"{plural(len(names), 'exercise')} already logged that "
                 f"day ({shown}). Saving adds rows — it never replaces them."
             )
         # Only when the start date is a *guess*. A start Alex pinned himself is
@@ -525,8 +990,8 @@ class WorkoutView:
             )
         return out
 
-    def _open_date_dialog(self, _=None):
-        """Pick the day this session is filed under.
+    def _open_date_dialog(self, _=None, *, ex_idx: int | None = None):
+        """Pick the day a session — or one exercise of it — is filed under.
 
         Four taps' worth of shortcuts and a typed field, not an `ft.DatePicker`.
         That was checked rather than assumed: Flet 0.28.3 does ship one, it
@@ -537,6 +1002,17 @@ class WorkoutView:
         gesture, more surface and more inconsistency for less speed. The four
         buttons cover every case Alex described in one tap; the field covers the
         rest in the app's existing idiom.
+
+        `ex_idx` is the scope it **opens** on, not the only one it can reach:
+        the exercise screen passes its own position (that is where the tap came
+        from and what the user is looking at), the day list passes nothing, and
+        either can be switched to the other in one tap. Defaulting to the
+        session when called bare keeps the day-list behaviour it has always had.
+
+        The scope switch is two buttons rather than a segmented control because
+        the whole dialog is already built out of `ghost_button`, and a control
+        this app owns nowhere else would be a third idiom on a screen that
+        exists to stop confusion.
 
         The history is read **once**, here, and the warnings below it are
         recomputed locally on every tap — so the note is live and the database
@@ -552,26 +1028,53 @@ class WorkoutView:
         with contextlib.suppress(Exception):
             start = load_program_start(self.store, entries=entries)
 
+        # The scope is mutable and the closures below read it, so it lives in a
+        # one-key dict rather than a name they would each shadow.
+        scope: dict[str, int | None] = {"ex": ex_idx}
+        ex_name = self._raw_at(ex_idx) if ex_idx is not None else ""
+
         field = ft.TextField(
             label="Date (YYYY-MM-DD)",
-            value=self.log_date.isoformat(),
+            value=self._date_for(ex_idx).isoformat(),
             dense=True,
             color=C.text,
             border_color=C.border_strong,
             focused_border_color=C.accent,
             label_style=ft.TextStyle(color=C.text_secondary),
         )
+        blurb = ft.Text("", size=11, color=C.text_secondary, width=300)
         note = ft.Text("", size=11, color=C.warning)
         err = ft.Text("", size=11, color=C.danger)
         dlg = ft.AlertDialog(modal=False)
 
         def show_note(day: date | None):
-            note.value = "\n".join(self._backdate_warnings(day, entries, start)) if day else ""
+            lines = self._backdate_warnings(day, entries, start) if day else []
+            note.value = "\n".join(lines)
+
+        def describe():
+            if scope["ex"] is None:
+                blurb.value = (
+                    "The day the sets were actually performed. Every exercise you have "
+                    "not given a day of its own goes under it."
+                )
+            else:
+                blurb.value = (
+                    f"The day {ex_name or 'this exercise'} was actually performed. "
+                    "Only this exercise moves — everything else keeps the session's day."
+                )
 
         def fill(day: date):
             field.value = day.isoformat()
             err.value = ""
             show_note(day)
+            self.page.update()
+
+        def pick_scope(target: int | None):
+            scope["ex"] = target
+            describe()
+            field.value = self._date_for(target).isoformat()
+            err.value = ""
+            show_note(self._date_for(target))
             self.page.update()
 
         def save(_):
@@ -592,7 +1095,16 @@ class WorkoutView:
                 err.value = f"Too far back — {MAX_BACKDATE_DAYS} days is the limit."
                 self.page.update()
                 return
-            self._set_log_date(chosen)
+            if scope["ex"] is None:
+                self._set_log_date(chosen)
+            else:
+                self._set_exercise_date(scope["ex"], chosen)
+            self.page.close(dlg)
+            self.page.data["refresh_current"]()
+
+        def reset_to_session(_):
+            if scope["ex"] is not None:
+                self._clear_exercise_date(scope["ex"])
             self.page.close(dlg)
             self.page.data["refresh_current"]()
 
@@ -606,33 +1118,53 @@ class WorkoutView:
             )
             for n in range(4)
         ]
-        show_note(self.log_date)
+        describe()
+        show_note(self._date_for(ex_idx))
+
+        rows: list[ft.Control] = []
+        if ex_idx is not None:
+            rows.append(
+                ft.Row(
+                    [
+                        ghost_button(
+                            "This exercise",
+                            on_click=lambda _: pick_scope(ex_idx),
+                            expand=True,
+                        ),
+                        ghost_button(
+                            "Whole session",
+                            on_click=lambda _: pick_scope(None),
+                            expand=True,
+                        ),
+                    ],
+                    spacing=8,
+                )
+            )
+        rows.append(blurb)
+        rows.extend([ft.Row(shortcuts[:2], spacing=8), ft.Row(shortcuts[2:], spacing=8), field])
+        if ex_idx is not None and self._key_at(ex_idx) in self._dates_by_key:
+            # Only offered when there is an override to undo. A button that
+            # would do nothing is a button that teaches the wrong lesson about
+            # what the exercise's day currently is.
+            rows.append(
+                ghost_button(
+                    f"Back to the session's day ({self._log_date_text()})",
+                    on_click=reset_to_session,
+                    expand=True,
+                )
+            )
+        rows.extend([note, err])
 
         dlg.title = ft.Text(
-            "Log this workout to", size=16, weight=ft.FontWeight.W_900, color=C.text
+            "Log this workout to" if ex_idx is None else "Log this exercise to",
+            size=16,
+            weight=ft.FontWeight.W_900,
+            color=C.text,
         )
         dlg.content = ft.Container(
-            content=ft.Column(
-                [
-                    ft.Text(
-                        "The day the sets were actually performed. Everything you save in "
-                        "this session goes under it.",
-                        size=11,
-                        color=C.text_secondary,
-                        width=300,
-                    ),
-                    ft.Row(shortcuts[:2], spacing=8),
-                    ft.Row(shortcuts[2:], spacing=8),
-                    field,
-                    note,
-                    err,
-                ],
-                spacing=10,
-                tight=True,
-                scroll=ft.ScrollMode.AUTO,
-            ),
-            width=320,
-            height=280,
+            content=ft.Column(rows, spacing=10, tight=True, scroll=ft.ScrollMode.AUTO),
+            width=dialog_width(self.page),
+            height=dialog_height(self.page, 340),
         )
         dlg.actions = [
             ghost_button("Cancel", on_click=lambda _: self.page.close(dlg)),
@@ -671,6 +1203,17 @@ class WorkoutView:
             self._sets_by_ex = {}
             self._last_sets_cache = {}
             self._logged_ex = set()
+            self._history_cache = {}
+            self._rec_cache = {}
+            self._plan_cache = {}
+            self._start_cache = {}
+            self._notes_by_ex = {}
+            # Same argument as the notes: a date chosen against one day's
+            # exercises describes that day's session and nothing else.
+            self._dates_by_key = {}
+            # Substitutions are scoped to a routine and a phase, so a scope
+            # change can invalidate every one of them at once.
+            self._subs_cache = None
 
     @property
     def sets(self) -> list[dict[str, str]]:
@@ -692,63 +1235,775 @@ class WorkoutView:
         self._ensure_scope()
         self._sets_by_ex[self.ex_idx] = list(rows)
 
+    # ── Substitutions: the machine was busy ───────────────────
+    #
+    # Everything here is a *caller* of `substitutions.py`. The catalogue, what
+    # counts as a legal swap, where the pair is stored and — above all — which
+    # name ends up in `entrenos.ejercicio` are all decided there. This view
+    # asks; it never derives.
+    #
+    # The rule that makes the feature safe is one function: `key_to_log()`. A
+    # swapped exercise is written to the database under the name of the movement
+    # that was **actually performed**, so three weeks later the gap in Leg Press
+    # is a gap because the Leg Press was not done — and the Hack Squat row says
+    # what was.
+
+    def _subs(self) -> dict[str, Substitution]:
+        """Swaps in force for this workout, keyed by prescribed exercise.
+
+        Read once and cached, because this is on the render path and
+        `active_substitutions` is a database round-trip. Dropped whenever the
+        scope changes or a swap is made, which are the only moments it can go
+        stale. A database that will not answer means "no substitutions", never a
+        dead screen.
+        """
+        if self._subs_cache is None:
+            found: dict[str, Substitution] = {}
+            with contextlib.suppress(Exception):
+                found = active_substitutions(
+                    self.store,
+                    routine_id=active_routine().id,
+                    phase_id=self.phase_id or None,
+                    today=self.log_date,
+                )
+            self._subs_cache = found
+        return self._subs_cache
+
+    def _prescribed_raw(self, ex_idx: int | None = None) -> str:
+        """The routine's own string for a position — what the *plan* asked for.
+
+        Kept separate from `_current_exercise_raw`, which answers the different
+        question "what is being done". They are the same string until a swap is
+        in force, and the whole point of the swap is that they then differ.
+        """
+        day = self._current_day()
+        idx = self.ex_idx if ex_idx is None else ex_idx
+        if day and 0 <= idx < len(day.exercises):
+            return day.exercises[idx]
+        return ""
+
+    def _substitution_at(self, ex_idx: int) -> Substitution | None:
+        raw = self._prescribed_raw(ex_idx)
+        return self._subs().get(exercise_key(raw)) if raw else None
+
+    def _performed_key(self, ex_idx: int) -> str:
+        """**The value that goes into `entrenos.ejercicio`.**
+
+        `substitutions.key_to_log` and nothing else: it is the single function
+        in the repo that answers this, and re-deriving it from the cached map
+        here would be a second implementation of the one rule that must not have
+        two. It degrades to `exercise_key()` on its own when there is no swap.
+        """
+        raw = self._prescribed_raw(ex_idx)
+        if not raw:
+            return ""
+        with contextlib.suppress(Exception):
+            return key_to_log(
+                raw,
+                store=self.store,
+                routine_id=active_routine().id,
+                phase_id=self.phase_id or None,
+                today=self.log_date,
+            )
+        return exercise_key(raw)
+
+    def _raw_at(self, ex_idx: int) -> str:
+        """The exercise string a position is *training*, brackets kept.
+
+        With a swap in force this is `swap_prescription`'s answer — the
+        substitute's name carrying the slot's own scheme — so the plan, the
+        rest, the bar and the recommendation all read the prescription of the
+        slot while pointing at the movement being done.
+        """
+        if ex_idx == self.ex_idx:
+            # The one on screen goes through `_current_exercise_raw`, which is
+            # what every other tool on this screen already reads.
+            return self._current_exercise_raw()
+        raw = self._prescribed_raw(ex_idx)
+        swap = self._substitution_at(ex_idx)
+        return swap_prescription(raw, swap.performed) if swap else raw
+
+    def _swap_scopes(self) -> tuple[Scope, ...]:
+        """Which scopes may be offered. PHASE needs a phase to belong to."""
+        return (Scope.TODAY, Scope.PHASE) if self.phase_id else (Scope.TODAY,)
+
+    def _apply_substitution(self, performed: str, scope: Scope):
+        """Record a swap for the exercise on screen and re-read everything.
+
+        The caches are dropped for this position only: the exercise is now a
+        different movement, so its history, its last session, its recommendation
+        and its plan all belonged to something else. Rows already typed are
+        deliberately kept — they are what he just lifted, on the machine he is
+        standing at, and the swap is the app catching up with that.
+        """
+        idx = self.ex_idx
+        try:
+            set_substitution(
+                self.store,
+                self._prescribed_raw(idx),
+                performed,
+                scope,
+                routine_id=active_routine().id,
+                phase_id=self.phase_id or None,
+                today=self.log_date,
+            )
+        except Exception:
+            self._toast("Could not save the swap.", ft.Icons.ERROR_OUTLINE, C.danger)
+            return
+        self._forget_exercise(idx)
+        self._toast(
+            f"Swapped to {exercise_key(performed)} — "
+            f"{'today only' if scope is Scope.TODAY else 'for the rest of this phase'}.",
+            ft.Icons.SWAP_HORIZ,
+            C.accent_2,
+        )
+        self.page.data["refresh_current"]()
+
+    def _clear_current_substitution(self):
+        idx = self.ex_idx
+        with contextlib.suppress(Exception):
+            clear_substitution(
+                self.store,
+                self._prescribed_raw(idx),
+                routine_id=active_routine().id,
+                phase_id=self.phase_id or None,
+                today=self.log_date,
+            )
+        self._forget_exercise(idx)
+        self.page.data["refresh_current"]()
+
+    def _forget_exercise(self, ex_idx: int):
+        """Drop everything memoised about one position — but never typed work.
+
+        A swap makes this position a different movement, so its history, its
+        last session, its recommendation and its plan all described something
+        else and have to go.
+
+        The rows are the interesting case, and they split in two. Rows that are
+        still **suggestions** came from the replaced exercise: leaving them would
+        offer the Smith machine's weights on a barbell, one tap from the history,
+        which is the exact failure `_seed_sets` is built around. Rows Alex
+        **typed** are what he just lifted on the machine he is standing at, and
+        no swap may throw those away — so the buffer is only dropped when there
+        is nothing of his in it.
+        """
+        self._subs_cache = None
+        self._last_sets_cache.pop(ex_idx, None)
+        self._history_cache.pop(ex_idx, None)
+        self._rec_cache.pop(ex_idx, None)
+        self._plan_cache.pop(ex_idx, None)
+        self._start_cache.pop(ex_idx, None)
+        rows = self._sets_by_ex.get(ex_idx) or []
+        if not any(not self._is_suggested(r) and self._has_content(r) for r in rows):
+            self._sets_by_ex.pop(ex_idx, None)
+
+    # ── What the plan opens with ──────────────────────────────
+
+    def _plan(self, ex_idx: int) -> SessionPlan | None:
+        """`session_plan`'s answer for one position. None only if it threw.
+
+        Not one rule about how many rows an exercise opens with is written in
+        this file. The bracket parsing, the phase fallback, the pyramid, the
+        drop tails, the AMRAP rows and the combination-is-one-row decision all
+        live in `session_plan.py`, which is tested against the whole routine and
+        shared with nothing that can drift from it.
+        """
+        if ex_idx in self._plan_cache:
+            return self._plan_cache[ex_idx]
+        plan: SessionPlan | None = None
+        raw = self._raw_at(ex_idx)
+        if raw:
+            # Never worth a dead screen: an unreadable prescription already has
+            # a defined answer inside `plan_sets`, and an exception here would
+            # only mean the module changed under us.
+            with contextlib.suppress(Exception):
+                plan = plan_sets(raw, self._phase(), last_session=self._last_sets(ex_idx))
+        self._plan_cache[ex_idx] = plan
+        return plan
+
+    def _starting_point(self, ex_idx: int) -> StartingPoint | None:
+        """Where to start on a substitute, per `substitutions.starting_point`.
+
+        None when nothing is swapped here, which is the usual case. **No weight
+        is invented anywhere in this file**: that module refuses to translate
+        120 kg of leg press into a squat, and the reference line it returns says
+        out loud that the original's number is context and not a target.
+        """
+        if ex_idx in self._start_cache:
+            return self._start_cache[ex_idx]
+        swap = self._substitution_at(ex_idx)
+        point: StartingPoint | None = None
+        if swap is not None:
+            with contextlib.suppress(Exception):
+                point = starting_point(
+                    self.store,
+                    self._prescribed_raw(ex_idx),
+                    swap.performed,
+                    phase=self._phase(),
+                    routine=active_routine(),
+                    today=self._date_for(ex_idx),
+                )
+        self._start_cache[ex_idx] = point
+        return point
+
+    def _proposal_for_row(self, i: int) -> ProposedSet | None:
+        """The plan's row `i`, or None once the user has gone off-plan.
+
+        Matched by *ordinal among non-warm-up rows* rather than by list index:
+        the ramp inserts rows in front and `+ Set` appends them, and neither
+        moves the plan. An extra row past the end of the plan simply has no
+        proposal, which is the honest answer — the plan never asked for it.
+        """
+        plan = self._plan(self.ex_idx)
+        if plan is None or not plan.is_known():
+            return None
+        rows = self.sets
+        if not (0 <= i < len(rows)) or set_type_of(rows[i]) is SetType.WARMUP:
+            return None
+        ordinal = sum(1 for r in rows[:i] if set_type_of(r) is not SetType.WARMUP)
+        return plan.proposals[ordinal] if ordinal < len(plan.proposals) else None
+
     def _last_sets(self, ex_idx: int) -> list[dict] | None:
         """Previous session of exercise `ex_idx`, read once per workout.
 
-        "Previous" means the most recent row in the database, not the most
-        recent row *before* `log_date`. On a back-dated session those differ:
-        log Saturday on Monday having trained Sunday, and the suggestion carries
-        Sunday's numbers. Left as is on purpose — `Storage.get_last_sets` takes
-        no date and this view may not add one, the suggestion is a prefill
-        nobody logs without confirming (`_seed_sets`), and the numbers on the
-        phone are the ones being copied off paper anyway.
+        "Previous" means the most recent row *before* `log_date`, not the most
+        recent row in the table. On a back-dated session those differ, and the
+        difference is not academic: log Saturday on Monday having trained
+        Sunday, and the prefill offers Sunday's numbers for a session that, on
+        Saturday, had not happened. `_seed_sets` writes that straight into the
+        weight and reps boxes, and one tap turns a prefill into the record — so
+        a wrong answer here does not look like a bug, it looks like a workout.
+
+        "Before" means before **this exercise's** day, not the session's: with
+        one exercise filed under Monday and the next under Tuesday, a single
+        cut-off would prefill one of them from a session that had not happened
+        yet. `_forget_dated_reads` drops this cache whenever that day moves.
+
+        The resolved date is also today on an ordinary session, where "strictly
+        before today" is exactly what is wanted anyway: a row already saved for
+        today is *this* session, not the previous one.
         """
         if ex_idx in self._last_sets_cache:
             return self._last_sets_cache[ex_idx]
-        day = self._current_day()
-        if not day or not (0 <= ex_idx < len(day.exercises)):
+        # The history of the movement being *done*, which is the substitute
+        # when one is in force. Prefilling a Hack Squat from the Leg Press it
+        # replaced would put a number from a different machine in the box.
+        key = self._performed_key(ex_idx)
+        if not key:
             return None
-        key = exercise_key(day.exercises[ex_idx])
         last = None
         # A database hiccup must degrade to "first time, no history", not to a
         # blank screen in the middle of a set.
         with contextlib.suppress(Exception):
-            last = self.store.get_last_sets(key)
+            last = self.store.get_last_sets(key, before=self._date_for(ex_idx))
         self._last_sets_cache[ex_idx] = last
         return last
 
+    def _suggested_from(self, one: dict, set_type: SetType | None = None) -> dict[str, str]:
+        """One logged set as a muted, unclaimed draft row.
+
+        `set_type` overrides what the stored set says, which is how a row the
+        *plan* calls a drop keeps being a drop even when last session logged it
+        as an ordinary set. Left None the stored type is kept, which is what a
+        warm-up needs.
+        """
+        row = self._blank_set()
+        row["weight"] = _num_text(one.get("weight"))
+        row["reps"] = _num_text(one.get("reps"))
+        row["rir"] = _num_text(one.get("rir"))
+        row[TYPE_KEY] = (set_type or set_type_of(one)).value
+        row[_SUGGESTED_KEY] = "1"
+        return row
+
     def _seed_sets(self, ex_idx: int) -> list[dict[str, str]]:
-        """Opening rows for an exercise: last session's, marked as suggestions.
+        """Opening rows for an exercise: **the plan's**, filled in from last time.
 
-        Alex's actual complaint was retyping numbers the screen was already
-        showing him — they sat in `hint_text`, a grey placeholder you can read
-        but not keep. Hevy and Strong both answer this the same way and so does
-        this: the previous session is written into the fields, rendered muted,
-        and does **not** count as logged until he vouches for it, by editing a
-        field or tapping the set number.
+        Two questions with two different answers, and conflating them is what
+        this used to get wrong:
 
-        That last half is the whole point. A prefilled field nobody reviews
-        writes a weight he never lifted into `entrenos`, and `analytics`
-        happily turns it into a personal record — a corrupted history and a
-        fake PR are a worse bug than the typing this saves. So: zero taps to
-        *see* last time's numbers, one tap to claim them, and never a number
-        logged that he did not touch.
+        * **How many rows, of what kind** — the plan's, via `session_plan`. An
+          exercise with no history used to open one empty row while the routine
+          asked for three, and phase 6's `[4×10,10,8,6+12↓]` opened four
+          look-alike rows with the drop set nowhere on screen. The drop now
+          arrives already typed as a drop, because `to_draft_rows` carries the
+          type across and nothing here overrides it.
+        * **What is written in them** — last session's numbers, as suggestions,
+          exactly as before. Alex's original complaint was retyping numbers the
+          screen was already showing him in `hint_text`, where you can read them
+          but not keep them.
+
+        The suggestion half is still the safe half. A prefilled field nobody
+        reviews writes a weight he never lifted into `entrenos`, and `analytics`
+        turns it into a personal record: zero taps to *see* last time's numbers,
+        one tap to claim them, and never a number logged that he did not touch.
+        The plan's extra rows arrive blank, which is the visible, honest form of
+        "the plan asks for a fifth set and there is nothing to copy into it".
+
+        Warm-ups are kept in front of the plan's rows: the plan prescribes work,
+        the ramp up to it is `gym_tools.warmup_plan`'s business, and a session
+        that opened with two warm-ups opens with two warm-ups again.
         """
         last = self._last_sets(ex_idx)
-        if not last:
-            return [self._blank_set()]
+        plan = self._plan(ex_idx)
+
+        if plan is None or not plan.is_known():
+            # No readable prescription. Falling back to the plan's single row
+            # would *lose* rows on a routine whose phases state no scheme, so
+            # the pre-plan behaviour stands: one row per set of last session,
+            # and one blank row when there is no last session.
+            if not last:
+                return [self._blank_set()]
+            return [self._suggested_from(one) for one in last]
+
+        previous = list(last or [])
+        rows = [self._suggested_from(one) for one in previous if set_type_of(one) is SetType.WARMUP]
+        # Warm-ups are not prescribed sets, so they are not what the plan's rows
+        # are filled from — `session_plan.history_set_count` counts the same way.
+        performed = [one for one in previous if set_type_of(one) is not SetType.WARMUP]
+
+        for position, blank in enumerate(to_draft_rows(plan)):
+            if position < len(performed):
+                # The type is the plan's, never the stored set's: last session
+                # may have logged the drop as a normal set, and the plan is the
+                # thing that knows it is a drop.
+                rows.append(self._suggested_from(performed[position], set_type_of(blank)))
+            else:
+                rows.append(blank)
+        return rows or [self._blank_set()]
+
+    # ── Gym tools: the bar, the rack, the ramp, the recommendation ────
+    #
+    # Everything below is a *caller* of `gym_tools.py` and `progression.py`.
+    # Not one line of plate arithmetic, warm-up percentage or progression rule
+    # is written here, and none may be: those two modules are pure, tested and
+    # shared with the Telegram coach in ../agente/, and a second copy of any of
+    # their rules living in a Flet view is how the app and the coach start
+    # telling Alex two different numbers.
+
+    def _ensure_gear(self):
+        """Load the bar and the plate inventory from `preferencias`. Once.
+
+        Cached on the instance because `_plate_hint` runs on **every keystroke**
+        in a weight field: a `get_pref` there is a database round-trip per
+        character, over the network in web mode and over the gym's wifi on the
+        phone. Re-read when a day starts (`_start_day`), which is the only
+        moment a change made on the Profile screen has to be noticed.
+
+        Both preferences are optional and both degrade to the default rather
+        than raising: a corrupt row must cost the *hint*, never the session.
+        `PlateInventory.from_text` already falls back on anything unreadable.
+        """
+        if self._plate_inventory is not None:
+            return
+        self._plate_inventory = DEFAULT_INVENTORY
+        with contextlib.suppress(Exception):
+            self._plate_inventory = PlateInventory.from_text(self.store.get_pref(PLATES_PREF))
+        with contextlib.suppress(Exception):
+            value = _num_value(self.store.get_pref(BAR_PREF))
+            # An upper bound as well as a lower one: "200" in the bar field is
+            # a typo for a plate weight, and honouring it would make every
+            # single hint on every exercise read "not loadable".
+            if value is not None and 0 < value <= 60:
+                self._bar_override = value
+
+    def _bar_for(self, raw: str) -> Bar:
+        """The bar this exercise is loaded on.
+
+        `gym_tools.bar_for_exercise` reads the *name* — an EZ curl is a 7.5 kg
+        bar, not a 20 — and only falls back to the Olympic default when the
+        name says nothing. The stored preference replaces exactly that
+        fallback and never a bar the name named: a gym whose straight bars are
+        15 kg still curls on the EZ bar.
+        """
+        self._ensure_gear()
+        bar = bar_for_exercise(raw)
+        if self._bar_override is not None and bar is DEFAULT_BAR:
+            return Bar("Bar", self._bar_override)
+        return bar
+
+    def _bar_for_current(self) -> Bar:
+        return self._bar_for(self._current_exercise_raw())
+
+    @staticmethod
+    def _is_barbell(raw: str) -> bool:
+        """Does plate maths mean anything for this exercise?
+
+        `progression.classify_equipment` is the single classifier in the repo;
+        deriving it again from the name here would be a second one, and the
+        two would drift. A dumbbell has no plates to solve for and a cable
+        stack even less, so both the plate hint and the warm-up ramp stay out
+        of their way entirely rather than printing confident nonsense.
+        """
+        return classify_equipment(raw) is Equipment.BARBELL
+
+    def _round_fn(self, raw: str):
+        """`progression`'s rounding hook, wired to *this* gym's rack.
+
+        Only for barbells. `round_fn` overrides the whole lookup inside
+        `progression.loadable_weight`, so handing it over for a cable stack
+        would round a pulley to plate maths — the module's own default already
+        rounds those onto their equipment step, which is right.
+        """
+        if not self._is_barbell(raw):
+            return None
+        bar, inventory = self._bar_for(raw), self._plate_inventory
+        return lambda weight: round_to_loadable(weight, bar, inventory)
+
+    def _exercise_history(self, ex_idx: int) -> list:
+        """Past sessions of exercise `ex_idx`, newest last. One query, memoised.
+
+        Shared by the recommendation and by the history panel on purpose: they
+        are two views of the same rows, and reading them twice would double the
+        round-trips for nothing. A database that will not answer degrades to
+        "no history", which every caller here already handles.
+        """
+        if ex_idx in self._history_cache:
+            return self._history_cache[ex_idx]
+        rows: list = []
+        key = self._performed_key(ex_idx)
+        if key:
+            with contextlib.suppress(Exception):
+                rows = list(self.store.get_exercise_history(key, limit=HISTORY_LIMIT))
+        self._history_cache[ex_idx] = rows
+        return rows
+
+    def _recommendation(self, ex_idx: int) -> Recommendation | None:
+        """What `progression.py` says to do today. None only if it threw.
+
+        `recommend`, not `recommend_from_store`: the history is already in
+        hand, and passing it in keeps this to the one query above.
+
+        `today=self._date_for(ex_idx)` is deliberate. The gap rules (hold the
+        jump after three weeks, re-enter at 90 % after eight) are about the time
+        between *sessions*, so on a back-dated log the question is "how long
+        before the day being written", not "before this evening" — and with a
+        per-exercise date the day being written is this exercise's, not the
+        session's.
+        """
+        if ex_idx in self._rec_cache:
+            return self._rec_cache[ex_idx]
+        rec: Recommendation | None = None
+        # `_raw_at`, not the routine's own string: with a swap in force the
+        # substitute has to be asked with the slot's prescription, so it reads
+        # its own history against the plan's sets and reps.
+        raw = self._raw_at(ex_idx)
+        if raw:
+            # Nothing about a recommendation is worth a dead screen mid-set.
+            with contextlib.suppress(Exception):
+                rec = recommend(
+                    raw,
+                    self._exercise_history(ex_idx),
+                    phase=self._phase(),
+                    routine=active_routine(),
+                    today=self._date_for(ex_idx),
+                    round_fn=self._round_fn(raw),
+                )
+        self._rec_cache[ex_idx] = rec
+        return rec
+
+    def _scheme_and_rir(self) -> tuple[Scheme, RirTarget | None]:
+        """The prescribed target, split so a row can print half of it.
+
+        Both halves come from `progression`'s pure readers, so this works with
+        the database face-down: the scheme is parsed out of the exercise string
+        (`"[4×5-8]"`), falling back to the phase's own, and the RIR out of the
+        phase prose — inherited from an earlier phase when this one does not
+        restate it, which is how the plan is actually written.
+        """
+        raw = self._current_exercise_raw()
+        phase = self._phase()
+        return parse_scheme(raw, getattr(phase, "scheme", "") or ""), rir_for_phase(
+            phase, active_routine()
+        )
+
+    def _plate_hint(self, weight_text) -> str:
+        """One line of plate maths for the weight in a row. "" when it is moot.
+
+        This is the plate calculator, and it is deliberately **not** a control
+        you open: it is text that is already on screen next to the number it
+        describes. A dialog here would be the single worst interaction in the
+        app — it blocks while the rest timer runs, with the phone on the floor
+        and the next set starting.
+
+        When the weight cannot be built from the plates in the room the same
+        line says both neighbours, which is precisely what has to be known
+        *before* walking to the rack.
+        """
+        raw = self._current_exercise_raw()
+        if not self._is_barbell(raw):
+            return ""
+        if not str(weight_text or "").strip():
+            return ""
+        self._ensure_gear()
+        options = loadable_options(weight_text, self._bar_for(raw), self._plate_inventory)
+        if options is None:
+            return ""
+        if options.exact is not None:
+            if options.exact.bar_only:
+                return f"empty {_num_text(options.exact.bar)} kg bar"
+            return f"{options.exact.label()} per side"
+        if options.under_bar:
+            if options.above is None:
+                return ""
+            return f"under the bar · {_num_text(options.above.total)} kg is the lightest"
+        near = [o for o in (options.below, options.above) if o is not None]
+        if not near:
+            return ""
+        return "not loadable · " + " or ".join(f"{_num_text(o.total)} kg" for o in near)
+
+    def _row_target(self, i: int, row: dict) -> str:
+        """What row `i` is aiming at: `"→ 5-8 @ RIR 2-3"`. "" when unknown.
+
+        Requirement 1, and the reason it is *per row* rather than one line at
+        the top: the set count and rep range live in the exercise title and the
+        RIR lives in the phase description, so at the one moment they matter —
+        halfway through the set, looking at the row being filled in — neither
+        is on screen.
+
+        Two things genuinely differ row by row, which is what earns the line
+        its height. A warm-up has no prescribed target and says so by staying
+        silent, and a pyramid (`[5×12,10,8,8,8]`) has a different number of
+        reps for every set. The last working row also carries the phase's
+        "failure on the last set" clause, which belongs on that row and
+        nowhere else.
+
+        The per-row number now comes from `session_plan` when it has one, which
+        is what lets a drop row and an AMRAP row say what *they* are aiming at —
+        `→ 12` under the drop of set 4, `→ max` on a `[3×failure]`. The older
+        chain below it is untouched and still answers for any row the plan does
+        not cover: a `+ Set` past the end of it, or a routine whose phase
+        prescribes nothing at all.
+        """
+        set_type = set_type_of(row)
+        if set_type is SetType.WARMUP:
+            return ""
+        proposal = self._proposal_for_row(i)
+        if set_type is SetType.DROPSET or (proposal is not None and proposal.is_drop()):
+            # No RIR on a drop: the load has just been stripped and the row is
+            # the tail of the set above it, not a set with a target of its own.
+            return f"→ {proposal.reps_label}" if proposal and proposal.reps_label else ""
+        if set_type is SetType.FAILURE:
+            # "max" is an instruction, not a number, and an RIR beside it would
+            # contradict it. `session_plan` leaves these untargeted on purpose.
+            label = proposal.reps_label if proposal is not None else ""
+            return f"→ {label}" if label else ""
+        if set_type is not SetType.NORMAL:
+            return ""
+        scheme, rir = self._scheme_and_rir()
+
+        # Which *working* set this is. Warm-up rows sit in the same list, so
+        # counting rows would tell a pyramid that set 1 is set 4.
+        rows = self.sets
+        ordinal = sum(1 for r in rows[:i] if set_type_of(r) is SetType.NORMAL)
+
+        # The plan's own answer for this row first. It is the same number the
+        # two branches below would reach for a plain range or a pyramid, and it
+        # is the only one that stays right once drop rows sit between the
+        # working ones — counting NORMAL rows would then hand set 3 set 2's
+        # target.
+        reps = proposal.reps_label if proposal is not None else ""
+        if not reps and scheme.per_set and ordinal < len(scheme.per_set):
+            # A pyramid states each set outright — `[5×12,10,8,8,8]` — and that
+            # is the most specific thing anyone knows about this row. It is
+            # read before the recommendation because `recommend` flattens a
+            # pyramid to its min-max when it has no history to shape it with,
+            # and "8-12" on set 1 would be losing information the plan gave.
+            reps = str(scheme.per_set[ordinal])
+        rec = self._recommendation(self.ex_idx)
+        if not reps and rec is not None and ordinal < len(rec.per_set):
+            target = rec.per_set[ordinal]
+            if target.reps_low is not None:
+                reps = (
+                    str(target.reps_low)
+                    if target.reps_low == target.reps_high
+                    else f"{target.reps_low}-{target.reps_high}"
+                )
+        if not reps:
+            # `reps_label()` is "5-8 reps"; the word is the column header two
+            # lines up, so on a 420 px row it is 5 characters of nothing.
+            reps = scheme.reps_label().replace(" reps", "")
+
+        # "Failure on the last set" is a real instruction in several phases and
+        # it applies to exactly ONE row, so the clause is resolved per row here
+        # rather than taken from `full_label()`, which prints it on all of them.
+        #
+        # The subtlety that made this wrong twice: when a phase says *only*
+        # "failure on the last set" and states no general RIR — CambiaTuFísico
+        # phases 2 and 3 — `RirTarget.label()` itself returns "last set to
+        # failure". Printing that on row 1 reads as an instruction to take set
+        # one to failure, which is the opposite of the plan; and appending the
+        # clause on the last row on top of it produced the literal
+        # "8-10 @ last set to failure · last to failure" seen on the phone.
+        #
+        # So a last-set-only prescription is not an RIR for the other rows.
+        # They get none, and only the final working set carries the clause.
+        ultima_de_trabajo = max(
+            (n for n, r in enumerate(rows) if set_type_of(r) is SetType.NORMAL), default=-1
+        )
+        es_la_ultima = i == ultima_de_trabajo
+        solo_ultima = rir is not None and rir.low is None and rir.last_set is not None
+
+        if rir is None:
+            rir_text = ""
+        elif solo_ultima:
+            rir_text = (
+                ("to failure" if rir.last_set == (0, 0) else f"RIR {rir.last_set[0]}")
+                if es_la_ultima
+                else ""
+            )
+        else:
+            rir_text = rir.label()
+
+        parts = [p for p in (reps, rir_text) if p]
+        if not parts:
+            return ""
+        text = "→ " + " @ ".join(parts)
+
+        # A phase that states both a general RIR and a different last-set one
+        # still needs the tail, and only on that row.
+        if rir is not None and not solo_ultima and rir.last_set == (0, 0) and es_la_ultima:
+            text += " · last to failure"
+        return text
+
+    def _has_confirmed_work(self) -> bool:
+        """Has a real working set been claimed on this exercise yet?
+
+        The switch behind both the progression banner and the warm-up ramp:
+        they are planning tools, they belong on screen before the first set,
+        and the moment one is confirmed they have said everything they had to
+        say. Warm-ups deliberately do not count — confirming the ramp is not
+        starting the exercise.
+        """
+        return any(
+            set_type_of(row) is not SetType.WARMUP
+            and not self._is_suggested(row)
+            and self._has_content(row)
+            for row in self.sets
+        )
+
+    def _warmup_target(self) -> float | None:
+        """The weight the ramp is climbing towards, in order of authority.
+
+        1. A working row Alex **typed or claimed**. A number he owns beats
+           anything computed, always.
+        2. The recommendation. It knows last session went to the top of the
+           range and today is 2.5 kg heavier; warming up to yesterday's weight
+           when the plan says go up leaves the last approach 2.5 kg short.
+        3. A row still showing last session as a suggestion — better than
+           nothing when the database could not be reached for step 2.
+
+        None when all three are silent, which is the first-ever session of an
+        exercise. No target, no ramp, nothing invented: `warmup_plan` is a
+        percentage of a working weight, and there is no working weight yet.
+        """
+        suggested: float | None = None
+        for row in self.sets:
+            if set_type_of(row) is SetType.WARMUP:
+                continue
+            value = _num_value(row.get("weight"))
+            if not value or value <= 0:
+                continue
+            if not self._is_suggested(row):
+                return value
+            if suggested is None:
+                suggested = value
+        rec = self._recommendation(self.ex_idx)
+        if rec is not None and rec.weight:
+            return float(rec.weight)
+        return suggested
+
+    def _warmup_plan(self) -> list[WarmupSet]:
+        """The ramp for this exercise, or empty when there is nothing to ramp.
+
+        Barbell only, and that is a limitation with a reason rather than an
+        oversight: every weight `warmup_plan` returns is a weight it has
+        checked can be assembled from the plates in the room, and there are no
+        plates to check on a machine stack or a dumbbell rack. Offering a
+        "37.5 kg" ramp set on a stack that steps in fives would be exactly the
+        arithmetic-in-the-gym this whole feature exists to remove. Alex's
+        routine is almost entirely barbell work, which is where the ramp is
+        worth having anyway.
+        """
+        raw = self._current_exercise_raw()
+        if not self._is_barbell(raw):
+            return []
+        target = self._warmup_target()
+        if target is None:
+            return []
+        self._ensure_gear()
+        plan: list[WarmupSet] = []
+        with contextlib.suppress(Exception):
+            plan = warmup_plan(target, self._bar_for(raw), self._plate_inventory)
+        return plan
+
+    def _add_warmup_sets(self, _=None):
+        """One tap: the whole ramp, as rows, already tagged as warm-ups.
+
+        Inserted **as suggestions**, muted, exactly like the prefill from last
+        session — because that is what they are: sets the app proposes and the
+        user has not done yet. Confirming one is a tap on its set number, which
+        is the tap he makes anyway when a set ends, and which also starts the
+        rest timer. Writing them in confirmed would have been fewer taps and a
+        lie: it would put warm-ups he never performed into `entrenos` the next
+        time Save is pressed.
+
+        They go in front of the existing rows because that is the order they
+        are done in, and `set_types.tag_set` writes the type so the stored
+        shape is the one every reader in the repo (and the coach) already
+        understands. Warm-ups are excluded from volume and from personal
+        records by `analytics`, so the ramp can never inflate a number.
+        """
+        plan = self._warmup_plan()
+        if not plan:
+            return
         rows: list[dict[str, str]] = []
-        for one in last:
-            row = self._blank_set()
-            row["weight"] = _num_text(one.get("weight"))
-            row["reps"] = _num_text(one.get("reps"))
-            row["rir"] = _num_text(one.get("rir"))
-            # The type belongs to the plan, not to the performance: a session
-            # that opened with two warm-ups opens with two warm-ups again.
-            row[TYPE_KEY] = set_type_of(one).value
+        for entry in plan:
+            draft = self._blank_set()
+            draft["weight"] = _num_text(entry.weight)
+            draft["reps"] = str(entry.reps)
+            # Through `tag_set` rather than by writing TYPE_KEY by hand: it is
+            # the one function that decides how a type is spelled on a row.
+            row = {str(k): str(v) for k, v in tag_set(draft, SetType.WARMUP).items()}
             row[_SUGGESTED_KEY] = "1"
             rows.append(row)
-        return rows
+        self.sets = rows + list(self.sets)
+        self._persist_draft()
+        self._toast(
+            f"{plural(len(rows), 'warm-up set')} added — confirm each as you finish it",
+            ft.Icons.LOCAL_FIRE_DEPARTMENT,
+            C.warning,
+        )
+        self.page.data["refresh_current"]()
+
+    def _toggle_history(self, _=None):
+        """Unfold the past-sessions panel **without rebuilding the screen**.
+
+        This is requirement 5's real constraint: "without losing what you have
+        typed". A `refresh_current()` here would rebuild every `TextField` in
+        the tree, and on Android that closes the keyboard and drops the caret
+        out of the number being typed. Flipping `visible` on two controls that
+        are already mounted touches nothing else on the screen.
+        """
+        self._show_history = not self._show_history
+        if self._history_body is not None:
+            self._history_body.visible = self._show_history
+            with contextlib.suppress(Exception):
+                self._history_body.update()
+        if self._history_arrow is not None:
+            self._history_arrow.name = (
+                ft.Icons.EXPAND_LESS if self._show_history else ft.Icons.EXPAND_MORE
+            )
+            with contextlib.suppress(Exception):
+                self._history_arrow.update()
+
+    def _toggle_reason(self, _=None):
+        """Show or hide the sentence behind the recommendation. Same trick."""
+        control = self._reason_text
+        if control is None:
+            return
+        control.visible = not control.visible
+        with contextlib.suppress(Exception):
+            control.update()
 
     @staticmethod
     def _is_suggested(row: dict) -> bool:
@@ -793,12 +2048,23 @@ class WorkoutView:
         self._sets_by_ex = {}
         self._last_sets_cache = {}
         self._logged_ex = set()
+        self._history_cache = {}
+        self._rec_cache = {}
+        self._plan_cache = {}
+        self._start_cache = {}
+        self._subs_cache = None
         self.completed = []
         self.finished = False
         self.show_day_list = False
         self.show_phase_list = False
         self.timer.stop()
         self._stop_session_timer()
+        # Same argument as the session default below, and more urgent: a
+        # per-exercise Monday that survived into the next workout would be a
+        # date nobody chose for it, on a screen whose strip would then dutifully
+        # report Monday as if it had been asked for.
+        self._dates_by_key = {}
+        self._forget_durations()
         # The date belonged to the session that just ended. Leaving it set is
         # exactly the "it was still on yesterday" failure the whole feature is
         # designed around. `persist=False` because `_clear_draft` below wipes
@@ -886,6 +2152,14 @@ class WorkoutView:
             exercise=keys[self.ex_idx],
             pending=pending,
             completed=self.completed,
+            # THE DATES TRAVEL WITH THE DRAFT. Without these two the whole
+            # per-exercise date feature evaporates the moment Android kills the
+            # process: the map is rebuilt empty, every exercise resolves to
+            # today, and the set Alex filed under Monday is written to
+            # Wednesday — silently, which is the one outcome this feature was
+            # warned about and designed against.
+            session_date=self._session_log_date(),
+            dates=dict(self._dates_by_key),
             started_at=self.session_started_at,
         )
 
@@ -916,6 +2190,11 @@ class WorkoutView:
         # reset the in-memory value, and the row must go either way.
         with contextlib.suppress(Exception):
             self.store.set_pref(LOG_DATE_PREF, "")
+        # Same argument for the notes still waiting on an exercise that was
+        # never written: they described the session that has just ended, and a
+        # note that outlived its workout would surface under the next one.
+        # Anything already saved is in `entrenos.nota` and is untouched by this.
+        self._clear_notes()
 
     def _restore_draft(self):
         """Rebuild the session from the draft.
@@ -956,6 +2235,36 @@ class WorkoutView:
         self._sets_by_ex = {}
         self._last_sets_cache = {}
         self._logged_ex = set()
+        self._history_cache = {}
+        self._rec_cache = {}
+        self._plan_cache = {}
+        self._start_cache = {}
+        self._subs_cache = None
+        # The notes belong to the same session the draft does, and they are
+        # keyed by exercise name, so this has to come after the scope is set and
+        # before the rows are put back.
+        self._load_notes()
+        self._show_note = False
+
+        # THE DATES COME BACK WITH IT. `_load_log_date()` above only restores
+        # the *session* date; without this the per-exercise map is empty after
+        # any restore and every exercise silently resolves to today — the set
+        # filed under Monday lands on Wednesday.
+        #
+        # `DraftStore.load()` has already applied the calendar-day rule to each
+        # entry and dropped the ones that no longer stand, reporting them in
+        # `stale_dates`. Read, not re-derived: applying that rule a second time
+        # here is how the two copies drift apart.
+        self._dates_by_key = dict(draft.dates)
+        if draft.stale_dates:
+            # Silently reverting a date to today is precisely the failure this
+            # feature is built to avoid, so it is said out loud.
+            with contextlib.suppress(Exception):
+                self._toast(
+                    f"Back to today for: {', '.join(draft.stale_dates)}",
+                    ft.Icons.EVENT_BUSY,
+                    C.warning,
+                )
 
         keys = self._exercise_keys()
         if not (0 <= draft.ex_idx < len(keys)):
@@ -970,8 +2279,17 @@ class WorkoutView:
         # Which exercises are already in `entrenos` is derived, not stored:
         # `completed` carries the keys, and matching them back to positions
         # cannot go stale the way a saved index can.
+        #
+        # Resolved through `_performed_key`, NOT against `keys`. With a swap in
+        # force the two differ by design — the slot says "Leg Press", the row
+        # says "Hack Squat" — so comparing the prescribed key left every swapped
+        # position looking unlogged. Saving again then wrote a **second** row for
+        # the same day, one under each name, and nothing raised: the history just
+        # split in two, which is the exact failure `exercise_key()` exists to
+        # prevent. `_performed_key` is the single function that answers "what
+        # goes into `entrenos.ejercicio`", so it has to be the one asked here.
         done = {c.get("exercise") for c in self.completed}
-        self._logged_ex = {i for i, k in enumerate(keys) if k in done}
+        self._logged_ex = {i for i in range(len(keys)) if self._performed_key(i) in done}
 
         if draft.started_at:
             self._resume_session_timer(float(draft.started_at))
@@ -1022,6 +2340,260 @@ class WorkoutView:
             return f"{h}:{m:02d}:{s:02d}"
         return f"{m:02d}:{s:02d}"
 
+    # ── How long the session lasted ───────────────────────────
+    #
+    # `_format_elapsed` above and `storage.format_duration` are not duplicates
+    # and must not be merged. The first is the **running clock** — it counts
+    # seconds because a clock that did not move would look broken. The second is
+    # the **record** — "1h 12m", no seconds, because nobody trained for
+    # 4 320 seconds and printing the third digit claims a precision the
+    # measurement never had. Live control → `_format_elapsed`; anything read
+    # back out of `duraciones_sesion` → `format_duration`, always.
+
+    def _durations(self) -> dict[str, int]:
+        """`{iso: seconds}` for every timed day. One query, memoised per screen.
+
+        A database that will not answer means "nothing timed" — the summary of
+        a finished session must not turn into an error screen over a number
+        that is decoration on it.
+        """
+        if self._duration_cache is None:
+            found: dict[str, int] = {}
+            with contextlib.suppress(Exception):
+                found = dict(self.store.get_duration_map())
+            self._duration_cache = found
+        return self._duration_cache
+
+    def _forget_durations(self):
+        self._duration_cache = None
+
+    def _logged_days(self) -> tuple[date, ...]:
+        """The days this session actually put rows into, oldest first.
+
+        Read off `completed`, not off the date map: the map says where the next
+        write *would* go, and the summary screen is asking where writes already
+        went. A session that logged nothing has no day to time, which is the
+        honest answer — there was no session.
+        """
+        days: set[date] = set()
+        for one in self.completed:
+            if not isinstance(one, dict):
+                continue
+            with contextlib.suppress(TypeError, ValueError):
+                days.add(date.fromisoformat(str(one.get("date") or "")))
+        return tuple(sorted(days))
+
+    def _session_note_day(self) -> date:
+        """Which day a whole-session note belongs to.
+
+        `notas_sesion` is keyed by date alone, so exactly one day has to be
+        picked — and the session default is the **wrong** pick as soon as the
+        exercises were dated one by one. File Monday's whole workout exercise
+        by exercise, leaving the session default on today, and the note about
+        that workout would land on today: a note about a day with no sets in it,
+        and the day that does have the sets left silent.
+
+        So: the day the session actually wrote to, whenever there is exactly
+        one. A sitting that covered two days falls back to the session default,
+        because the note covers both and no rule picks a winner honestly — and
+        `_session_note_block` prints the day it chose either way.
+        """
+        days = self._logged_days()
+        return days[0] if len(days) == 1 else self.log_date
+
+    def _clock_measures(self, days: tuple[date, ...]) -> bool:
+        """Would the chronometer be an honest reading for a session on `days`?
+
+        The distinction Alex drew himself, and the reason this is not simply
+        "whatever the clock says". Three conditions, all necessary:
+
+        * the clock ran at all, and for long enough to be a session rather than
+          a mis-tap (`MIN_SESSION_SECONDS`);
+        * every row went into **one** day — no arithmetic divides one
+          chronometer between two sessions honestly, so a multi-day sitting
+          proposes nothing to either day;
+        * that day is **today**. Filling Monday in on Wednesday, the clock
+          measured how long the typing took. That is not a datum, it is noise
+          wearing a datum's clothes, and once averaged in with the real ones it
+          never comes back out.
+
+        False is not a failure. It is the ordinary state of a back-dated
+        session, and all it means is that the field opens empty and says why.
+
+        `days` is a parameter because the answer is asked at two moments about
+        two different sets: the Finish dialog asks about the days the session is
+        *about to* write to (`_dates_in_use`), and everything after the flush
+        asks about the days it actually wrote to (`_logged_days`).
+        """
+        if self.session_started_at is None:
+            return False
+        if self._session_elapsed_s() < MIN_SESSION_SECONDS:
+            return False
+        return len(days) == 1 and days[0] == date.today()
+
+    def _duration_is_measured(self) -> bool:
+        """`_clock_measures` against the days this session actually wrote to."""
+        return self._clock_measures(self._logged_days())
+
+    def _store_measured_duration(self):
+        """Write the clock's answer — only when the clock is entitled to one.
+
+        Runs once, from `_finish_session`. Deliberately a write and not a
+        prompt: when `_duration_is_measured()` holds, the number is a real
+        measurement of a real session and the alternative is losing it to a
+        dialog nobody opened. It is not silent — the summary screen prints it
+        immediately, labelled as measured, one tap from being corrected.
+
+        **An existing row is never overwritten.** Two sessions in one day, or a
+        time Alex already typed, are both cases where the row on disk is the
+        better answer; `set_session_duration` upserts, so the guard has to be
+        here.
+        """
+        if not self._duration_is_measured():
+            return
+        day = self._logged_days()[0]
+        with contextlib.suppress(Exception):
+            if self.store.get_session_duration(day) is None:
+                self.store.set_session_duration(self._session_elapsed_s(), day)
+        self._forget_durations()
+
+    def _open_duration_dialog(self, day: date):
+        """Say how long the session on `day` lasted. Blank means "not timed".
+
+        Minutes, not `H:MM:SS`. Nobody knows their session to the second and a
+        field that asks for seconds invites a number invented to fill it;
+        `format_duration` drops them on the way out for the same reason.
+
+        The clock is offered as a shortcut **only when it measured this
+        session** (`_duration_is_measured`). On a back-dated day the button is
+        replaced by the sentence explaining its absence, because a shortcut that
+        pastes the typing time is the single most likely way this field gets a
+        wrong number into the table.
+
+        Nothing is clamped. `storage.clean_duration` refuses anything over
+        `MAX_SESSION_SECONDS` with a message already written in user English, so
+        it is shown as-is: silently trimming 14 h to 8 h would store a number
+        nobody measured wearing the face of one that was.
+        """
+        current = self._durations().get(day.isoformat())
+        field = ft.TextField(
+            label="Minutes",
+            # `max(1, ...)`: a stored duration under 30 s rounds to "0", and a
+            # zero in this box means "not timed" — so opening the dialog on a
+            # short session and saving would silently delete it.
+            value=str(max(1, round(current / 60))) if current else "",
+            hint_text="e.g. 72",
+            keyboard_type=ft.KeyboardType.NUMBER,
+            # Digits, not a value cap: `clean_duration` is what refuses a real
+            # number that is too big, and it does it with a sentence. This only
+            # stops a stuck key turning into a five-digit session.
+            max_length=len(str(MAX_SESSION_MINUTES)),
+            dense=True,
+            color=C.text,
+            border_color=C.border_strong,
+            focused_border_color=C.accent,
+            label_style=ft.TextStyle(color=C.text_secondary),
+        )
+        err = ft.Text("", size=11, color=C.danger)
+        dlg = ft.AlertDialog(modal=False)
+
+        def fill(minutes: int):
+            field.value = str(minutes)
+            err.value = ""
+            self.page.update()
+
+        def save(_):
+            text = (field.value or "").strip()
+            seconds: float | None = None
+            if text:
+                try:
+                    minutes = float(text.replace(",", "."))
+                except ValueError:
+                    err.value = "Minutes, as a number."
+                    self.page.update()
+                    return
+                if minutes < 0:
+                    err.value = "Minutes, as a number."
+                    self.page.update()
+                    return
+                seconds = minutes * 60
+            try:
+                self.store.set_session_duration(seconds, day)
+            except ValueError as exc:
+                # Already a sentence Alex can read — see `clean_duration`.
+                err.value = str(exc)
+                self.page.update()
+                return
+            except Exception:
+                err.value = "Could not save — check the connection."
+                self.page.update()
+                return
+            self._forget_durations()
+            self.page.close(dlg)
+            self.page.data["refresh_current"]()
+
+        rows: list[ft.Control] = [
+            ft.Text(
+                f"How long did {_date_label(day)} last?",
+                size=12,
+                color=C.text_secondary,
+            )
+        ]
+        if self._duration_is_measured() and day == date.today():
+            elapsed = self._session_elapsed_s()
+            rows.append(
+                ghost_button(
+                    f"Use the clock — {format_duration(elapsed)}",
+                    on_click=lambda _: fill(max(1, round(elapsed / 60))),
+                    expand=True,
+                )
+            )
+        elif self.session_started_at is not None:
+            rows.append(
+                ft.Text(
+                    "The clock is not offered here: it ran while you typed this "
+                    "session in, which is not how long you trained.",
+                    size=11,
+                    color=C.warning,
+                )
+            )
+        rows.append(
+            ft.Row(
+                [
+                    ghost_button(str(m), on_click=lambda _, m=m: fill(m), expand=True)
+                    for m in (30, 45, 60, 75, 90)
+                ],
+                spacing=6,
+            )
+        )
+        rows.extend(
+            [
+                field,
+                ft.Text(
+                    "Leave it empty for 'not timed' — that is a real answer, "
+                    f"and the honest one for a session nobody clocked. "
+                    f"Longest accepted: {format_duration(MAX_SESSION_SECONDS)}.",
+                    size=10,
+                    color=C.text_muted,
+                ),
+                err,
+            ]
+        )
+
+        dlg.title = ft.Text("Session time", size=16, weight=ft.FontWeight.W_900, color=C.text)
+        dlg.content = ft.Container(
+            content=ft.Column(rows, spacing=10, tight=True, scroll=ft.ScrollMode.AUTO),
+            width=dialog_width(self.page),
+            height=dialog_height(self.page, 300),
+        )
+        dlg.actions = [
+            ghost_button("Cancel", on_click=lambda _: self.page.close(dlg)),
+            primary_button("Save", on_click=save),
+        ]
+        dlg.actions_alignment = ft.MainAxisAlignment.END
+        dlg.bgcolor = C.bg_surface
+        self.page.open(dlg)
+
     async def _session_tick_loop(self, tick_id: int):
         while tick_id == self._session_tick_id:
             await asyncio.sleep(1)
@@ -1040,6 +2612,8 @@ class WorkoutView:
         # typed, unsaved and unannounced. The rows now live per exercise.
         if self.ex_idx > 0:
             self.ex_idx -= 1
+            self._show_history = False
+            self._show_note = False
             self._persist_draft()
             self.page.data["refresh_current"]()
 
@@ -1048,6 +2622,11 @@ class WorkoutView:
         total = len(day.exercises) if day else 0
         if self.ex_idx + 1 < total:
             self.ex_idx += 1
+            # The history panel is a question about *this* movement. Carrying
+            # it open into the next one costs 150 px of screen to answer a
+            # question nobody asked.
+            self._show_history = False
+            self._show_note = False
             self._persist_draft()
             self.page.data["refresh_current"]()
 
@@ -1058,11 +2637,19 @@ class WorkoutView:
         return None
 
     def _current_exercise_raw(self) -> str:
-        """Full exercise string from data (may include [scheme] and *)."""
-        d = self._current_day()
-        if d and 0 <= self.ex_idx < len(d.exercises):
-            return d.exercises[self.ex_idx]
-        return ""
+        """Full exercise string being trained (may include [scheme] and *).
+
+        With a substitution in force this is the *substitute* carrying the
+        slot's scheme — `substitutions.swap_prescription`'s answer — so the bar,
+        the plate hint, the rest, the equipment classification and the plan all
+        describe the machine Alex is actually standing at, while the sets and
+        reps stay the ones the routine prescribed for the slot.
+        """
+        raw = self._prescribed_raw()
+        if not raw:
+            return ""
+        swap = self._substitution_at(self.ex_idx)
+        return swap_prescription(raw, swap.performed) if swap else raw
 
     def _phase(self):
         for p in active_routine().phases:
@@ -1135,6 +2722,30 @@ class WorkoutView:
         self._sets_by_ex = {}
         self._last_sets_cache = {}
         self._logged_ex = set()
+        self._history_cache = {}
+        self._rec_cache = {}
+        self._plan_cache = {}
+        self._start_cache = {}
+        self._notes_by_ex = {}
+        self._session_note_cache = None
+        # Same argument as the notes above, and it bites harder: the map is
+        # keyed by exercise name, so a day left over from Monday's Push session
+        # would silently claim any exercise Tuesday's Pull session shares with
+        # it — a date nobody chose for it, on a screen that would report it as
+        # if they had. `_ensure_scope` catches the routine being swapped from
+        # outside; this catches the ordinary "start another day".
+        self._dates_by_key = {}
+        self._forget_durations()
+        # A day starting is also the moment a swap made last week stops
+        # applying, so the map is re-read rather than carried over.
+        self._subs_cache = None
+        self._show_history = False
+        self._show_note = False
+        # A new workout is the moment to notice that the rack changed — a bar
+        # or a plate set edited on the Profile screen is picked up here and
+        # nowhere else, because every other read of it happens per keystroke.
+        self._plate_inventory = None
+        self._bar_override = None
         # A countdown left over from the previous session has nothing to do
         # with this one.
         self.timer.stop()
@@ -1213,6 +2824,174 @@ class WorkoutView:
             # sets already done, not the signal that one has just ended.
             self._persist_draft()
             self.page.data["refresh_current"]()
+
+    # ── Notes ─────────────────────────────────────────────────
+    #
+    # Two notes with two different lifetimes, and `storage.py` already draws the
+    # line: an **exercise** note is a column on the `entrenos` row and dies with
+    # it ("the cable broke, moved to the machine"); a **session** note is a row
+    # of its own, one per day, and exists whether or not anything was logged
+    # ("slept badly, everything felt heavy").
+    #
+    # Where each one goes on screen follows from when it is written. Typing on a
+    # phone, standing up, between two sets, is the worst input situation this app
+    # has — so the exercise note is one tap from the rows, opens *in place*, and
+    # never blocks: no dialog, no navigation, no rebuild that would take the
+    # keyboard away mid-word. The session note is not written mid-set at all; it
+    # is written when the session is over, so it lives on the finished screen
+    # where there is room for it and nothing is waiting on it.
+    #
+    # Every string is trimmed by `storage.clean_note`, which is the single
+    # definition of that rule — blank becomes "no note", and 1000 characters is
+    # the cap on both sides of the shared database.
+
+    def _note_for(self, ex_idx: int) -> str:
+        return self._notes_by_ex.get(ex_idx, "")
+
+    def _set_note(self, ex_idx: int, text: str, *, persist: bool = True):
+        """Hold an exercise note, and put it where it can survive a restart.
+
+        Two destinations, decided by whether the exercise is already written:
+
+        * **Not yet logged** — the note is kept here and goes into `entrenos`
+          with the sets. There is no row to attach it to yet, and inventing one
+          would be inventing a workout.
+        * **Already logged** — straight to `set_exercise_note`, because the row
+          exists and `_save_exercise` refuses to write it twice.
+        """
+        cleaned = clean_note(text) or ""
+        if cleaned:
+            self._notes_by_ex[ex_idx] = cleaned
+        else:
+            self._notes_by_ex.pop(ex_idx, None)
+        if ex_idx in self._logged_ex:
+            key = self._performed_key(ex_idx)
+            # False means the row is not there after all; nothing to do about it
+            # from here, and the note stays in memory so it is not lost.
+            with contextlib.suppress(Exception):
+                # The exercise's own day, not the session's: the row this note
+                # belongs to was written under `_date_for(ex_idx)`, so anything
+                # else here would look for a row that is not there and drop the
+                # note without a word.
+                self.store.set_exercise_note(key, cleaned or None, on_date=self._date_for(ex_idx))
+        if persist:
+            self._persist_notes()
+
+    def _persist_notes(self):
+        """Checkpoint the unsaved notes, stamped with the day they belong to.
+
+        Same shape and same reasoning as `_persist_log_date`: the stamp is what
+        makes a forgotten note expire by itself instead of surfacing under
+        tomorrow's session.
+        """
+        keys = self._exercise_keys()
+        payload = {
+            "date": self.log_date.isoformat(),
+            "notes": {
+                keys[idx]: text
+                for idx, text in self._notes_by_ex.items()
+                if 0 <= idx < len(keys) and text
+            },
+        }
+        with contextlib.suppress(Exception):
+            self.store.set_pref(NOTES_PREF, json.dumps(payload) if payload["notes"] else "")
+
+    def _load_notes(self):
+        """Re-read the notes of the session being resumed. Never raises.
+
+        Keyed by exercise name, exactly like the draft's rows and for the same
+        reason: editing the routine must not move a note about the bench onto a
+        squat. Anything unparseable, or stamped with another date, is dropped —
+        this is a convenience, and a wrong note is worse than no note.
+        """
+        self._notes_by_ex = {}
+        raw = None
+        with contextlib.suppress(Exception):
+            raw = self.store.get_pref(NOTES_PREF)
+        if not raw:
+            return
+        payload: dict = {}
+        with contextlib.suppress(ValueError, TypeError):
+            parsed = json.loads(raw)
+            payload = parsed if isinstance(parsed, dict) else {}
+        if payload.get("date") != self.log_date.isoformat():
+            return
+        stored = payload.get("notes")
+        if not isinstance(stored, dict):
+            return
+        keys = self._exercise_keys()
+        for idx, key in enumerate(keys):
+            text = clean_note(stored.get(key))
+            if text:
+                self._notes_by_ex[idx] = text
+
+    def _clear_notes(self):
+        self._notes_by_ex = {}
+        self._session_note_cache = None
+        with contextlib.suppress(Exception):
+            self.store.set_pref(NOTES_PREF, "")
+
+    def _toggle_note(self, _=None):
+        """Unfold the note box **without rebuilding the screen**.
+
+        Same trick as `_toggle_history`, and here it matters more: the control
+        being revealed is a text field, and a rebuild on the way in would mount
+        a second one and hand the keyboard to neither.
+        """
+        self._show_note = not self._show_note
+        if self._note_body is not None:
+            self._note_body.visible = self._show_note
+            with contextlib.suppress(Exception):
+                self._note_body.update()
+
+    def _note_typed(self, value: str):
+        """A keystroke in the note box. Held now, written on blur."""
+        cleaned = clean_note(value) or ""
+        if cleaned:
+            self._notes_by_ex[self.ex_idx] = cleaned
+        else:
+            self._notes_by_ex.pop(self.ex_idx, None)
+        if self._note_chip is not None:
+            self._note_chip.value = self._note_chip_text()
+            with contextlib.suppress(Exception):
+                self._note_chip.update()
+
+    def _note_chip_text(self) -> str:
+        note = self._note_for(self.ex_idx)
+        if not note:
+            return "Note"
+        if len(note) <= NOTE_PREVIEW_CHARS:
+            return note
+        return note[:NOTE_PREVIEW_CHARS].rstrip() + "…"
+
+    def _session_note(self) -> str:
+        """The note on the whole session, read once per screen.
+
+        `None` from the cache means "not read yet"; a database that will not
+        answer reads as empty, which is exactly what an empty box shows.
+        """
+        if self._session_note_cache is None:
+            found = ""
+            with contextlib.suppress(Exception):
+                found = self.store.get_session_note(self._session_note_day()) or ""
+            self._session_note_cache = found
+        return self._session_note_cache
+
+    def _save_session_note(self, value: str):
+        """Write the session note for `_session_note_day()`. Blank clears it.
+
+        Straight to the database with no draft in between: `notas_sesion` needs
+        no workout row, so there is nothing to wait for, and the one screen this
+        is typed on is the screen the session ends on.
+        """
+        cleaned = clean_note(value)
+        stored = cleaned
+        try:
+            stored = self.store.set_session_note(cleaned, self._session_note_day())
+        except Exception:
+            self._toast("Could not save the note.", ft.Icons.ERROR_OUTLINE, C.danger)
+            return
+        self._session_note_cache = stored or ""
 
     # ── Rest ──────────────────────────────────────────────────
     def _rest_seconds(self, finished_set: dict | None = None) -> int:
@@ -1334,22 +3113,35 @@ class WorkoutView:
             pending = any(self._is_suggested(s) and self._has_content(s) for s in rows)
             return "unconfirmed" if pending else "empty"
 
-        key = exercise_key(day.exercises[idx])  # canonical EN name, no brackets/star
+        # `key_to_log`, not `exercise_key`: with a substitution in force the row
+        # has to be written under the exercise that was actually performed. That
+        # is the whole point of the feature — a Leg Press logged as Leg Press
+        # because the Hack Squat was free would poison both histories at once.
+        key = self._performed_key(idx)
+        logged_on = self._date_for(idx)
         sets_parsed = [self._parse_set(s) for s in valid]
         entry = WorkoutEntry(
             # The one line the whole "log yesterday's session" feature comes
-            # down to. `log_date` is today unless Alex said otherwise, and it
-            # can never be a future date — see the "Logging date" block.
+            # down to. `_date_for` — never `self.log_date` — because the day is
+            # now per exercise: it walks exercise → session → today through
+            # `WorkoutDraft.resolve_date`, so it is today unless Alex said
+            # otherwise about *this* exercise or about the session, and it can
+            # never be a future date. See the "Logging date" block.
             #
             # `entry.timestamp` is deliberately left alone: `creado` records
             # when the row was *written*, which for a backdated session is
             # tonight, and that is the truth. Only `fecha` — the day trained —
             # moves, and it is the column every metric reads.
-            date=self.log_date.isoformat(),
+            date=logged_on.isoformat(),
             exercise=key,
             muscle_group=day.name,
             phase=self.phase_id,
             sets=sets_parsed,
+            # The note goes in with the sets rather than through
+            # `set_exercise_note` afterwards: it lives in this row, so writing
+            # it here is one INSERT instead of an INSERT and an UPDATE that
+            # could fail separately and leave the note on the floor.
+            note=self._notes_by_ex.get(idx) or None,
         )
         # Read the history *before* writing: a record is only a record against
         # what came before, and a list that already contains this entry can
@@ -1359,7 +3151,13 @@ class WorkoutView:
             previous = self.store.get_exercise_history(key, limit=_PR_HISTORY_LIMIT)
 
         self.store.save_workout(entry)
-        self.completed.append({"exercise": key, "sets": sets_parsed})
+        # The day travels with the entry. Without it the summary screen — and
+        # `_logged_days`, which decides which days may be given a time — would
+        # have to re-derive it from a date map that the next tap can change,
+        # and a session that wrote to Monday and Tuesday would have no honest
+        # way to say which lift went where. `workout_draft` already reserves an
+        # optional `"date"` on `completed` entries for exactly this.
+        self.completed.append({"exercise": key, "sets": sets_parsed, "date": logged_on.isoformat()})
         self._logged_ex.add(idx)
         # The rows are in the database now, so the copy kept here is only a
         # record of what was sent. Dropping the suggestion flags stops the
@@ -1418,12 +3216,16 @@ class WorkoutView:
                 C.success,
             )
             return
-        if self.is_backdated():
+        resolved = self._resolve_date(self.ex_idx)
+        if resolved.day != date.today():
             # Confirmation, not decoration: a write that went somewhere other
-            # than today says so out loud, once per exercise. Nothing is said on
-            # an ordinary save — a toast for the normal case is noise.
+            # than today says so out loud, once per exercise, and says *why*
+            # that day — "this exercise only" against "the whole session" is
+            # the difference between a deliberate choice and a leftover one.
+            # Nothing is said on an ordinary save; a toast for the normal case
+            # is noise, and noise is what stops warnings being read.
             self._toast(
-                f"Saved to {self._log_date_text()}.",
+                f"Saved to {_date_label(resolved.day)} — {self._scope_text(resolved)}.",
                 ft.Icons.EVENT_BUSY,
                 C.warning,
             )
@@ -1511,25 +3313,47 @@ class WorkoutView:
 
         lines: list[ft.Control] = [
             ft.Text(
-                f"{logged} exercise{'' if logged == 1 else 's'} logged · "
+                f"{plural(logged, 'exercise')} logged · "
                 f"{self._format_elapsed(self._session_elapsed_s())}",
                 size=12,
                 color=C.text_secondary,
             )
         ]
-        if self.is_backdated():
-            # Last checkpoint before the flush below writes everything still
-            # pending. If the date is wrong, this is the final place it is
-            # cheap to notice — afterwards it is rows in `entrenos`, and this
-            # app does not delete history.
+        # Last checkpoint before the flush below writes everything still
+        # pending. If a day is wrong, this is the final place it is cheap to
+        # notice — afterwards it is rows in `entrenos`, and this app does not
+        # delete history. So it names **every** day being written, not just the
+        # session default: a sitting that fills in Monday and Tuesday has two
+        # answers to "where is this going" and printing one of them is worse
+        # than printing neither.
+        days = self._dates_in_use()
+        if days != (date.today(),):
+            names = ", ".join(_date_label(d) for d in days)
             lines.append(
                 ft.Text(
-                    f"Writing to {self._log_date_text()} — not today.",
+                    f"Writing to {names}." if len(days) > 1 else f"Writing to {names} — not today.",
                     size=12,
                     color=C.warning,
                     weight=ft.FontWeight.W_700,
                 )
             )
+        # And what the clock is going to be allowed to claim. Said here rather
+        # than only on the summary because "the timer measured your typing" is
+        # the sort of thing a reader wants to hear *before* trusting a number,
+        # not after.
+        lines.append(
+            ft.Text(
+                (
+                    f"Session time {format_duration(self._session_elapsed_s())} "
+                    "will be saved — you can correct it next."
+                    if self._clock_measures(days)
+                    else "The clock is not saved as your session time — "
+                    "you can type the real one next."
+                ),
+                size=11,
+                color=C.text_secondary,
+            )
+        )
         if unsaved:
             lines.append(ft.Container(height=6))
             lines.append(
@@ -1576,7 +3400,7 @@ class WorkoutView:
             return
         if saved:
             self._toast(
-                f"Saved {saved} more exercise{'' if saved == 1 else 's'}.",
+                f"Saved {plural(saved, 'more exercise')}.",
                 ft.Icons.CHECK_CIRCLE,
                 C.success,
             )
@@ -1585,7 +3409,11 @@ class WorkoutView:
     def _finish_session(self):
         self.finished = True
         self.timer.stop()
+        # Order matters: the clock has to be stopped before it is read, or the
+        # stored duration keeps counting for as long as the summary is on
+        # screen — the exact "it measured the typing" failure, at one remove.
         self._stop_session_timer()
+        self._store_measured_duration()
         # Everything in this session is already in `entrenos`. A draft left
         # behind would resurrect a finished workout on the next visit to the
         # Train tab — and offer to log it a second time.
@@ -1642,13 +3470,21 @@ class WorkoutView:
         self._sets_by_ex = {}
         self._last_sets_cache = {}
         self._logged_ex = set()
+        self._history_cache = {}
+        self._rec_cache = {}
+        self._plan_cache = {}
+        self._start_cache = {}
+        self._subs_cache = None
         self.completed = []
         self.finished = False
         self.timer.stop()
         self._stop_session_timer()
         self.session_started_at = None
         self.session_ended_at = None
-        # See `_reset`: the date is scoped to the session being thrown away.
+        # See `_reset`: every date here — the session's and each exercise's — is
+        # scoped to the session being thrown away.
+        self._dates_by_key = {}
+        self._forget_durations()
         self._reset_log_date(persist=False)
         self._clear_draft()
 
@@ -1738,7 +3574,7 @@ class WorkoutView:
                                             color=C.text,
                                         ),
                                         ft.Text(
-                                            f"{len(d.exercises)} exercises",
+                                            plural(len(d.exercises), "exercise"),
                                             size=11,
                                             color=C.text_secondary,
                                         ),
@@ -1788,6 +3624,29 @@ class WorkoutView:
         """
         off = self.is_backdated()
         tint = C.warning if off else C.text_muted
+        lines: list[ft.Control] = [
+            ft.Text("LOGGING TO", size=9, color=tint, weight=ft.FontWeight.W_900),
+            ft.Text(
+                self._log_date_text(),
+                size=13,
+                color=C.text,
+                weight=ft.FontWeight.W_900,
+            ),
+        ]
+        moved = len(self._dates_by_key)
+        if moved:
+            # The session default alone would be a half-truth on this screen:
+            # the exercises with a day of their own are exactly the ones this
+            # line does not describe, and this is the screen he lands on when he
+            # comes back to the workout.
+            lines.append(
+                ft.Text(
+                    f"{plural(moved, 'exercise')} filed under a day of its own",
+                    size=10,
+                    color=C.warning,
+                    weight=ft.FontWeight.W_700,
+                )
+            )
         return ft.Container(
             content=ft.Row(
                 [
@@ -1796,19 +3655,7 @@ class WorkoutView:
                         size=15,
                         color=tint,
                     ),
-                    ft.Column(
-                        [
-                            ft.Text("LOGGING TO", size=9, color=tint, weight=ft.FontWeight.W_900),
-                            ft.Text(
-                                self._log_date_text(),
-                                size=13,
-                                color=C.text,
-                                weight=ft.FontWeight.W_900,
-                            ),
-                        ],
-                        spacing=0,
-                        expand=True,
-                    ),
+                    ft.Column(lines, spacing=0, expand=True),
                     ft.Text("Change", size=11, color=C.accent, weight=ft.FontWeight.W_700),
                 ],
                 spacing=8,
@@ -1825,62 +3672,101 @@ class WorkoutView:
         )
 
     def _backdate_strip(self) -> ft.Control:
-        """The exercise screen's warning. Nothing at all while the date is today.
+        """The exercise screen's day line. **This is the control the feature
+        lives or dies by**, and it answers for one exercise, not for the session.
 
-        This is the control the feature lives or dies by. Alex's real exposure
-        is not choosing the wrong day, it is a right choice left over from last
-        night quietly filing tonight's session into it — so while the date is
-        not today this is the first thing on the card, full width, in warning
-        ink, above the exercise name, and **zen mode does not remove it**. Zen
-        strips reference material; this is not reference material, it is the
-        difference between a log and a lie.
+        Two states, and the second one is the whole reason this was rewritten:
+
+        * **Nothing dated anywhere** — zero height. The ordinary workout, which
+          is 95 % of them, pays nothing at all for a feature it never uses.
+        * **Anything dated anywhere** — every exercise screen carries this line,
+          *including the exercises that resolve to today*. Alex's real exposure
+          was never "Monday is on screen". It is Monday on exercise 2 with
+          nothing on exercise 3 saying otherwise, so the reader carries Monday
+          forward in their head and files a Wednesday lift into it. A line that
+          only appears when something is wrong teaches the reader that no line
+          means nothing to check; a line that is always there once dates are in
+          play has to be read, and reading it is the mitigation.
+        * **Zen mode does not remove it, in either state.** Zen strips reference
+          material. This is not reference material, it is the difference between
+          a log and a lie.
+
+        The day is never printed bare. `_scope_text` says whether it came from
+        this exercise or from the session, because a reader who has to
+        *attribute* a date is a reader who will attribute it wrong — and when
+        the session touches two days the strip says that too, before the write
+        rather than in History a week later.
         """
-        if not self.is_backdated():
+        if not self._any_date_chosen():
             return ft.Container()
+        resolved = self._resolve_date()
+        off = resolved.day != date.today()
+        # Warning ink is spent only on the day that is not today. An exercise
+        # sitting on today inside a dated session is not an alarm — it is the
+        # fact the reader most needs and least expects — so it gets the same
+        # unmissable line in the app's ordinary accent.
+        tint = C.warning if off else C.accent
+        lines: list[ft.Control] = [
+            ft.Text(
+                "NOT TODAY" if off else "TODAY",
+                size=9,
+                color=tint,
+                weight=ft.FontWeight.W_900,
+            ),
+            ft.Text(
+                f"Saving to {_date_label(resolved.day)} · {self._scope_text(resolved)}",
+                size=13,
+                color=C.text,
+                weight=ft.FontWeight.W_900,
+            ),
+        ]
+        multi = self._multi_day_text()
+        if multi:
+            lines.append(ft.Text(multi, size=10, color=C.text_secondary))
         return ft.Container(
             content=ft.Row(
                 [
-                    ft.Icon(ft.Icons.EVENT_BUSY, size=17, color=C.warning),
-                    ft.Column(
-                        [
-                            ft.Text(
-                                "NOT TODAY", size=9, color=C.warning, weight=ft.FontWeight.W_900
-                            ),
-                            ft.Text(
-                                f"Saving to {self._log_date_text()}",
-                                size=13,
-                                color=C.text,
-                                weight=ft.FontWeight.W_900,
-                            ),
-                        ],
-                        spacing=0,
-                        expand=True,
+                    ft.Icon(
+                        ft.Icons.EVENT_BUSY if off else ft.Icons.EVENT_AVAILABLE,
+                        size=17,
+                        color=tint,
                     ),
-                    ft.Text("Change", size=11, color=C.warning, weight=ft.FontWeight.W_700),
+                    ft.Column(lines, spacing=0, expand=True),
+                    ft.Text("Change", size=11, color=tint, weight=ft.FontWeight.W_700),
                 ],
                 spacing=8,
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
             ),
             bgcolor=C.bg_sunken,
-            border=ft.border.all(1, C.warning),
+            border=ft.border.all(1, tint),
             border_radius=Radius.md,
             padding=ft.padding.symmetric(horizontal=10, vertical=8),
             margin=ft.margin.only(bottom=10),
-            tooltip="These sets go into a past day — tap to change the date",
-            on_click=self._open_date_dialog,
+            tooltip=(
+                "These sets go into a past day — tap to change it"
+                if off
+                else "These sets go into today — tap to file this exercise under another day"
+            ),
+            # Scoped to the exercise on screen, which is what the tap came from
+            # and what the strip is describing. The dialog can still reach the
+            # whole session in one more tap.
+            on_click=lambda _: self._open_date_dialog(ex_idx=self.ex_idx),
             ink=True,
         )
 
     def _log_date_chip(self) -> ft.Control:
         """The small "Today" pill on the exercise card's first line.
 
-        Renders only when the date *is* today and zen mode is off — the two
-        cases where the strip above says nothing. Without it the setting would
-        be unreachable from inside a session without walking back to the day
-        list; with it the whole cost is one muted pill on a line that otherwise
-        holds nothing but "EXERCISE 3".
+        Renders only when **no date has been chosen anywhere in this session**
+        and zen mode is off — the one case where the strip above says nothing.
+        The moment anything is dated the strip takes over on every exercise, and
+        two controls saying "which day" on one card would be one too many.
+
+        Without this pill the setting would be unreachable from inside a session
+        without walking back to the day list; with it the whole cost is one
+        muted pill on a line that otherwise holds nothing but "EXERCISE 3".
         """
-        if self.zen or self.is_backdated():
+        if self.zen or self._any_date_chosen():
             return ft.Container()
         return ft.Container(
             content=ft.Row(
@@ -1894,8 +3780,8 @@ class WorkoutView:
             border=ft.border.all(1, C.border),
             border_radius=Radius.sm,
             padding=ft.padding.symmetric(horizontal=6, vertical=2),
-            tooltip="Logging to today — tap to file this session under another day",
-            on_click=self._open_date_dialog,
+            tooltip="Logging to today — tap to file this exercise under another day",
+            on_click=lambda _: self._open_date_dialog(ex_idx=self.ex_idx),
             ink=True,
         )
 
@@ -1991,9 +3877,13 @@ class WorkoutView:
         completed_blocks = []
         for c in self.completed:
             warm = warmup_sets(c["sets"])
-            count = f"{len(working_sets(c['sets']))} sets"
+            # Both of these read "1 sets" and "2 warm-up" before `plural`
+            # existed. The summary of a finished session is the one screen
+            # every workout ends on, so it is also the one where a broken
+            # plural is seen every single time.
+            count = plural(len(working_sets(c["sets"])), "set")
             if warm:
-                count += f" · {len(warm)} warm-up"
+                count += f" · {plural(len(warm), 'warm-up')}"
             completed_blocks.append(
                 card(
                     ft.Row(
@@ -2019,8 +3909,6 @@ class WorkoutView:
                     margin=ft.margin.only(bottom=6),
                 )
             )
-        duration_txt = self._format_elapsed(self._session_elapsed_s())
-
         # Finish is reachable from the first exercise now, so a session can end
         # with nothing written — a wrong day picked, a warm-up cut short.
         # Confetti over an empty log is a lie, and the count read
@@ -2029,7 +3917,7 @@ class WorkoutView:
         if logged:
             hero = "🎉"
             title = "Session Complete!"
-            subtitle = f"{logged} exercise{'' if logged == 1 else 's'} logged"
+            subtitle = f"{plural(logged, 'exercise')} logged"
             subtitle_color = C.accent
         else:
             hero = "👋"
@@ -2039,13 +3927,16 @@ class WorkoutView:
 
         # Says where it went. Without this the summary would read exactly the
         # same for a session filed under today and one filed under Saturday,
-        # and the only way to find out would be the History tab.
+        # and the only way to find out would be the History tab. Every day is
+        # named, because a sitting that filled in Monday and Tuesday has two
+        # answers and this is the last screen that can give both.
+        written = self._logged_days()
         date_line: ft.Control = (
             ft.Row(
                 [
                     ft.Icon(ft.Icons.EVENT_BUSY, color=C.warning, size=14),
                     ft.Text(
-                        f"Logged to {self._log_date_text()}",
+                        f"Logged to {', '.join(_date_label(d) for d in written)}",
                         size=12,
                         color=C.warning,
                         weight=ft.FontWeight.W_700,
@@ -2055,7 +3946,7 @@ class WorkoutView:
                 spacing=6,
                 tight=True,
             )
-            if self.is_backdated()
+            if written and written != (date.today(),)
             else ft.Container()
         )
 
@@ -2078,22 +3969,13 @@ class WorkoutView:
                     text_align=ft.TextAlign.CENTER,
                 ),
                 ft.Container(height=6),
-                ft.Row(
-                    [
-                        ft.Icon(ft.Icons.TIMER_OUTLINED, color=C.accent, size=14),
-                        ft.Text(
-                            f"Duration: {duration_txt}",
-                            size=12,
-                            color=C.text_secondary,
-                            weight=ft.FontWeight.W_700,
-                        ),
-                    ],
-                    alignment=ft.MainAxisAlignment.CENTER,
-                    spacing=6,
-                    tight=True,
-                ),
                 date_line,
                 ft.Container(height=16),
+                self._duration_block(),
+                # Above the exercise list rather than under it: the session is
+                # over, this is the one thing left to do, and a note buried
+                # below eight cards on a phone is a note nobody writes.
+                self._session_note_block(),
                 *completed_blocks,
                 ft.Container(height=10),
                 primary_button("Back to Home", on_click=self._finish, expand=True),
@@ -2186,6 +4068,796 @@ class WorkoutView:
             ink=enabled,
         )
 
+    def _progression_banner(self) -> ft.Control:
+        """What `progression.py` says to do today, above the rows. Never modal.
+
+        Requirement 2. It is on screen exactly while it is useful — before the
+        first working set of the exercise — and it removes itself the moment
+        one is confirmed, so it costs nothing for the rest of the movement and
+        can never appear halfway through a set.
+
+        The whole card is one big tap target and the tap does one harmless
+        thing: it unfolds the sentence explaining the number, in place. That
+        sentence is `progression`'s `reason`, which quotes the real numbers of
+        the previous session — the argument, not a slogan. A dialog would have
+        been the obvious way to show it and the wrong one: it blocks while the
+        rest timer runs, with the phone on the floor.
+
+        With no history at all `progression` returns `BASELINE` and no weight.
+        Nothing is invented here either: the card says so and opens with the
+        explanation of what to look for, because that is the case where the
+        user has the least to go on.
+        """
+        # Dropped first, on every path: a reference to a control that is not
+        # going to be in this tree is a reference `_toggle_reason` would flip
+        # on something nobody can see.
+        self._reason_text = None
+        if self.ex_idx in self._logged_ex or self._has_confirmed_work():
+            return ft.Container()
+        rec = self._recommendation(self.ex_idx)
+        if rec is None:
+            return ft.Container()
+
+        # Colours resolved here, inside the call: `C` reads the *active*
+        # palette at attribute-access time and a module-level table would
+        # freeze whichever theme was loaded at import.
+        looks = {
+            Action.ADD_WEIGHT: ("Go up", ft.Icons.TRENDING_UP, C.success),
+            Action.REPEAT: ("Same weight", ft.Icons.REPLAY, C.accent),
+            Action.BACK_OFF: ("Back off", ft.Icons.TRENDING_DOWN, C.warning),
+            Action.HOLD_STALE: ("Hold", ft.Icons.PAUSE_CIRCLE_OUTLINE, C.warning),
+            Action.HOLD_DELOAD: ("Deload — hold", ft.Icons.SPA_OUTLINED, C.accent_2),
+            Action.BASELINE: ("First time", ft.Icons.HELP_OUTLINE, C.text_secondary),
+        }
+        verb, icon, tint = looks.get(rec.action, ("Today", ft.Icons.FITNESS_CENTER, C.accent))
+        headline = rec.headline()
+        line = f"{verb} · {headline}" if headline else verb
+
+        # Open by default only when there is no number: then the sentence *is*
+        # the content. Otherwise the number is the content and the argument is
+        # one tap away.
+        reason = ft.Text(
+            rec.reason,
+            size=10,
+            color=C.text_secondary,
+            visible=rec.action is Action.BASELINE,
+        )
+        self._reason_text = reason
+
+        return ft.Container(
+            content=ft.Column(
+                [
+                    ft.Row(
+                        [
+                            ft.Icon(icon, size=16, color=tint),
+                            ft.Text(
+                                line,
+                                size=14,
+                                weight=ft.FontWeight.W_900,
+                                color=tint,
+                                expand=True,
+                            ),
+                            ft.Icon(ft.Icons.INFO_OUTLINE, size=14, color=C.text_muted),
+                        ],
+                        spacing=8,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                    ),
+                    reason,
+                ],
+                spacing=6,
+                tight=True,
+            ),
+            bgcolor=C.bg_sunken,
+            border=ft.border.all(1, tint),
+            border_radius=Radius.md,
+            padding=ft.padding.symmetric(horizontal=10, vertical=8),
+            margin=ft.margin.only(top=8),
+            tooltip="Tap for the reasoning behind this",
+            on_click=self._toggle_reason,
+            ink=True,
+        )
+
+    def _warmup_strip(self) -> ft.Control:
+        """One tap that puts the whole approach ramp on screen as rows.
+
+        Requirement 4. It is a single target the size of a button rather than
+        one chip per warm-up, because four small targets is four chances to
+        press the wrong one with wet hands, and because the ramp is one
+        decision: warm up for this weight, or do not.
+
+        Visible only before the first working set, and only while there is no
+        warm-up row already in the list — so it never turns up mid-exercise,
+        and pressing it twice by accident cannot stack two ramps.
+
+        Rendered in zen mode too, unlike the reference material zen strips out.
+        Zen removes what is worth reading *before* a workout and clutter during
+        one; this is the opposite — an action, taken at the start, that deletes
+        itself afterwards. Hiding it in zen would hide it by default, since zen
+        is on by default.
+        """
+        if self.ex_idx in self._logged_ex or self._has_confirmed_work():
+            return ft.Container()
+        if any(set_type_of(row) is SetType.WARMUP for row in self.sets):
+            return ft.Container()
+        plan = self._warmup_plan()
+        if not plan:
+            return ft.Container()
+
+        preview = " · ".join(f"{_num_text(w.weight)}×{w.reps}" for w in plan)
+        return ft.Container(
+            content=ft.Column(
+                [
+                    ft.Row(
+                        [
+                            ft.Icon(ft.Icons.LOCAL_FIRE_DEPARTMENT, size=15, color=C.warning),
+                            ft.Text(
+                                f"Add {plural(len(plan), 'warm-up set')}",
+                                size=12,
+                                weight=ft.FontWeight.W_900,
+                                color=C.warning,
+                                expand=True,
+                            ),
+                            ft.Icon(ft.Icons.ADD_CIRCLE_OUTLINE, size=15, color=C.warning),
+                        ],
+                        spacing=8,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                    ),
+                    ft.Text(preview, size=10, color=C.text_secondary, weight=ft.FontWeight.W_700),
+                ],
+                spacing=2,
+                tight=True,
+            ),
+            bgcolor=C.bg_sunken,
+            border=ft.border.all(1, C.warning),
+            border_radius=Radius.md,
+            padding=ft.padding.symmetric(horizontal=10, vertical=8),
+            margin=ft.margin.only(bottom=8),
+            tooltip="Every weight here can be loaded with the plates you have",
+            on_click=self._add_warmup_sets,
+            ink=True,
+        )
+
+    def _history_block(self) -> ft.Control:
+        """The last few sessions of *this* exercise, without leaving the screen.
+
+        Requirement 5. Until now the screen showed exactly one previous session
+        and only as grey prefill, so "am I actually moving up?" meant leaving
+        the workout for the History tab — and leaving mid-exercise is the thing
+        this view spends most of its code preventing.
+
+        Folded away by default and unfolded **in place**: `_toggle_history`
+        flips the visibility of two mounted controls and never rebuilds the
+        tree, so a half-typed weight keeps its text, its focus and its caret.
+        That is what "without losing what you wrote" has to mean on a phone.
+        """
+        self._history_body = None
+        self._history_arrow = None
+        entries = self._exercise_history(self.ex_idx)
+        if not entries:
+            return ft.Container()
+        # `get_exercise_history` returns oldest first; the interesting end is
+        # the recent one.
+        recent = list(reversed(entries))[:HISTORY_SESSIONS]
+
+        blocks: list[ft.Control] = []
+        for entry in recent:
+            sets = list(getattr(entry, "sets", None) or [])
+            when = str(getattr(entry, "date", "") or "")
+            label = when
+            with contextlib.suppress(ValueError, TypeError):
+                # Relative to the day *this exercise* is being filed under, not
+                # to the wall clock: on an exercise moved to Monday, "Today" in
+                # its own history panel has to mean Monday or the panel is
+                # reading a different calendar from the strip above it.
+                label = _date_label(date.fromisoformat(when), self._date_for(self.ex_idx))
+            blocks.append(
+                ft.Container(
+                    content=ft.Column(
+                        [
+                            ft.Row(
+                                [
+                                    ft.Text(
+                                        label,
+                                        size=10,
+                                        color=C.text_secondary,
+                                        weight=ft.FontWeight.W_700,
+                                        expand=True,
+                                    ),
+                                    ft.Text(
+                                        plural(len(working_sets(sets)), "set"),
+                                        size=10,
+                                        color=C.text_muted,
+                                    ),
+                                ],
+                                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                            ),
+                            ft.Row(
+                                [self._set_chip(one) for one in sets],
+                                wrap=True,
+                                spacing=6,
+                                run_spacing=4,
+                            ),
+                        ],
+                        spacing=4,
+                        tight=True,
+                    ),
+                    bgcolor=C.bg_page,
+                    border_radius=8,
+                    padding=8,
+                )
+            )
+
+        body = ft.Column(blocks, spacing=6, tight=True, visible=self._show_history)
+        self._history_body = body
+        arrow = ft.Icon(
+            ft.Icons.EXPAND_LESS if self._show_history else ft.Icons.EXPAND_MORE,
+            size=16,
+            color=C.accent,
+        )
+        self._history_arrow = arrow
+        toggle = ft.Container(
+            content=ft.Row(
+                [
+                    ft.Icon(ft.Icons.HISTORY, size=14, color=C.accent),
+                    ft.Text(
+                        f"Last {plural(len(recent), 'session')}",
+                        size=11,
+                        color=C.accent,
+                        weight=ft.FontWeight.W_700,
+                        expand=True,
+                    ),
+                    arrow,
+                ],
+                spacing=6,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
+            padding=ft.padding.symmetric(horizontal=8, vertical=6),
+            border_radius=8,
+            tooltip="Previous sessions of this exercise — nothing you typed is touched",
+            on_click=self._toggle_history,
+            ink=True,
+        )
+        return ft.Column([toggle, body], spacing=4, tight=True)
+
+    # ── Render: what the plan asked for ───────────────────────
+    def _plan_strip(self) -> ft.Control:
+        """One line naming the prescription the rows were opened from.
+
+        Two things earn it its height, and both are things that used to be
+        invisible:
+
+        * **A drop set exists.** Phase 6 is called "Drop Sets + Compound" and
+          its `[4×10,10,8,6+12↓]` used to open four identical rows. The drop row
+          is now there and typed, and this says so before the first set.
+        * **The plan and last session disagree.** `session_plan` follows the
+          plan — the routine is periodized over 24 weeks and copying last
+          session's set count copies the previous phase's prescription — and it
+          reports both numbers precisely so the other one is not lost. "Plan · 5
+          sets · last session 4 sets" is the whole disagreement, on one line.
+
+        Neither of these is noise during a set, so both survive zen mode. The
+        plain "3 sets" case does not: it is reference material, and zen exists to
+        take reference material off the screen.
+        """
+        if self.ex_idx in self._logged_ex:
+            return ft.Container()
+        plan = self._plan(self.ex_idx)
+        if plan is None or not plan.is_known():
+            return ft.Container()
+
+        disagrees = plan.disagrees_with_history()
+        notable = plan.has_drop() or disagrees
+        if self.zen and not notable:
+            return ft.Container()
+
+        text = f"Plan · {plan.label()}"
+        if disagrees:
+            text += f" · last session {plural(plan.history_set_count, 'set')}"
+        tint = C.accent_2 if plan.has_drop() else C.text_secondary
+        return ft.Container(
+            content=ft.Row(
+                [
+                    ft.Icon(ft.Icons.CHECKLIST_RTL, size=13, color=tint),
+                    ft.Text(
+                        text,
+                        size=10,
+                        color=tint,
+                        weight=ft.FontWeight.W_700,
+                        expand=True,
+                        max_lines=2,
+                    ),
+                ],
+                spacing=6,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
+            # `reason` is `session_plan`'s own sentence quoting what it read the
+            # rows off, in the words data.py uses. Kept as a tooltip rather than
+            # a second line: it answers "why these rows", which is a question
+            # asked once and not during a set.
+            tooltip=plan.reason or None,
+            bgcolor=C.bg_sunken,
+            border_radius=8,
+            padding=ft.padding.symmetric(horizontal=8, vertical=5),
+            margin=ft.margin.only(bottom=6),
+        )
+
+    # ── Render: swapping the exercise ─────────────────────────
+    def _substitution_strip(self) -> ft.Control:
+        """The banner that says you are not doing what the plan asked for.
+
+        This is the requirement in one control: three weeks from now the hole in
+        the Leg Press history has to be explainable, and the only moment it can
+        be made obvious is while it is being created. So it is loud, it names
+        both exercises, it names the scope, and it says outright which key the
+        set is going to be written under — because that key is the thing that
+        will still be there in three weeks.
+
+        It survives zen mode for the same reason `_backdate_strip` does: zen
+        removes reference material, not the answer to "what am I actually
+        logging".
+        """
+        swap = self._substitution_at(self.ex_idx)
+        if swap is None:
+            return ft.Container()
+        scope_text = "today only" if swap.scope is Scope.TODAY else "for the rest of this phase"
+        lines: list[ft.Control] = [
+            ft.Row(
+                [
+                    ft.Icon(ft.Icons.SWAP_HORIZ, size=15, color=C.accent_2),
+                    ft.Text(
+                        f"SUBSTITUTE · {swap.performed}",
+                        size=11,
+                        color=C.accent_2,
+                        weight=ft.FontWeight.W_900,
+                        expand=True,
+                        max_lines=2,
+                    ),
+                ],
+                spacing=6,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
+            ft.Text(
+                f"Instead of {swap.prescribed} — {scope_text}. "
+                f"Logged to your history as {swap.key_to_log}.",
+                size=10,
+                color=C.text_secondary,
+                max_lines=3,
+            ),
+        ]
+        # The first session on a substitute has no history to work from, and
+        # `starting_point` is the module's answer to that: the original's number
+        # as context, explicitly not as a target. Once there is confirmed work
+        # on the row it has said everything it had to say.
+        if not self.zen and not self._has_confirmed_work():
+            point = self._starting_point(self.ex_idx)
+            if point is not None and not point.has_history:
+                lines += [
+                    ft.Text(line, size=10, color=C.text_muted, max_lines=3)
+                    for line in point.lines()
+                ]
+        return ft.Container(
+            content=ft.Column(lines, spacing=3, tight=True),
+            bgcolor=C.bg_sunken,
+            border=ft.border.all(1, C.accent_2),
+            border_radius=Radius.md,
+            padding=ft.padding.symmetric(horizontal=10, vertical=8),
+            margin=ft.margin.only(bottom=8),
+            tooltip="Tap to change or clear this swap",
+            on_click=self._open_swap_dialog,
+            ink=True,
+        )
+
+    def _swap_button(self) -> ft.Control:
+        """The way into the swap dialog: one square in the header, always there.
+
+        In the header rather than beside the rows because it is a decision made
+        on arriving at a busy machine — before the first set, not between two of
+        them — and because the row area is already six tap targets wide.
+        """
+        active = self._substitution_at(self.ex_idx) is not None
+        return ft.Container(
+            content=ft.Icon(
+                ft.Icons.SWAP_HORIZ, size=18, color=C.accent_2 if active else C.text_muted
+            ),
+            width=40,
+            height=40,
+            bgcolor=C.bg_sunken,
+            border=ft.border.all(1, C.accent_2 if active else C.border),
+            border_radius=Radius.md,
+            alignment=ft.alignment.center,
+            tooltip=(
+                "Swapped — tap to change or clear" if active else "Machine busy? Swap this exercise"
+            ),
+            on_click=self._open_swap_dialog,
+            ink=True,
+        )
+
+    def _alternative_row(self, option: Alternative, chosen_scope) -> ft.Control:
+        """One offered substitute. The whole card is the tap target.
+
+        `option.reason` is written by `substitutions.py` and is already an
+        English sentence ("Same movement, cable instead of machine."), so it is
+        printed rather than re-worded here — the module that decided *why* two
+        exercises are interchangeable is the one that should say it.
+        """
+        return ft.Container(
+            content=ft.Column(
+                [
+                    ft.Row(
+                        [
+                            ft.Text(
+                                option.key,
+                                size=13,
+                                weight=ft.FontWeight.W_700,
+                                color=C.text,
+                                expand=True,
+                                max_lines=2,
+                            ),
+                            chip(
+                                option.equipment,
+                                color=C.accent if option.is_direct else C.text_secondary,
+                            ),
+                        ],
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                    ),
+                    ft.Text(option.reason, size=10, color=C.text_muted, max_lines=3),
+                ],
+                spacing=3,
+                tight=True,
+            ),
+            bgcolor=C.bg_surface,
+            border=ft.border.all(1, C.accent if option.is_direct else C.border),
+            border_radius=Radius.md,
+            padding=10,
+            margin=ft.margin.only(bottom=6),
+            on_click=lambda _, k=option.key: self._apply_substitution(k, chosen_scope["scope"]),
+            ink=True,
+        )
+
+    def _open_swap_dialog(self, _=None):
+        """Pick the exercise actually being done, and for how long.
+
+        A dialog, unlike everything else on this screen — and the exception is
+        the point rather than an oversight. The rule this view lives by is that
+        nothing may block *a set*; this is chosen on arriving at an occupied
+        machine, with nothing running, and it is a choice between eight named
+        options with a reason each, which is not something a row of chips can
+        carry.
+
+        The list comes from `substitutions.alternatives`, which derives it from
+        movement pattern and equipment rather than from a hand-written table of
+        pairs, and which only ever returns names this app already knows — a key
+        it does not know would land in `entrenos.ejercicio` with no image, no
+        muscles and no meaning for the Telegram coach.
+        """
+        prescribed = self._prescribed_raw()
+        if not prescribed:
+            return
+        current = self._substitution_at(self.ex_idx)
+        options: tuple[Alternative, ...] = ()
+        with contextlib.suppress(Exception):
+            options = alternatives(prescribed)
+
+        # Held in a dict rather than a `nonlocal`: the row handlers below are
+        # built once and read it when tapped, so the scope chosen afterwards is
+        # the one that applies.
+        chosen = {"scope": current.scope if current else Scope.TODAY}
+        scopes = self._swap_scopes()
+        scope_row = ft.Row(spacing=6, wrap=True)
+        dlg = ft.AlertDialog(modal=False)
+
+        def scope_chip(scope: Scope) -> ft.Control:
+            active = chosen["scope"] is scope
+            label = "Today only" if scope is Scope.TODAY else "Rest of this phase"
+            return ft.Container(
+                content=ft.Text(
+                    label,
+                    size=11,
+                    weight=ft.FontWeight.W_700,
+                    color=C.on_accent if active else C.text_secondary,
+                ),
+                bgcolor=C.accent if active else C.bg_sunken,
+                border_radius=Radius.pill,
+                padding=ft.padding.symmetric(horizontal=12, vertical=6),
+                on_click=lambda _, s=scope: pick_scope(s),
+                ink=True,
+            )
+
+        def pick_scope(scope: Scope):
+            chosen["scope"] = scope
+            scope_row.controls = [scope_chip(s) for s in scopes]
+            self.page.update()
+
+        def clear(_):
+            self.page.close(dlg)
+            self._clear_current_substitution()
+
+        scope_row.controls = [scope_chip(s) for s in scopes]
+
+        body: list[ft.Control] = [
+            ft.Text(
+                f"Prescribed: {exercise_key(prescribed)}",
+                size=12,
+                color=C.text_secondary,
+                weight=ft.FontWeight.W_700,
+                max_lines=2,
+            ),
+            ft.Text(
+                "Everything you log here is written under the exercise you "
+                "actually do, so your history stays true to what happened.",
+                size=10,
+                color=C.text_muted,
+                max_lines=3,
+            ),
+            ft.Container(height=2),
+            scope_row,
+            ft.Container(height=4),
+        ]
+        if current is not None:
+            body.append(
+                ft.Text(
+                    f"Currently doing {current.performed}.",
+                    size=11,
+                    color=C.accent_2,
+                    weight=ft.FontWeight.W_700,
+                )
+            )
+        if options:
+            body += [self._alternative_row(o, chosen) for o in options]
+        else:
+            # Said plainly rather than shown as an empty box: a combination, an
+            # exercise the catalogue does not know, and one with no partner at
+            # all are three different reasons for the same empty list, and none
+            # of them is something the user can fix from here.
+            body.append(
+                ft.Text(
+                    "No equivalent exercise for this one. Nothing in the "
+                    "catalogue trains the same pattern with different equipment.",
+                    size=11,
+                    color=C.text_muted,
+                    max_lines=4,
+                )
+            )
+
+        dlg.title = ft.Text("Swap this exercise", size=16, weight=ft.FontWeight.W_900, color=C.text)
+        dlg.content = ft.Container(
+            content=ft.Column(body, spacing=6, tight=True, scroll=ft.ScrollMode.AUTO),
+            width=dialog_width(self.page),
+            height=dialog_height(self.page, 420),
+        )
+        dlg.actions = [
+            ghost_button("Cancel", on_click=lambda _: self.page.close(dlg)),
+            *([ghost_button("Do the prescribed one", on_click=clear)] if current else []),
+        ]
+        dlg.actions_alignment = ft.MainAxisAlignment.END
+        dlg.bgcolor = C.bg_surface
+        self.page.open(dlg)
+
+    # ── Render: the note on this exercise ─────────────────────
+    def _note_block(self) -> ft.Control:
+        """The exercise note: one tap to open, no dialog, no rebuild.
+
+        "Writing on a phone standing up between two sets is uncomfortable" is
+        the whole design brief, and it rules out three things this could have
+        been: a dialog (blocks while the rest timer runs), a separate screen
+        (loses the rows), and an always-open field (a keyboard target sitting
+        under the numbers, one mis-tap from the reps box).
+
+        What is left is a chip that shows the note when there is one and the
+        word "Note" when there is not, and a box that unfolds under it *in
+        place* — `_toggle_note` flips `visible` on a mounted control, so nothing
+        typed anywhere else on the screen is rebuilt, and the caret in a weight
+        field survives opening it.
+
+        The note is stored with the exercise when it is saved; if the exercise
+        is already saved it goes straight into its row. Either way it ends up in
+        `entrenos.nota`, which is where a note about one exercise belongs.
+        """
+        note = self._note_for(self.ex_idx)
+        chip_text = ft.Text(
+            self._note_chip_text(),
+            size=10,
+            color=C.accent if note else C.text_muted,
+            weight=ft.FontWeight.W_700,
+            expand=True,
+            max_lines=1,
+            overflow=ft.TextOverflow.ELLIPSIS,
+        )
+        self._note_chip = chip_text
+
+        field = ft.TextField(
+            value=note,
+            hint_text="How did it feel? What did you change?",
+            multiline=True,
+            min_lines=2,
+            max_lines=4,
+            max_length=NOTE_MAX_LEN,
+            text_size=12,
+            color=C.text,
+            bgcolor=C.bg_page,
+            border_color=C.border_strong,
+            focused_border_color=C.accent,
+            content_padding=ft.padding.symmetric(horizontal=8, vertical=8),
+            on_change=lambda e: self._note_typed(e.control.value),
+            # The cheapest honest checkpoint, same as the number fields: the box
+            # lost focus, so the sentence in it is finished.
+            on_blur=lambda _: self._set_note(self.ex_idx, self._note_for(self.ex_idx)),
+        )
+        body = ft.Container(content=field, visible=self._show_note, margin=ft.margin.only(top=4))
+        self._note_body = body
+
+        toggle = ft.Container(
+            content=ft.Row(
+                [
+                    ft.Icon(
+                        ft.Icons.STICKY_NOTE_2_OUTLINED,
+                        size=14,
+                        color=C.accent if note else C.text_muted,
+                    ),
+                    chip_text,
+                ],
+                spacing=6,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
+            bgcolor=C.bg_sunken,
+            border_radius=8,
+            padding=ft.padding.symmetric(horizontal=8, vertical=6),
+            tooltip="A note on this exercise — kept with the sets you save",
+            on_click=self._toggle_note,
+            ink=True,
+        )
+        return ft.Column([toggle, body], spacing=0, tight=True)
+
+    # ── Render: the note on the whole session ─────────────────
+    def _duration_row(self, day: date, seconds: int | None) -> ft.Control:
+        """One day's session time, as a line you can tap to change.
+
+        `format_duration` decides the text, never this method: "1h 12m",
+        "45m", "<1m", and empty for nothing at all. Empty is why the caller
+        cannot just print it — a row reading "0m" would claim a session that
+        lasted no time, when what is true is that nobody timed it.
+        """
+        text = format_duration(seconds)
+        timed = bool(text)
+        return ft.Container(
+            content=ft.Row(
+                [
+                    ft.Icon(
+                        ft.Icons.TIMER_OUTLINED if timed else ft.Icons.TIMER_OFF_OUTLINED,
+                        size=15,
+                        color=C.accent if timed else C.text_muted,
+                    ),
+                    ft.Text(
+                        _date_label(day),
+                        size=12,
+                        color=C.text_secondary,
+                        weight=ft.FontWeight.W_700,
+                        expand=True,
+                    ),
+                    ft.Text(
+                        text or "Not timed",
+                        size=13,
+                        color=C.text if timed else C.text_muted,
+                        weight=ft.FontWeight.W_900,
+                    ),
+                    ft.Text(
+                        "Change" if timed else "Add",
+                        size=11,
+                        color=C.accent,
+                        weight=ft.FontWeight.W_700,
+                    ),
+                ],
+                spacing=8,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
+            bgcolor=C.bg_sunken,
+            border_radius=Radius.sm,
+            padding=ft.padding.symmetric(horizontal=10, vertical=8),
+            margin=ft.margin.only(top=6),
+            tooltip=f"Set how long the session on {_date_label(day)} lasted",
+            on_click=lambda _, d=day: self._open_duration_dialog(d),
+            ink=True,
+        )
+
+    def _duration_block(self) -> ft.Control:
+        """ "How long did it last?", on the screen the session ends on.
+
+        One row per day this session wrote to — which is one row for an
+        ordinary workout and two for the sitting Alex described, where the
+        chronometer belongs to neither of them. Nothing at all when nothing was
+        logged: there is no session to have lasted anything.
+
+        A **measured** time is already in the table by the time this renders
+        (`_store_measured_duration`), so the ordinary live workout finds its own
+        duration filled in and the caption says where it came from. A back-dated
+        one finds "Not timed" and a caption saying why the clock was not
+        trusted — which is the asking Alex wanted, put somewhere he is standing
+        still rather than in a modal thrown at him mid-Finish.
+        """
+        days = self._logged_days()
+        if not days:
+            return ft.Container()
+        stored = self._durations()
+        if self._duration_is_measured():
+            caption = "Measured by the timer. Tap to correct it."
+        elif self.session_started_at is not None:
+            caption = (
+                "The timer ran while you typed this in, so it was not saved as "
+                "your session time. Tap to set the real one."
+            )
+        else:
+            caption = "Tap a day to say how long it took."
+        return card(
+            ft.Row(
+                [
+                    ft.Icon(ft.Icons.TIMER_OUTLINED, size=16, color=C.accent),
+                    ft.Text(
+                        "Session time",
+                        size=12,
+                        weight=ft.FontWeight.W_900,
+                        color=C.text,
+                        expand=True,
+                    ),
+                ],
+                spacing=6,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
+            ft.Text(caption, size=10, color=C.text_muted),
+            *[self._duration_row(d, stored.get(d.isoformat())) for d in days],
+            padding=12,
+            margin=ft.margin.only(bottom=6),
+        )
+
+    def _session_note_block(self) -> ft.Control:
+        """The session note, on the screen the session ends on.
+
+        Deliberately not on the exercise screen. It is about the day — slept
+        badly, gym packed, back tweaked — and it is written once, at the end,
+        with the phone in hand and nothing waiting. `notas_sesion` needs no
+        workout row, so this works on a session that logged nothing at all,
+        which is exactly the session most worth explaining.
+        """
+        field = ft.TextField(
+            value=self._session_note(),
+            hint_text="How did the session go?",
+            multiline=True,
+            min_lines=2,
+            max_lines=5,
+            max_length=NOTE_MAX_LEN,
+            text_size=12,
+            color=C.text,
+            bgcolor=C.bg_page,
+            border_color=C.border_strong,
+            focused_border_color=C.accent,
+            content_padding=ft.padding.symmetric(horizontal=8, vertical=8),
+            on_blur=lambda e: self._save_session_note(e.control.value),
+        )
+        return card(
+            ft.Row(
+                [
+                    ft.Icon(ft.Icons.EDIT_NOTE, size=16, color=C.accent),
+                    ft.Text(
+                        "Session note",
+                        size=12,
+                        weight=ft.FontWeight.W_900,
+                        color=C.text,
+                        expand=True,
+                    ),
+                ],
+                spacing=6,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
+            ft.Text(
+                f"About the whole day — saved to {_date_label(self._session_note_day())}.",
+                size=10,
+                color=C.text_muted,
+            ),
+            ft.Container(height=6),
+            field,
+            padding=12,
+            margin=ft.margin.only(bottom=6),
+        )
+
     def _set_row(self, i: int, s: dict, last_ref: dict | None) -> ft.Control:
         placeholder_w = _num_text(last_ref.get("weight")) if last_ref else "kg"
         placeholder_r = _num_text(last_ref.get("reps")) if last_ref else "reps"
@@ -2200,6 +4872,22 @@ class WorkoutView:
         def fields() -> list[ft.TextField]:
             return [w_field, r_field, rir_field]
 
+        def refresh_plate_hint(value):
+            """Re-run the plate maths for this row, in place.
+
+            Same rule as the restyle below and for the same reason: this fires
+            on every character of a weight, and a `refresh_current()` here
+            would rebuild the field being typed into. `visible` is flipped
+            rather than the text set to `""` so an empty hint costs no height
+            at all — with five rows on a 420 px screen, five blank lines is a
+            whole set row's worth of nothing.
+            """
+            text = self._plate_hint(value)
+            plate_hint.value = text
+            plate_hint.visible = bool(text)
+            with contextlib.suppress(Exception):
+                plate_hint.update()
+
         def touched(idx: int, field: str, value: str):
             """A keystroke: store it and, the first time, un-suggest the row.
 
@@ -2209,6 +4897,8 @@ class WorkoutView:
             """
             was_suggested = self._is_suggested(s)
             self._update_set(idx, field, value)
+            if field == "weight":
+                refresh_plate_hint(value)
             if not was_suggested:
                 return
             for f in fields():
@@ -2316,7 +5006,7 @@ class WorkoutView:
             on_click=(lambda _, idx=i: self._confirm_set(idx)) if suggested else None,
             ink=suggested,
         )
-        return ft.Row(
+        entry_row = ft.Row(
             [
                 num_badge,
                 type_chip,
@@ -2337,6 +5027,51 @@ class WorkoutView:
             spacing=5,
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
         )
+
+        # ── the line under the row ──
+        #
+        # Two answers, both about *this* row, both non-interactive text: what
+        # goes on the bar for the weight in the field (left, under KG) and what
+        # this set is aiming for (right, towards REPS). Nothing here is
+        # tappable, so nothing here can block, swallow a tap meant for a field,
+        # or open while the rest timer is running.
+        hint_text = self._plate_hint(s.get("weight", ""))
+        plate_hint = ft.Text(
+            hint_text,
+            size=9,
+            color=C.text_secondary,
+            weight=ft.FontWeight.W_700,
+            no_wrap=True,
+            overflow=ft.TextOverflow.ELLIPSIS,
+            visible=bool(hint_text),
+            expand=True,
+        )
+        target_text = self._row_target(i, s)
+        target_hint = ft.Text(
+            target_text,
+            size=9,
+            color=C.text_muted,
+            weight=ft.FontWeight.W_700,
+            no_wrap=True,
+            text_align=ft.TextAlign.RIGHT,
+            visible=bool(target_text),
+        )
+        # The container itself stays mounted even when both halves are hidden —
+        # a Row with no visible child is worth ~2 px, and it is what lets
+        # `refresh_plate_hint` make the hint appear mid-keystroke without a
+        # rebuild. A row on a cable machine with no scheme in its name looks
+        # exactly like it did before this feature existed.
+        sub_line = ft.Container(
+            content=ft.Row(
+                [plate_hint, target_hint],
+                spacing=8,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
+            # 20 (set number) + 30 (type) + two 5 px gaps: lines the hint up
+            # under the KG field it is describing.
+            padding=ft.padding.only(left=60, right=2, bottom=2),
+        )
+        return ft.Column([entry_row, sub_line], spacing=1, tight=True)
 
     def _render_exercise(self) -> ft.Control:
         phase = self._phase()
@@ -2363,6 +5098,38 @@ class WorkoutView:
             # hints inside the empty fields still work.
             last_row: ft.Control = ft.Container()
         elif last_sets:
+            # LAST SESSION'S NOTE. "Seat on hole 4", "left wrist hurts
+            # supinated" — a note is worth writing only because it comes back
+            # the next time he is standing at that machine, and until this line
+            # it never did: it went into `entrenos.nota` and could be read on
+            # History and nowhere else.
+            #
+            # Off `_history()`, which is already in the cache and already
+            # keyed through `_performed_key` (so a swapped slot shows the
+            # substitute's note, not the prescribed exercise's).
+            # `Storage.get_exercise_note()` answers the same question with an
+            # extra round-trip, and this screen runs between sets.
+            note_row: list[ft.Control] = []
+            historial = self._exercise_history(self.ex_idx)
+            ultima_nota = clean_note(getattr(historial[-1], "note", None)) if historial else None
+            if ultima_nota:
+                note_row = [
+                    ft.Row(
+                        [
+                            ft.Icon(ft.Icons.STICKY_NOTE_2_OUTLINED, size=12, color=C.text_muted),
+                            ft.Text(
+                                ultima_nota,
+                                size=11,
+                                color=C.text_secondary,
+                                italic=True,
+                                expand=True,
+                            ),
+                        ],
+                        spacing=6,
+                        vertical_alignment=ft.CrossAxisAlignment.START,
+                    )
+                ]
+
             last_row = ft.Container(
                 content=ft.Column(
                     [
@@ -2375,6 +5142,7 @@ class WorkoutView:
                             spacing=6,
                             run_spacing=4,
                         ),
+                        *note_row,
                     ],
                     spacing=6,
                 ),
@@ -2462,13 +5230,21 @@ class WorkoutView:
         # Said once, above the rows, instead of guessed from a grey field: the
         # muted rows are a proposal until they are claimed, and nothing muted
         # is ever written to the history.
+        #
+        # Two wordings, because after the ramp is added the muted rows are no
+        # longer all from last session — four of them are warm-ups the app just
+        # computed, and calling those "your last session" is a small lie on the
+        # one line whose whole job is explaining what the muted rows are.
+        ramped = any(set_type_of(row) is SetType.WARMUP for row in self.sets)
         prefill_note: ft.Control = (
             ft.Container(
                 content=ft.Row(
                     [
                         ft.Icon(ft.Icons.HISTORY, size=13, color=C.text_secondary),
                         ft.Text(
-                            "From your last session — tap the set number to confirm",
+                            "Tap the set number as you finish each set"
+                            if ramped
+                            else "From your last session — tap the set number to confirm",
                             size=10,
                             color=C.text_secondary,
                             weight=ft.FontWeight.W_700,
@@ -2513,26 +5289,60 @@ class WorkoutView:
         # started below — no frame-swap task either. It is 180 px of the tallest
         # thing on the screen plus a repaint every 700 ms, spent on a photo he
         # stopped needing after set one. Stepping out of zen brings it back.
-        frames = None if zen else image_frames(key)
+        # `image_frames_props`, not `image_frames`: the assets-relative URL the
+        # latter returns resolves to nothing inside the APK, so on the phone
+        # this was 180 px of empty grey box on every single exercise — the
+        # "images don't download" report. They downloaded; nothing could show
+        # them. See the delivery note in exercise_images.py.
+        #
+        # No `cache_width` here, unlike the 44 px thumbnails in browse.py and
+        # plan.py: this is one image at nearly full screen width, so decoding
+        # it small would only make it blurry.
+        # SHOWN IN ZEN TOO. It used to be hidden there, on the reasoning that a
+        # form photo is something you need before a set and not during one. The
+        # reasoning was fine and the outcome was wrong: **zen is on by default**,
+        # so in practice the photos were never visible at all — which is exactly
+        # how Alex reported it ("en modo ZEN no muestra las imagenes").
+        #
+        # Shorter in zen, because there the screen is read standing over a phone
+        # on the floor and the countdown has to keep the height it needs.
+        frames = image_frames_props(key)
+        alto = 120 if zen else 180
         if frames:
-            image = ft.Image(
-                src=frames[0],
-                fit=ft.ImageFit.COVER,
-                width=float("inf"),
-                height=180,
-                border_radius=10,
-                gapless_playback=True,
-            )
-            self._anim_image = image
+            # TWO CONTROLS, NOT ONE WHOSE SOURCE IS SWAPPED. On Android the
+            # frames travel as base64, so re-pointing a single Image every
+            # 700 ms would push ~70 KB of string down the socket per swap —
+            # about 100 KB/s, continuously, for the whole workout. Mounted once
+            # and toggled by `visible`, the bytes cross exactly once.
+            capas = [
+                ft.Image(
+                    **props,
+                    fit=ft.ImageFit.COVER,
+                    width=float("inf"),
+                    height=alto,
+                    border_radius=10,
+                    gapless_playback=True,
+                    visible=(i == 0),
+                    error_content=ft.Icon(ft.Icons.FITNESS_CENTER, color=C.text_muted, size=28),
+                )
+                for i, props in enumerate(frames)
+            ]
+            self._anim_layers = capas
+            self._anim_image = capas[0]
             self._anim_frames = frames
-            self.page.run_task(self._animate_loop, self._anim_tick_id)
+            # A slug with only one usable frame gets both entries pointing at
+            # it; animating that is a repaint that changes nothing.
+            if frames[0] != frames[1]:
+                self.page.run_task(self._animate_loop, self._anim_tick_id)
             image_block: ft.Control = ft.Container(
-                content=image,
+                content=ft.Stack(capas),
                 bgcolor=C.bg_sunken,
+                height=alto,
                 border_radius=10,
                 clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
             )
         else:
+            self._anim_layers = []
             self._anim_image = None
             self._anim_frames = None
             image_block = ft.Container()
@@ -2575,9 +5385,15 @@ class WorkoutView:
 
         exercise_card = card(
             # First thing in the card, before the exercise name, and it survives
-            # zen mode. Empty — literally zero height — whenever the date is
-            # today, which is the 95 % case.
+            # zen mode. Empty — literally zero height — until some day has been
+            # chosen somewhere in this session, which is the 95 % case; from
+            # then on it is on **every** exercise screen, today's included.
             self._backdate_strip(),
+            # Directly above the name, because it changes what the name means:
+            # the title below is the exercise being *done*, and without this
+            # there would be nothing on screen saying it is not the one the plan
+            # asked for. Zero height whenever nothing is swapped.
+            self._substitution_strip(),
             ft.Row(
                 [
                     ft.Text(
@@ -2593,6 +5409,13 @@ class WorkoutView:
             ),
             ft.Text(display, size=24 if zen else 19, weight=ft.FontWeight.W_900, color=C.text),
             next_line,
+            # The two planning surfaces sit here, directly under the name and
+            # above everything else, because both answer "what am I doing on
+            # this exercise today" and both delete themselves as soon as the
+            # first working set is confirmed. Below the rows they would be read
+            # after the decision they exist to inform.
+            self._progression_banner(),
+            self._history_block(),
             ft.Container(height=8),
             image_block,
             ft.Container(height=8) if frames else ft.Container(),
@@ -2601,11 +5424,21 @@ class WorkoutView:
             rest_block,
             ft.Container(height=14),
             logged_note,
+            # Last thing before the rows, because it *writes* rows: the button
+            # is next to the place its result appears.
+            self._warmup_strip(),
+            # What the plan asked for, immediately above the rows it opened.
+            self._plan_strip(),
             prefill_note,
             header_row,
             *set_rows,
             ft.Container(height=6),
             actions_row,
+            ft.Container(height=8),
+            # Last in the card, below the rows: it is written after a set rather
+            # than before one, and putting a keyboard target above the numbers
+            # would be one mis-tap from the reps box.
+            self._note_block(),
             border_color=phase_color(phase.id),
         )
 
@@ -2774,6 +5607,7 @@ class WorkoutView:
                     color=C.text_muted,
                     weight=ft.FontWeight.W_700,
                 ),
+                self._swap_button(),
                 self._zen_toggle(),
             ],
             alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
@@ -2833,18 +5667,23 @@ class WorkoutView:
         )
 
     async def _animate_loop(self, tick_id: int):
-        """Swap between frame 0 and 1 every ~700ms for the active image."""
+        """Cross-fade between the two frames every ~700 ms.
+
+        Toggles `visible` on two mounted controls rather than re-pointing one.
+        Both frames are already on the client, so a swap is two booleans; the
+        old version re-sent the frame itself, which on Android is ~70 KB of
+        base64 per swap — roughly 100 KB/s down the socket, all workout long.
+        """
         showing_second = False
         while tick_id == self._anim_tick_id:
             await asyncio.sleep(0.7)
-            if (
-                tick_id != self._anim_tick_id
-                or self._anim_image is None
-                or self._anim_frames is None
-            ):
+            capas = self._anim_layers
+            if tick_id != self._anim_tick_id or len(capas) < 2:
                 return
             showing_second = not showing_second
-            self._anim_image.src = self._anim_frames[1] if showing_second else self._anim_frames[0]
+            capas[0].visible = not showing_second
+            capas[1].visible = showing_second
+            self._anim_image = capas[1] if showing_second else capas[0]
             try:
                 self.page.update()
             except Exception:

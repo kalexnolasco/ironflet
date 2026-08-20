@@ -66,7 +66,7 @@ class FakeStore:
     def set_pref(self, key: str, value: str) -> None:
         self.prefs[key] = value
 
-    def get_last_sets(self, key: str):
+    def get_last_sets(self, key: str, before=None):
         return None
 
     def get_exercise_history(self, key: str, limit: int = 20):
@@ -648,3 +648,93 @@ def test_the_streak_counts_it_in_the_week_it_belongs_to(pg_view, pg_store):
     this_monday = today - timedelta(days=today.weekday())
     logged = {date.fromisoformat(r.date) for r in pg_store.get_all()}
     assert not [d for d in logged if d >= this_monday]
+
+
+# ── the prefill must not read from the future ────────────────────────────
+
+
+def _vista_con(store):
+    """A view parked on the first exercise, over a store of the test's choosing.
+
+    The `view` fixture builds its own `FakeStore`; these tests need one that
+    records what it was asked for.
+    """
+    from unittest.mock import MagicMock
+
+    p = MagicMock()
+    p.data = {
+        "navigate_to": lambda i, **k: None,
+        "refresh_current": lambda: None,
+        "set_routine": lambda r: None,
+        "store": store,
+    }
+    set_active_routine(DEFAULT_ROUTINE)
+    v = WorkoutView(p, store)
+    v.phase_id = 1
+    v._start_day(0)
+    return v
+
+
+def test_el_prerrelleno_pide_las_series_anteriores_a_la_fecha_registrada():
+    """Back-dating Saturday on Monday must not offer Sunday's numbers.
+
+    `_seed_sets` writes whatever this returns straight into the weight and reps
+    boxes, and one tap turns a prefill into the logged record — so reading the
+    newest row instead of the newest row *before* `log_date` does not look like
+    a bug, it looks like a workout.
+    """
+    from datetime import date, timedelta
+
+    pedidos: list[object] = []
+
+    class StoreQueRegistra(FakeStore):
+        def get_last_sets(self, key: str, before=None):
+            pedidos.append(before)
+            return None
+
+    vista = _vista_con(StoreQueRegistra())
+    vista.log_date = date.today() - timedelta(days=2)
+    vista._last_sets_cache.clear()
+    vista._last_sets(0)
+
+    assert pedidos, "the prefill never asked the store for anything"
+    assert pedidos[0] == vista.log_date, (
+        f"asked for rows before {pedidos[0]!r}, but the session being logged is "
+        f"{vista.log_date!r} — that is how numbers from a later session end up "
+        "prefilled into an earlier one"
+    )
+
+
+def test_una_sesion_de_hoy_pregunta_por_hoy():
+    """The ordinary case still wants "strictly before today": a row already
+    saved for today is *this* session, not the previous one."""
+    from datetime import date
+
+    pedidos: list[object] = []
+
+    class StoreQueRegistra(FakeStore):
+        def get_last_sets(self, key: str, before=None):
+            pedidos.append(before)
+            return None
+
+    vista = _vista_con(StoreQueRegistra())
+    vista._last_sets_cache.clear()
+    vista._last_sets(0)
+    assert pedidos[0] == date.today()
+
+
+def test_un_doble_con_firma_antigua_falla_ruidosamente():
+    """THE TRAP THIS COST. `_last_sets` swallows exceptions on purpose — a
+    database hiccup must degrade to "first time, no history" rather than blank
+    the screen mid-set — and that also swallowed the `TypeError` from a store
+    whose `get_last_sets` had no `before`. The prefill silently emptied and
+    four tests failed somewhere else entirely.
+
+    So: assert the real `Storage` accepts the argument. A fake drifting from it
+    is then caught here instead of by a mystery three files away.
+    """
+    import inspect
+
+    from storage import Storage
+
+    assert "before" in inspect.signature(Storage.get_last_sets).parameters

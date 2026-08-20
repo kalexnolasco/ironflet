@@ -48,7 +48,7 @@ class FakeStore:
             raise RuntimeError("database unreachable")
         self.prefs[key] = value
 
-    def get_last_sets(self, key: str):
+    def get_last_sets(self, key: str, before=None):
         return [{"weight": 60.0, "reps": 10}, {"weight": 60.0, "reps": 8}]
 
 
@@ -209,17 +209,27 @@ def test_zen_off_keeps_the_bar(view):
 # ── what the screen shows ────────────────────────────────────────────────
 
 
-def test_zen_drops_the_reference_material(view):
-    """The form photo and the last-session chips: useful when planning a
-    workout, clutter at rep seven. Last session's numbers are not lost — they
-    are already prefilled into the fields as suggestions."""
+def test_zen_drops_the_last_session_chips(view):
+    """The last-session chips: useful when planning a workout, clutter at rep
+    seven. The numbers are not lost — they are already prefilled into the
+    fields as suggestions, which is where they get used."""
     zen_screen = view.build()
-    assert _images(zen_screen) == []
     assert "LAST SESSION" not in _texts(zen_screen)
 
     view._toggle_zen()
     normal_screen = view.build()
     assert "LAST SESSION" in _texts(normal_screen)
+
+
+def test_zen_keeps_the_form_photo(view):
+    """It used to be dropped here too, on the same reasoning as the chips.
+
+    The reasoning was fine and the outcome was wrong: **zen is on by default**,
+    so hiding the photo there meant it was never visible at all, and that is
+    how Alex reported it — "en modo ZEN no muestra las imagenes". A reference
+    the user says he wants during the set is not clutter.
+    """
+    assert _images(view.build()), "the exercise photo is invisible in the mode he trains in"
 
 
 def test_zen_keeps_every_control_that_does_the_work(view):
@@ -268,18 +278,27 @@ def test_zen_is_only_a_layout(view):
 
 
 def test_next_set_hint_points_at_the_first_unclaimed_row(view):
-    """Two suggested rows seeded from last session: the target is set 1."""
-    assert view._next_set_hint() == "SET 1 OF 2 · 60 kg × 10"
+    """The first unclaimed row, carrying last session's numbers.
+
+    The total is read off the view rather than written in: how many rows an
+    exercise opens with is `session_plan`'s answer now (the phase prescribes
+    `3×12` here, last session logged two sets), and pinning the number in this
+    file would be this test asserting something it is not about.
+    """
+    assert view._next_set_hint() == f"SET 1 OF {len(view.sets)} · 60 kg × 10"
 
 
 def test_next_set_hint_advances_as_sets_are_confirmed(view):
     view._confirm_set(0)
-    assert view._next_set_hint().startswith("SET 2 OF 2")
+    assert view._next_set_hint().startswith(f"SET 2 OF {len(view.sets)}")
 
 
 def test_next_set_hint_stops_guessing_when_the_work_is_done(view):
-    view._confirm_set(0)
-    view._confirm_set(1)
+    for i in range(len(view.sets)):
+        view._confirm_set(i)
+        # The plan can open more rows than last session had numbers for, and an
+        # empty row is not claimable — typing in it is what claims it.
+        view._update_set(i, "reps", "8")
     assert view._next_set_hint() == "ALL SETS IN — SAVE THIS EXERCISE"
 
 
