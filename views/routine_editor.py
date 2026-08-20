@@ -51,6 +51,7 @@ from theme import (
     primary_button,
     section_title,
 )
+from views.shared_ui import dialog_height, dialog_width, plural
 
 
 class RoutineEditorView:
@@ -232,9 +233,12 @@ class RoutineEditorView:
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
             spacing=6,
         )
+        # `plural()` for all three, including the one that used to be a bare
+        # "exercises" between two hand-agreed neighbours — a one-exercise
+        # routine read "1 phase · 1 day · 1 exercises".
         meta = muted_text(
-            f"{len(draft.phases)} phase{'s' if len(draft.phases) != 1 else ''} · "
-            f"{n_days} day{'s' if n_days != 1 else ''} · {n_ex} exercises"
+            f"{plural(len(draft.phases), 'phase')} · "
+            f"{plural(n_days, 'day')} · {plural(n_ex, 'exercise')}"
             + (f" · from {draft.source}" if draft.source else "")
         )
         actions = ft.Row(
@@ -672,8 +676,13 @@ class RoutineEditorView:
                     spacing=Space.x2,
                     tight=False,
                 ),
-                width=340,
-                height=460,
+                # This is the tallest dialog in the app — search box, group
+                # chips and a scrolling result list — so the pinned 340×460 was
+                # the worst place to guess. On a short phone the last results
+                # sat under the Close button; on a desktop window it wasted
+                # half the screen. `dialog_height` clamps against the real page.
+                width=dialog_width(self.page),
+                height=dialog_height(self.page, 460),
             ),
             actions=[
                 ft.TextButton(

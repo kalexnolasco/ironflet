@@ -280,13 +280,59 @@ def test_view_contract(view):
     assert view.build() is not None
 
 
+def _seed_yesterday(fake, food=FOODS[0]):
+    """One entry on the day before today, so "copy yesterday" has a source."""
+    fake.log_food(None, (date.today() - timedelta(days=1)).isoformat(), "lunch", food)
+
+
 def test_empty_day_is_an_invitation_not_an_error(view):
+    _seed_yesterday(view.test_fake)
     tree = view.build()
     blob = joined(tree)
     assert "Nothing logged yet" in blob
     assert "Copy yesterday" in blob
     assert "2,550 kcal" in blob  # the plan is restated, so the day has a shape
     assert not re.search(r"error|failed|none", blob, re.I)
+
+
+def test_empty_state_does_not_offer_a_copy_of_an_empty_yesterday(view):
+    """Day one: yesterday is empty too, so copying it is a tap that does nothing.
+
+    This was the primary action on a fresh install — the biggest button on the
+    screen, wired to a no-op that toasted about itself. Search is the action
+    that always works, so on this day search is the primary one.
+    """
+    blob = joined(view.build())
+    assert "Nothing logged yet" in blob
+    assert "Copy yesterday" not in blob
+    # And it says why, rather than silently dropping the button the reader saw
+    # yesterday.
+    assert "nothing to copy" in blob.lower()
+    assert "Search food" in blob
+
+
+def test_empty_state_names_the_day_it_would_copy_from(view):
+    """Three days back, "yesterday" is not the day it reads from."""
+    fake = view.test_fake
+    view.day = date.today() - timedelta(days=3)
+    fake.log_food(None, (view.day - timedelta(days=1)).isoformat(), "lunch", FOODS[0])
+    blob = joined(view.build())
+    assert "Copy the day before" in blob
+    assert "Copy yesterday" not in blob
+
+
+def test_empty_state_does_not_invent_targets(view, monkeypatch):
+    """No targets row means no plan, not a plan of zeroes.
+
+    Nothing in this app writes `nutrition_targets` — they come from the coach's
+    side of the shared database — so "not set yet" is an ordinary first-run
+    state. It used to render as "Today's plan: 0 kcal · 0P / 0F / 0C", which is
+    a plan nobody wrote.
+    """
+    monkeypatch.setattr(view.test_module, "targets_for", lambda *a, **k: None)
+    blob = joined(view.build())
+    assert "0 kcal ·" not in blob
+    assert "No daily targets are set" in blob
 
 
 def test_all_five_meals_are_always_listed(view):
@@ -353,6 +399,7 @@ def test_removing_an_entry_calls_delete(view):
 
 
 def test_copy_yesterday_from_the_empty_state(view):
+    _seed_yesterday(view.test_fake)
     clickable_with(view.build(), "Copy yesterday").on_click(None)
     assert view.test_fake.copied == [date.today().isoformat()]
 

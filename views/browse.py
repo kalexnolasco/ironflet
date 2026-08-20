@@ -6,10 +6,11 @@ import flet as ft
 
 from data import EXERCISE_CATALOG, MUSCLE_GROUPS
 from exercise_details import details_for
-from exercise_images import image_for
+from exercise_images import image_props
 from storage import Storage
 from theme import C
 from views.exercise_dialog import open_exercise_detail
+from views.shared_ui import plural
 
 
 class BrowseView:
@@ -56,13 +57,33 @@ class BrowseView:
         )
 
     def _exercise_row(self, ex_name: str) -> ft.Control:
-        thumb_src = image_for(ex_name)
+        # `image_props`, not `image_for`: on the phone an assets-relative URL
+        # resolves to nothing and the thumbnail is a silent grey square. See
+        # the delivery note in exercise_images.py.
+        thumb_props = image_props(ex_name)
         has_detail = details_for(ex_name) is not None
 
         thumb: ft.Control
-        if thumb_src:
+        if thumb_props:
             thumb = ft.Container(
-                content=ft.Image(src=thumb_src, fit=ft.ImageFit.COVER, width=44, height=44),
+                content=ft.Image(
+                    **thumb_props,
+                    fit=ft.ImageFit.COVER,
+                    width=44,
+                    height=44,
+                    # DECODE SMALL. The source frames are 850×567 photos, and
+                    # `width`/`height` only scale the drawing — without these
+                    # each 44 px thumbnail still decodes to a full 1.9 MB
+                    # bitmap. This screen lists ~100 exercises, which is about
+                    # 180 MB of bitmaps and an out-of-memory kill on a phone.
+                    # 2× the display size covers a 2x-density screen.
+                    cache_width=88,
+                    cache_height=88,
+                    # A frame that fails to decode falls back to the same icon
+                    # the no-image case uses, instead of an empty square that
+                    # reads as a missing exercise.
+                    error_content=ft.Icon(ft.Icons.FITNESS_CENTER, color=C.text_muted, size=20),
+                ),
                 bgcolor=C.bg_sunken,
                 width=44,
                 height=44,
@@ -88,7 +109,9 @@ class BrowseView:
                 max_lines=2,
                 overflow=ft.TextOverflow.ELLIPSIS,
             ),
-            width=250,
+            # `expand`, not a fixed width: a long name on a narrow phone was
+            # being clipped by a number chosen against a wider screen.
+            expand=True,
             alignment=ft.alignment.center_left,
         )
 
@@ -156,7 +179,7 @@ class BrowseView:
                 ft.Row(chips, spacing=6, wrap=True, run_spacing=6),
                 ft.Container(height=10),
                 ft.Text(
-                    f"{count} exercises",
+                    plural(count, "exercise"),
                     size=11,
                     color=C.text_secondary,
                     weight=ft.FontWeight.W_700,

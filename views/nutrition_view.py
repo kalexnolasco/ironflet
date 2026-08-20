@@ -12,6 +12,13 @@ rest to good faith — so every call into that module goes through the "nutritio
 bridge" section below, optional arguments are offered rather than assumed (see
 `_accepts`), and returned dicts are read with `.get`. One module changes, one
 section here changes with it.
+
+That bridge is also where the database is: every one of those calls hits
+Postgres, and until recently not one of them was wrapped. A server that was down
+— or a phone off the network — did not produce a message, it produced a blank
+Food screen, because the exception came straight out of `build()`. Now every
+bridge call goes through `_read`, which remembers the failure and lets `build()`
+render `shared_ui.db_error_card` instead of nothing.
 """
 
 from __future__ import annotations
@@ -44,6 +51,12 @@ from theme import (
     primary_button,
     section_title,
 )
+from views.shared_ui import db_error_card, dialog_height, dialog_width, plural
+
+#: Ceiling for the search sheet's body, not a size — `dialog_height` cuts it
+#: down to whatever the window has. It is the tallest thing here on purpose:
+#: a result list you have to scroll after every keystroke is the slow path.
+_SEARCH_SHEET_H = 420
 
 # Labels and clock hints come from the plan's five-meal menu (plan_recomposicion
 # §4), so the screen reads like the sheet on the fridge. Unknown keys — should
@@ -182,6 +195,12 @@ class NutritionView:
         self._portions_open: str | None = None
         self._results: ft.Column | None = None
 
+        #: The first failure of this render pass, if any. Set by `_read`,
+        #: cleared at the top of `build()`, and turned into a card at the
+        #: bottom of it. Held rather than raised so a dead database costs the
+        #: message and not the screen.
+        self._error: Exception | None = None
+
     # ── view contract ────────────────────────────────────────
     def on_show(self):
         """Deliberately empty.
@@ -202,10 +221,31 @@ class NutritionView:
         return False
 
     def build(self) -> ft.Control:
+        # Every read below can fail, and each one degrades to an empty dict via
+        # `_read`. That is deliberately not the whole answer: a screen of zeroes
+        # is a lie, so the failure is also remembered and stated at the top.
+        self._error = None
         totals = self._day_totals()
         targets = self._targets()
         entries_by_meal = {m: self._meal_entries(totals, m) for m in MEALS}
         empty = not any(entries_by_meal.values())
+
+        if self._error is not None:
+            # The day header stays: the arrows are the one control that still
+            # works, and losing them would strand the reader on whatever day
+            # the failure happened on.
+            return ft.Column(
+                [
+                    self._day_header(),
+                    ft.Container(height=Space.x3),
+                    db_error_card(self._error, on_retry=self._refresh),
+                ],
+                scroll=ft.ScrollMode.AUTO,
+                horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+                expand=True,
+                spacing=0,
+                tight=True,
+            )
 
         blocks: list[ft.Control] = [
             self._day_header(),
@@ -237,14 +277,44 @@ class NutritionView:
     # convention the rest of the app already uses (`WorkoutEntry.date`,
     # `save_weight(date_iso=...)`).
 
+    def _read(self, call, fallback):
+        """Run one bridge call; on failure remember it and hand back `fallback`.
+
+        `Exception`, not a database-specific class: this bridge also crosses
+        into a module written elsewhere, and `nutrition.py` raising a KeyError
+        should not blank the screen either. `shared_ui.describe_db_error` is
+        what decides whether the message says "database" or "this screen".
+
+        Only the *first* failure is kept. Later ones are almost always the same
+        outage seen through a second query, and the second message would only
+        push the first one — the useful one — off the top of the card.
+        """
+        try:
+            return call()
+        except Exception as exc:
+            if self._error is None:
+                self._error = exc
+            return fallback
+
     def _day_arg(self) -> str:
         return self.day.isoformat()
 
     def _day_totals(self) -> dict:
-        return day_totals(self.store, self._day_arg()) or {}
+        return self._read(lambda: day_totals(self.store, self._day_arg()) or {}, {})
 
     def _targets(self) -> dict:
-        return targets_for(self.store, self._day_arg()) or {}
+        return self._read(lambda: targets_for(self.store, self._day_arg()) or {}, {})
+
+    def _has_targets(self, targets: dict) -> bool:
+        """True when a targets row actually exists for this day.
+
+        `targets_for` returns None until one is written, and `_targets()` turns
+        that into `{}` — so every `.get()` below reads 0 and the screen offers a
+        plan of `0 kcal · 0P / 0F / 0C`. Nothing sets targets in this app; they
+        come from the coach's side of the shared database, so "not set yet" is
+        an ordinary state and has to be said rather than rendered as zeroes.
+        """
+        return any(float(targets.get(k) or 0) > 0 for k in ("kcal", "protein", "fat", "carbs"))
 
     def _meal_entries(self, totals: dict, meal: str) -> list[dict]:
         """The lines shown under a meal.
@@ -265,7 +335,22 @@ class NutritionView:
             from nutrition import day_entries
         except ImportError:
             return []
-        return list(day_entries(self.store, self._day_arg()) or [])
+        return self._read(lambda: list(day_entries(self.store, self._day_arg()) or []), [])
+
+    def _day_has_food(self, day: date) -> bool:
+        """Whether that day holds anything at all. Used by the empty state.
+
+        Read through `day_totals` rather than `day_entries` because that is the
+        one call the contract actually guarantees. A failure counts as "no", and
+        `_read` has already recorded it — the empty state is not the place to
+        report a database outage twice.
+        """
+        totals = self._read(lambda: day_totals(self.store, day.isoformat()) or {}, {})
+        if any(block.get("entries") for block in (totals.get("by_meal") or {}).values()):
+            return True
+        # An entry can legitimately be 0 kcal (black coffee), so calories are
+        # only the fallback for a nutrition.py that reports no entry lists.
+        return float(totals.get("kcal") or 0) > 0
 
     def _favourites(self, meal: str | None = None, limit: int = QUICK_ADD_MAX) -> list[dict]:
         kw = {}
@@ -273,34 +358,58 @@ class NutritionView:
             kw["meal"] = meal
         if _accepts(favourite_foods, "limit"):
             kw["limit"] = limit
-        return list(favourite_foods(self.store, **kw) or [])[:limit]
+        return self._read(lambda: list(favourite_foods(self.store, **kw) or [])[:limit], [])
 
     def _search(self, query: str) -> list[dict]:
         kw = {}
         if _accepts(search_foods, "limit"):
             kw["limit"] = SEARCH_RESULTS_MAX
-        return list(search_foods(self.store, query, **kw) or [])[:SEARCH_RESULTS_MAX]
+        return self._read(
+            lambda: list(search_foods(self.store, query, **kw) or [])[:SEARCH_RESULTS_MAX], []
+        )
 
+    # Writes report through the snackbar rather than through `_error`: a failed
+    # tap is not a broken screen, and replacing the diary with an error card
+    # because one save did not land would throw away the rest of the day.
     def _log(self, meal: str, food: dict, portion: str | None = None, qty: float = 1.0):
         kw = {}
         if portion and _accepts(log_food, "portion"):
             kw["portion"] = portion
         if qty != 1.0 and _accepts(log_food, "qty"):
             kw["qty"] = qty
-        saved = log_food(self.store, self._day_arg(), meal, food, **kw)
         name = (food or {}).get("name") or "Food"
+        try:
+            saved = log_food(self.store, self._day_arg(), meal, food, **kw)
+        except Exception:
+            self._toast(f"Could not save {name} — the database did not answer")
+            return
         self._toast(f"{name} → {meal_label(meal)}", undo_id=_entry_id(saved))
         self._portions_open = None
         self._refresh()
 
     def _delete(self, entry_id):
-        delete_entry(self.store, entry_id)
+        try:
+            delete_entry(self.store, entry_id)
+        except Exception:
+            self._toast("Could not remove that — the database did not answer")
+            return
         self._refresh()
 
     def _copy_yesterday(self, _=None):
-        copied = copy_previous_day(self.store, self._day_arg())
+        source = self._previous_day_label()
+        try:
+            copied = copy_previous_day(self.store, self._day_arg())
+        except Exception:
+            self._toast("Could not copy — the database did not answer")
+            return
         count = copied if isinstance(copied, int) else len(copied or [])
-        self._toast(f"Copied {count} items from yesterday" if count else "Yesterday was empty too")
+        self._toast(
+            # Was "Copied 1 items from yesterday". `plural` exists so this
+            # cannot be retyped wrong again.
+            f"Copied {plural(count, 'item')} from {source}"
+            if count
+            else f"Nothing to copy — {source} is empty too"
+        )
         self._refresh()
 
     # ── plumbing ─────────────────────────────────────────────
@@ -349,7 +458,22 @@ class NutritionView:
 
     def _day_subtitle(self) -> str:
         gap = (date.today() - self.day).days
-        return self._full_date() if gap <= 1 else f"{gap} days ago"
+        # `gap <= 1` took the other branch, so this is always 2 or more and
+        # "1 days ago" cannot happen — `plural` anyway, so a change to that
+        # threshold cannot reintroduce it.
+        return self._full_date() if gap <= 1 else f"{plural(gap, 'day')} ago"
+
+    def _previous_day(self) -> date:
+        return self.day - timedelta(days=1)
+
+    def _previous_day_label(self) -> str:
+        """What the day before the one on screen is called, in a sentence.
+
+        "Copy yesterday" is only true while today is the day on screen. Three
+        days back it copies from four days back, and a button that names a day
+        it is not reading from is worse than one with a vaguer label.
+        """
+        return "yesterday" if self.day == date.today() else "the day before"
 
     def _arrow(self, icon: str, days: int, enabled: bool) -> ft.Control:
         return ft.Container(
@@ -527,12 +651,75 @@ class NutritionView:
 
     # ── empty state ──────────────────────────────────────────
     def _empty_state(self, targets: dict) -> ft.Control:
-        plan = (
-            f"{_n(targets.get('kcal'))} kcal · "
-            f"{_n(targets.get('protein'))}P / {_n(targets.get('fat'))}F / "
-            f"{_n(targets.get('carbs'))}C"
-        )
-        viewing_today = self.day == date.today()
+        """The first thing on an empty day — and the two lies it used to tell.
+
+        It offered "Copy yesterday" as the big primary action on day one, when
+        yesterday is empty too: the one-tap path was a tap that did nothing and
+        toasted about it. And it printed "Today's plan: 0 kcal · 0P / 0F / 0C"
+        whenever no targets row existed, which is a plan nobody wrote.
+
+        So both claims are now checked before they are made. Copying costs one
+        extra `day_totals` — only on an empty day, which is exactly the day
+        where there is no other work to do — and the primary action falls back
+        to search, which always works.
+        """
+        source = self._previous_day_label()
+        can_copy = self._day_has_food(self._previous_day())
+
+        def search_button(factory):
+            """ "Search food", as either the primary or the secondary button."""
+            return factory(
+                "Search food",
+                on_click=lambda _: self._open_search(meal_for_hour(self._now_hour())),
+                expand=True,
+            )
+
+        if self._has_targets(targets):
+            plan = (
+                f"{_n(targets.get('kcal'))} kcal · "
+                f"{_n(targets.get('protein'))}P / {_n(targets.get('fat'))}F / "
+                f"{_n(targets.get('carbs'))}C"
+            )
+            whose = "Today's plan" if self.day == date.today() else "That day's plan"
+            note = ft.Text(
+                f"{whose}: {plan}", size=11, color=C.text_muted, text_align=ft.TextAlign.CENTER
+            )
+        else:
+            note = ft.Text(
+                "No daily targets are set yet, so nothing is being measured against a "
+                "plan — the totals still add up.",
+                size=11,
+                color=C.text_muted,
+                text_align=ft.TextAlign.CENTER,
+            )
+
+        actions: list[ft.Control] = []
+        if can_copy:
+            actions += [
+                primary_button(
+                    f"Copy {source}",
+                    icon=ft.Icons.CONTENT_COPY,
+                    on_click=self._copy_yesterday,
+                    expand=True,
+                ),
+                ft.Container(height=Space.x1),
+                search_button(ghost_button),
+            ]
+        else:
+            # Nothing to copy, so search is the only real action and it gets to
+            # be the primary one. The copy button is not shown disabled: a
+            # greyed control on a first-run screen reads as something broken.
+            actions += [
+                search_button(primary_button),
+                ft.Container(height=Space.x1),
+                ft.Text(
+                    f"Nothing was logged {source} either, so there is nothing to copy.",
+                    size=10,
+                    color=C.text_muted,
+                    text_align=ft.TextAlign.CENTER,
+                ),
+            ]
+
         return card(
             ft.Text("🍽", size=26, text_align=ft.TextAlign.CENTER),
             ft.Text(
@@ -542,27 +729,9 @@ class NutritionView:
                 color=C.text,
                 text_align=ft.TextAlign.CENTER,
             ),
-            ft.Text(
-                f"Today's plan: {plan}",
-                size=11,
-                color=C.text_muted,
-                text_align=ft.TextAlign.CENTER,
-            ),
+            note,
             ft.Container(height=Space.x2),
-            primary_button(
-                "Copy yesterday",
-                icon=ft.Icons.CONTENT_COPY,
-                on_click=self._copy_yesterday,
-                expand=True,
-            )
-            if viewing_today
-            else ghost_button("Copy previous day", on_click=self._copy_yesterday, expand=True),
-            ft.Container(height=Space.x1),
-            ghost_button(
-                "Search food",
-                on_click=lambda _: self._open_search(meal_for_hour(self._now_hour())),
-                expand=True,
-            ),
+            *actions,
             padding=18,
         )
 
@@ -577,8 +746,11 @@ class NutritionView:
                     content=ft.Row(
                         [
                             ft.Icon(ft.Icons.CONTENT_COPY, size=13, color=C.text_secondary),
+                            # Named after the day it really reads from — this
+                            # header is on screen while browsing back through
+                            # the week, where "yesterday" is not the source.
                             ft.Text(
-                                "Copy yesterday",
+                                f"Copy {self._previous_day_label()}",
                                 size=11,
                                 weight=ft.FontWeight.W_700,
                                 color=C.text_secondary,
@@ -631,7 +803,7 @@ class NutritionView:
 
         subtitle = meal_time_hint(meal)
         if entries:
-            subtitle = f"{subtitle} · {len(entries)} item{'s' if len(entries) != 1 else ''}"
+            subtitle = f"{subtitle} · {plural(len(entries), 'item')}"
 
         header = ft.Container(
             content=ft.Row(
@@ -817,8 +989,8 @@ class NutritionView:
                     spacing=0,
                     tight=False,
                 ),
-                width=340,
-                height=420,
+                width=dialog_width(self.page),
+                height=dialog_height(self.page, _SEARCH_SHEET_H),
             ),
             actions=[
                 ft.TextButton(
@@ -859,6 +1031,11 @@ class NutritionView:
         if self._results is None:
             return
         query = self._query.strip()
+        # The sheet is open over the screen, so a failure here cannot be shown
+        # by `build()`. Cleared before the read and inspected after, so the row
+        # below says "the database did not answer" instead of "no match" —
+        # which would send Alex hunting for a food that is in there.
+        self._error = None
         foods = self._search(query) if query else self._favourites(self._search_meal, limit=12)
         header = "Results" if query else "Favourites"
 
@@ -871,7 +1048,15 @@ class NutritionView:
             ),
             ft.Container(height=Space.x1),
         ]
-        if not foods:
+        if self._error is not None:
+            rows.append(
+                ft.Text(
+                    "Could not search — the database did not answer. Try again in a moment.",
+                    size=12,
+                    color=C.danger,
+                )
+            )
+        elif not foods:
             rows.append(
                 ft.Text(
                     f'No match for "{query}"' if query else "No favourites yet",

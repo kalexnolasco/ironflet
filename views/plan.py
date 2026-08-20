@@ -34,7 +34,7 @@ import flet as ft
 from data import ROUTINES, active_routine
 from dates import day_name
 from exercise_details import details_for
-from exercise_images import image_for
+from exercise_images import image_props
 from exercises import exercise_key, phase_color
 from program_week import (
     ProgramWeek,
@@ -59,6 +59,7 @@ from theme import (
     primary_button,
 )
 from views.exercise_dialog import open_exercise_detail
+from views.shared_ui import db_error_screen, dialog_width, plural
 
 # View indices owned by main.py; named so the call sites read as intent.
 VIEW_WORKOUT = 2
@@ -169,12 +170,14 @@ def open_start_date_dialog(
         content=ft.Container(
             content=ft.Column(
                 [
+                    # No width: the explanation is two sentences and a pinned
+                    # 300 px box clipped the second one on a narrow phone. The
+                    # Column is STRETCH so it wraps to the dialog instead.
                     ft.Text(
                         "The day you started week 1 of this routine. It is what "
                         "tells the app which week and which phase you are in.",
                         size=11,
                         color=C.text_secondary,
-                        width=300,
                     ),
                     field,
                     ft.Row(
@@ -192,9 +195,13 @@ def open_start_date_dialog(
                 ],
                 spacing=10,
                 tight=True,
+                horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
             ),
-            width=320,
-            height=210,
+            width=dialog_width(page),
+            # No height at all. The old 210 px was sized around a 300 px-wide
+            # paragraph; now that the paragraph wraps to the window, the number
+            # of lines is not knowable here. Nothing scrolls in this dialog, so
+            # letting it size to its content is both correct and shorter.
         ),
         actions=[
             ft.TextButton(
@@ -218,13 +225,27 @@ class PlanView:
         self.dist_week_idx = 0
         self._expanded_days: set[str] = set()
         self._week: ProgramWeek | None = None
+        #: The exception that stopped this screen loading, if one did. Held
+        #: rather than raised so `build()` can render a message instead of
+        #: nothing — see `on_show`.
+        self._error: Exception | None = None
 
     def on_show(self):
         # `current_program_week` reads the history, so it is answered once per
         # activation and held. Every re-render in main.py goes through
         # `navigate_to`, which calls this first, so the held answer is never
         # older than the screen showing it.
-        self._week = current_program_week(self.store)
+        #
+        # It is also the one database call on this screen, so it is the one that
+        # can fail — and `on_show()` runs *outside* `build()`, where an
+        # exception takes the whole navigation down rather than one view. Caught
+        # here, remembered, and rendered by `build()`.
+        try:
+            self._week = current_program_week(self.store)
+            self._error = None
+        except Exception as exc:  # database down, driver missing, anything
+            self._week = None
+            self._error = exc
 
     def _program_week(self) -> ProgramWeek:
         """The held answer, computed on demand if `on_show()` never ran.
@@ -570,7 +591,7 @@ class PlanView:
         return ft.Column(
             [
                 ft.Text(
-                    f"Nothing logged for {weeks} weeks. The week number keeps counting "
+                    f"Nothing logged for {plural(weeks, 'week')}. The week number keeps counting "
                     "with the calendar, so it is ahead of your training.",
                     size=11,
                     color=C.warning,
@@ -598,8 +619,12 @@ class PlanView:
     def _reload(self):
         # The dialog changed the stored date, so the held week is wrong until
         # `on_show()` runs again. Dropping it makes the refresh recompute even
-        # if a future refresh path stops calling `on_show()`.
+        # if a future refresh path stops calling `on_show()`. The held error
+        # goes with it, for the same reason: this is also the "try again"
+        # button of the database-down card, and a remembered failure would
+        # survive the retry that fixed it.
         self._week = None
+        self._error = None
         self.page.data["refresh_current"]()
 
     def _no_week_card(self, pw: ProgramWeek) -> ft.Control:
@@ -693,7 +718,7 @@ class PlanView:
             ft.Text(week_headline(pw), size=10, weight=ft.FontWeight.W_900, color=C.accent),
             ft.Text("Routine finished", size=18, weight=ft.FontWeight.W_900, color=C.text),
             ft.Text(
-                f"The program runs {pw.total_weeks} weeks and this one is past the end. "
+                f"The program runs {plural(pw.total_weeks, 'week')} and this one is past the end. "
                 "Start it again from this week, or pick another routine below.",
                 size=11,
                 color=C.text_secondary,
@@ -769,13 +794,32 @@ class PlanView:
 
     def _exercise_row(self, ex_raw: str) -> ft.Control:
         key = exercise_key(ex_raw)
-        thumb_src = image_for(key)
+        # `image_props`, not `image_for`: on the phone an assets-relative URL
+        # resolves to nothing and the thumbnail is a silent grey square. See the
+        # delivery note in exercise_images.py, and views/browse.py for the same
+        # call with the same reasoning.
+        thumb_props = image_props(key)
         has_detail = details_for(key) is not None
 
         thumb: ft.Control
-        if thumb_src:
+        if thumb_props:
             thumb = ft.Container(
-                content=ft.Image(src=thumb_src, fit=ft.ImageFit.COVER, width=44, height=44),
+                content=ft.Image(
+                    **thumb_props,
+                    fit=ft.ImageFit.COVER,
+                    width=44,
+                    height=44,
+                    # DECODE SMALL. `width`/`height` only scale the drawing; the
+                    # source is an 850×567 photo, so without these a phase day
+                    # of eight exercises decodes eight full bitmaps. 2× the
+                    # display size covers a 2x-density screen.
+                    cache_width=88,
+                    cache_height=88,
+                    # A frame that will not decode falls back to the same icon
+                    # the no-image case uses, rather than an empty square that
+                    # reads as a missing exercise.
+                    error_content=ft.Icon(ft.Icons.FITNESS_CENTER, color=C.text_muted, size=20),
+                ),
                 bgcolor=C.bg_sunken,
                 width=44,
                 height=44,
@@ -792,6 +836,10 @@ class PlanView:
                 alignment=ft.alignment.center,
             )
 
+        # `expand`, not `width=250`. Routine strings carry their scheme —
+        # "Behind-Neck Lat Pulldown [4×10-12]" — and 250 px was measured on a
+        # 420 px window: on anything narrower the name lost its scheme, and on
+        # anything wider it left a dead strip before the info icon.
         name_widget = ft.Container(
             content=ft.Text(
                 ex_raw,
@@ -801,7 +849,7 @@ class PlanView:
                 max_lines=2,
                 overflow=ft.TextOverflow.ELLIPSIS,
             ),
-            width=250,
+            expand=True,
             alignment=ft.alignment.center_left,
         )
         return ft.Container(
@@ -1058,7 +1106,15 @@ class PlanView:
     def build(self) -> ft.Control:
         # Held, not read: `current_program_week` queries the history, and
         # `build()` runs on every refresh. See `on_show`.
-        pw = self._program_week()
-        if self.selected_phase_idx is None:
-            return self._phase_list(pw)
-        return self._phase_detail(pw)
+        try:
+            if self._error is not None:
+                raise self._error
+            pw = self._program_week()
+            if self.selected_phase_idx is None:
+                return self._phase_list(pw)
+            return self._phase_detail(pw)
+        except Exception as exc:
+            # A screen that renders nothing is indistinguishable from a crash,
+            # and this one is opened in a gym to find out what today's session
+            # is. Say why it is empty and offer the retry.
+            return db_error_screen("Training Plan", exc, on_retry=self._reload)

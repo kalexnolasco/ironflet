@@ -30,13 +30,22 @@ from set_types import (
 )
 from theme import DARK, LIGHT, C, set_palette
 from views.help_dialog import (
+    METRIC_HELP,
+    METRIC_TOPICS,
     RIR_LEAD,
     RIR_SCALE,
+    TOPIC_E1RM,
+    TOPIC_MUSCLE,
+    TOPIC_RECORDS,
     TOPIC_RIR,
     TOPIC_TYPE,
+    TOPIC_VOLUME,
     _badge_color,
+    build_metric_help_dialog,
     build_set_help_dialog,
     help_icon,
+    metric_help_icon,
+    open_metric_help,
     open_set_help,
 )
 
@@ -194,7 +203,9 @@ def test_unknown_topic_falls_back_to_everything(page):
 
 
 def test_dialog_fits_the_phone(page):
-    """420 px screen: the dialog matches the other dialogs at 340 px."""
+    """A stub page cannot report a window, so the box falls back to 340 px —
+    the size every dialog in the app used to be pinned to. On a real window it
+    follows the window; see `tests/test_dialog_layout.py`."""
     container = build_set_help_dialog(page).content
     assert container.width == 340
     assert container.height is not None  # a scrolling Column needs a bounded box
@@ -231,6 +242,104 @@ def test_help_icon_forwards_its_topic(page):
     rendered = " | ".join(texts(opened))
     assert RIR_LEAD in rendered
     assert HELP[SetType.WARMUP].what not in rendered
+
+
+# ── the metrics glossary ────────────────────────────────────────────────
+#
+# Same contract as the set legend: every cryptic thing History and Home print
+# has an entry, the entry says what it is and what makes it easy to misread,
+# and there is a `?` that reaches it.
+
+
+def test_every_metric_topic_has_an_entry():
+    """A new `?` cannot be wired to a topic with nothing behind it."""
+    assert set(METRIC_TOPICS) == set(METRIC_HELP)
+
+
+@pytest.mark.parametrize("topic", list(METRIC_HELP))
+def test_metric_entries_are_real_prose(topic):
+    entry = METRIC_HELP[topic]
+    assert entry.heading.strip()
+    # The lead is the definition; a stub like "1RM." would pass a truthy check.
+    assert len(entry.lead) > 40
+    assert len(entry.detail) > 40
+
+
+def test_the_estimated_1rm_entry_says_it_was_never_lifted():
+    """The one misreading that matters: it is a calculation, not a lift."""
+    entry = METRIC_HELP[TOPIC_E1RM]
+    text = f"{entry.lead} {entry.detail}".lower()
+    assert "not lifted" in text or "have not lifted" in text
+    assert "kilo" in text or " kg" in text  # and it says its unit
+
+
+def test_the_volume_entry_explains_the_k_and_names_the_unit():
+    """`12.3k` on a tile with no unit is exactly what the audit caught."""
+    entry = METRIC_HELP[TOPIC_VOLUME]
+    text = f"{entry.heading} {entry.lead} {entry.detail}".lower()
+    assert "kg" in text or "kilo" in text
+    assert "12.3k" in text and "12,300" in text
+
+
+def test_the_records_entry_spells_out_all_three_trophies():
+    entry = METRIC_HELP[TOPIC_RECORDS]
+    badges = [badge for badge, _meaning in entry.rows]
+    assert badges == ["🏆 1RM", "🏆 kg", "🏆 vol"]
+    for _badge, meaning in entry.rows:
+        assert len(meaning) > 25
+
+
+def test_the_muscle_entry_explains_the_sets_that_count_for_nothing():
+    """The line that used to read "12 sets unmapped in 4w"."""
+    text = METRIC_HELP[TOPIC_MUSCLE].detail.lower()
+    assert "no muscle data" in text
+    assert "unmapped" not in text and "unattributed" not in text
+
+
+def test_metric_dialog_shows_everything_by_default(page):
+    rendered = " | ".join(texts(build_metric_help_dialog(page)))
+    for entry in METRIC_HELP.values():
+        assert entry.lead in rendered
+
+
+@pytest.mark.parametrize("topic", list(METRIC_HELP))
+def test_a_metric_topic_shows_only_itself(page, topic):
+    rendered = " | ".join(texts(build_metric_help_dialog(page, topic)))
+    assert METRIC_HELP[topic].lead in rendered
+    for other, entry in METRIC_HELP.items():
+        if other != topic:
+            assert entry.lead not in rendered
+
+
+def test_an_unknown_metric_topic_shows_everything(page):
+    """Help never renders empty: a bad argument shows more, not less."""
+    rendered = " | ".join(texts(build_metric_help_dialog(page, "typo")))
+    assert METRIC_HELP[TOPIC_E1RM].lead in rendered
+    assert METRIC_HELP[TOPIC_MUSCLE].lead in rendered
+
+
+def test_metric_dialog_is_not_modal(page):
+    """Same rule as the set legend: a stray tap must give the screen back."""
+    assert build_metric_help_dialog(page).modal is False
+
+
+def test_open_metric_help_opens_one_dialog(page):
+    open_metric_help(page, TOPIC_VOLUME)
+    page.open.assert_called_once()
+    assert isinstance(page.open.call_args[0][0], ft.AlertDialog)
+
+
+def test_metric_help_icon_forwards_its_topic(page):
+    metric_help_icon(page, TOPIC_RECORDS).on_click(None)
+    rendered = " | ".join(texts(page.open.call_args[0][0]))
+    assert METRIC_HELP[TOPIC_RECORDS].lead in rendered
+    assert METRIC_HELP[TOPIC_E1RM].lead not in rendered
+
+
+def test_metric_help_icon_is_a_real_tap_target(page):
+    icon = metric_help_icon(page)
+    assert icon.width and icon.width >= 24
+    assert icon.tooltip
 
 
 # ── theme rules ─────────────────────────────────────────────────────────
