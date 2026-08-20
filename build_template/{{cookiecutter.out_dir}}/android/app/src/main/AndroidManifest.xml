@@ -7,6 +7,16 @@
     <uses-feature android:name="{{ k }}" android:required="{% if v == True %}true{% else %}false{% endif %}" />
     <!-- flet: end of feature {% endfor %} -->
 
+    <!-- Local reminders (see the fork note in lib/main.dart). POST_NOTIFICATIONS
+         is the Android 13+ runtime permission the plugin requests at first use;
+         RECEIVE_BOOT_COMPLETED lets the plugin re-schedule after a reboot;
+         SCHEDULE_EXACT_ALARM makes a 17:30 training alert fire at 17:30 rather
+         than "within a quarter of an hour" — main.dart checks whether it was
+         actually granted and falls back to inexact if not. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+
     <!-- {% set manifest_application = cookiecutter.pyproject.get('tool', {}).get('flet', {}).get('android', {}).get('manifest_application', {}) %} -->
     <application
         android:label="{{ cookiecutter.product_name }}"
@@ -56,5 +66,18 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <!-- flutter_local_notifications: delivery + reschedule-on-boot. The boot
+             receiver replays the plugin's own persisted schedule, so reminders
+             survive a restart without the app opening first. -->
+        <receiver android:exported="false"
+            android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver" />
+        <receiver android:exported="false"
+            android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationBootReceiver">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>

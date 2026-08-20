@@ -7,6 +7,7 @@ import contextlib
 import flet as ft
 
 import flet_reconnect
+import notificaciones
 from data import set_active_routine
 from routine_builder import ensure_tables, sync_user_routines
 from storage import THEME_PREF, Storage
@@ -107,6 +108,12 @@ def main(page: ft.Page):
     sync_user_routines(store)
     set_active_routine(store.get_pref("routine", "cambiatufisico") or "cambiatufisico")
     apply_theme(page, palette_for(store.get_pref(THEME_PREF)))
+    # Reprograma las notificaciones del móvil con lo que haya en la base. En
+    # el PC no escribe nada (los avisos ahí los entrega el bot por Telegram) y
+    # nunca puede tumbar el arranque: un fichero que no se pudo escribir cuesta
+    # avisos, no la app.
+    with contextlib.suppress(Exception):
+        notificaciones.sync(store)
 
     current_tab = {"idx": 0}
 
@@ -169,11 +176,11 @@ def main(page: ft.Page):
         bgcolor=C.bg_nav,
         indicator_color=C.accent_soft,
         destinations=[
-            ft.NavigationBarDestination(icon=ft.Icons.HOME_ROUNDED, label="Home"),
+            ft.NavigationBarDestination(icon=ft.Icons.HOME_ROUNDED, label="Inicio"),
             ft.NavigationBarDestination(icon=ft.Icons.CALENDAR_MONTH, label="Plan"),
-            ft.NavigationBarDestination(icon=ft.Icons.FITNESS_CENTER, label="Train"),
-            ft.NavigationBarDestination(icon=ft.Icons.RESTAURANT_ROUNDED, label="Food"),
-            ft.NavigationBarDestination(icon=ft.Icons.BAR_CHART_ROUNDED, label="History"),
+            ft.NavigationBarDestination(icon=ft.Icons.FITNESS_CENTER, label="Entreno"),
+            ft.NavigationBarDestination(icon=ft.Icons.RESTAURANT_ROUNDED, label="Comida"),
+            ft.NavigationBarDestination(icon=ft.Icons.BAR_CHART_ROUNDED, label="Historial"),
         ],
     )
 

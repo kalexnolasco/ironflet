@@ -156,15 +156,24 @@ def test_las_filas_sin_cintura_no_cuentan():
 # ── recordatorios: the gate, and the window ───────────────────────────────
 
 
-def test_en_el_movil_el_panel_se_apaga(store):
-    """SQLite means there is no coach on this device. Off, not empty.
+def test_en_el_movil_los_avisos_son_de_android(store):
+    """SQLite ya no apaga los avisos: los entrega Android, no el bot.
 
-    `create_all()` creates the table on the phone and it stays empty forever, so
-    "is the list empty?" is the wrong question — it renders a blank box that
-    reads as a bug for the life of the install.
+    La puerta vieja (`reminders_available`) devolvía [] en el móvil y la
+    tarjeta ni se pintaba. Desde las notificaciones locales el móvil es un
+    planificador de pleno derecho: la consulta funciona igual sobre SQLite y
+    lo único que cambia es *quién* entrega (`bot_delivers_reminders`).
     """
-    assert store.reminders_available() is False
-    assert store.get_reminders_today() == []
+    assert store.bot_delivers_reminders() is False
+    assert store.get_reminders_today() == []  # sin filas: vacío de verdad, no apagado
+    _recordatorio(
+        store,
+        "esta tarde",
+        datetime(2026, 8, 20, 19, 45, tzinfo=timezone.utc),
+        origen="usuario",
+    )
+    hoy = store.get_reminders_today(now=datetime(2026, 8, 20, 12, 0, tzinfo=timezone.utc))
+    assert [a["text"] for a in hoy] == ["esta tarde"], "la consulta sigue con puerta"
 
 
 def _recordatorio(store, texto, cuando, *, activo=True, cron=None, origen="fijo"):
@@ -182,16 +191,13 @@ def _recordatorio(store, texto, cuando, *, activo=True, cron=None, origen="fijo"
         s.commit()
 
 
-def test_la_ventana_del_dia_y_los_atrasados(store, monkeypatch):
+def test_la_ventana_del_dia_y_los_atrasados(store):
     """Active, before tomorrow 00:00, with NO lower bound — mirroring the bot.
 
     `db.vencidos()` has no lower bound either: an active reminder whose instant
     has passed has *not* been sent and goes out on the next 30-second tick.
     Filtering those away gives a prettier list that hides the backlog.
     """
-    # The gate is about the backend; here the query itself is what is under test.
-    monkeypatch.setattr(Storage, "reminders_available", lambda self: True)
-
     zona = timezone.utc
     ahora = datetime(2026, 8, 20, 12, 0, tzinfo=zona)
     _recordatorio(store, "atrasado de ayer", datetime(2026, 8, 19, 9, 0, tzinfo=zona))
@@ -211,8 +217,7 @@ def test_la_ventana_del_dia_y_los_atrasados(store, monkeypatch):
     assert avisos[1]["overdue"] is False
 
 
-def test_un_recordatorio_trae_lo_que_la_tarjeta_pinta(store, monkeypatch):
-    monkeypatch.setattr(Storage, "reminders_available", lambda self: True)
+def test_un_recordatorio_trae_lo_que_la_tarjeta_pinta(store):
     _recordatorio(
         store,
         "⚖️ **Buenos días**\n\nPésate ahora",
@@ -288,18 +293,18 @@ def test_el_recuadro_de_cintura_no_da_veredicto(store):
 
     recuadro = _home(store)._waist_tile()
     pista = recuadro.tooltip or ""
-    assert "vs the initial measurement" in pista
-    assert "vs the previous one" in pista, "only one reading of an ambiguous rule was shown"
+    assert "respecto a la medición inicial" in pista
+    assert "respecto a la anterior" in pista, "only one reading of an ambiguous rule was shown"
     assert "on track" not in pista.lower() and "good" not in pista.lower()
 
 
-def test_sin_coach_en_el_movil_no_hay_tarjeta_de_avisos(store):
-    assert _home(store)._reminders_card() is None, "a permanently empty box on the phone"
+def test_en_el_movil_tambien_hay_tarjeta_de_avisos(store):
+    """La tarjeta vive en ambos sitios desde que Android entrega en el móvil."""
+    assert _home(store)._reminders_card() is not None
 
 
-def test_con_coach_y_sin_avisos_si_hay_tarjeta(store, monkeypatch):
-    """An empty list on the PC is a fact worth stating: nothing else is due."""
-    monkeypatch.setattr(Storage, "reminders_available", lambda self: True)
+def test_sin_avisos_si_hay_tarjeta(store):
+    """Una lista vacía es un hecho que vale decir: no queda nada pendiente."""
     assert _home(store)._reminders_card() is not None
 
 

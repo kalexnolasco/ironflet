@@ -10,6 +10,11 @@ import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart' as path_provider;
 import 'package:serious_python/serious_python.dart';
 import 'package:url_strategy/url_strategy.dart';
+import 'dart:convert';
+
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:timezone/data/latest_10y.dart' as tzdata;
+import 'package:timezone/timezone.dart' as tz;
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -54,6 +59,81 @@ List<CreateControlFactory> createControlFactories = [
 ];
 
 String outLogFilename = "";
+
+// ── LOCAL REMINDERS ─────────────────────────────────────────────────────────
+// Flet 0.28.3 exposes no notification API to Python, so the bridge is a file:
+// Python writes `notifications.json` into FLET_APP_STORAGE_DATA whenever a
+// reminder changes, and this side re-reads it — at startup and then on a cheap
+// three-second mtime poll — cancelling everything and rescheduling from
+// scratch. The list is a rolling window of ABSOLUTE INSTANTS computed in
+// Python, where the recurrence arithmetic lives and is unit-tested; this side
+// deliberately knows nothing about cron lines or weekdays, so the two halves
+// cannot disagree about when Tuesday is.
+final FlutterLocalNotificationsPlugin _notifPlugin =
+    FlutterLocalNotificationsPlugin();
+String _notifJsonPath = "";
+DateTime? _notifMtime;
+
+Future<void> _syncNotifications() async {
+  if (_notifJsonPath.isEmpty) return;
+  try {
+    final f = File(_notifJsonPath);
+    if (!await f.exists()) {
+      if (_notifMtime != null) {
+        _notifMtime = null;
+        await _notifPlugin.cancelAll();
+      }
+      return;
+    }
+    final mtime = (await f.stat()).modified;
+    if (_notifMtime != null && !mtime.isAfter(_notifMtime!)) return;
+    _notifMtime = mtime;
+
+    final items = jsonDecode(await f.readAsString()) as List<dynamic>;
+    final android = _notifPlugin.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
+    if (items.isNotEmpty) {
+      // Android 13+ runtime permission. Asked only once there is something to
+      // deliver — a user who never creates a reminder never sees the prompt.
+      await android?.requestNotificationsPermission();
+    }
+    // SCHEDULE_EXACT_ALARM may be declared and still not granted (Android 14
+    // no longer pre-grants it). A training alert a quarter-hour late is worse
+    // than an app that asks, but far better than one that crashes: fall back.
+    final exact = await android?.canScheduleExactNotifications() ?? false;
+    await _notifPlugin.cancelAll();
+    const details = NotificationDetails(
+      android: AndroidNotificationDetails(
+        'recordatorios',
+        'Recordatorios',
+        channelDescription: 'Avisos de entreno, pesaje y comidas',
+        importance: Importance.high,
+        priority: Priority.high,
+      ),
+    );
+    final now = DateTime.now().toUtc();
+    for (final raw in items) {
+      final item = raw as Map<String, dynamic>;
+      final when = DateTime.parse(item['when'] as String).toUtc();
+      if (!when.isAfter(now)) continue;
+      await _notifPlugin.zonedSchedule(
+        item['id'] as int,
+        item['title'] as String,
+        (item['body'] as String?) ?? '',
+        // The instant is absolute (ISO with offset), so the timezone used to
+        // wrap it is irrelevant — UTC avoids needing the device's IANA name.
+        tz.TZDateTime.from(when, tz.UTC),
+        details,
+        androidScheduleMode: exact
+            ? AndroidScheduleMode.exactAllowWhileIdle
+            : AndroidScheduleMode.inexactAllowWhileIdle,
+      );
+    }
+  } catch (e) {
+    // Never fatal: a malformed file costs missed reminders, not the app.
+    debugPrint("notification sync failed: $e");
+  }
+}
 
 // global vars
 List<String> _args = [];
@@ -207,6 +287,23 @@ Future prepareApp() async {
         // Never fatal. A device that refuses costs a dark screen; a throw here
         // would cost the whole app before Python has even started.
         debugPrint("WakelockPlus.enable() failed: $e");
+      }
+    }
+
+    // LOCAL REMINDERS — see the note on _syncNotifications above. Android
+    // only: on the desktop the coach's Telegram bot owns delivery, and on web
+    // there is no OS scheduler to hand anything to.
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+      try {
+        _notifJsonPath = path.join(appDataPath, "notifications.json");
+        tzdata.initializeTimeZones();
+        await _notifPlugin.initialize(const InitializationSettings(
+            android: AndroidInitializationSettings('@mipmap/ic_launcher')));
+        await _syncNotifications();
+        Timer.periodic(
+            const Duration(seconds: 3), (_) => _syncNotifications());
+      } catch (e) {
+        debugPrint("notifications setup failed: $e");
       }
     }
 

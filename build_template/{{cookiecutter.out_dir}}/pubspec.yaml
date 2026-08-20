@@ -25,7 +25,16 @@ dependencies:
   # override below), but `dependency_overrides` pins a version without
   # granting the right to import — Dart refuses the import otherwise.
   wakelock_plus: ^1.2.10
-  
+
+  # LOCAL REMINDERS. Same story as wakelock_plus one block up: Flet 0.28.3
+  # exposes no notification API from Python, so the fork owns it. Python writes
+  # notifications.json into the app's data dir whenever reminders change;
+  # main.dart re-reads it and (re)schedules through this plugin. All recurrence
+  # arithmetic stays in Python, where it is tested — this side only ever sees a
+  # flat list of absolute instants.
+  flutter_local_notifications: ^18.0.1
+  timezone: ^0.10.0
+
 dependency_overrides:
   flet: 0.28.3
 

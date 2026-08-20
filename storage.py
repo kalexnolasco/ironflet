@@ -1041,15 +1041,20 @@ class Storage:
             field: float(getattr(fila, self.MEASUREMENTS[field])),
         }
 
-    # ── reminders (read-only; the coach owns them) ──────────
-    def reminders_available(self) -> bool:
-        """Is there anywhere for reminders to come from on this device?
+    # ── reminders ────────────────────────────────────────────
+    def bot_delivers_reminders(self) -> bool:
+        """¿Quién entrega los avisos de esta base — el bot o el móvil?
 
-        `recordatorios` is written by the Telegram coach, which runs on the PC
-        against PostgreSQL. On the phone `create_all()` cheerfully creates the
-        table in SQLite and it stays empty **forever** — so a screen that
-        decides by asking "is the list empty?" renders a permanently blank
-        panel and looks broken. It has to ask about the backend instead.
+        PostgreSQL compartido: el bot de Telegram sondea `vencidos()` cada 30 s
+        y entrega él; esta app no debe tocar `proxima` ahí (dos planificadores
+        sobre una tabla es como un aviso suena dos veces). SQLite en el móvil:
+        no hay bot; los entrega Android vía `notificaciones.py`, y `proxima` la
+        refresca la propia app.
+
+        Esto ERA la puerta que apagaba la tarjeta de avisos en el móvil, cuando
+        el móvil no tenía forma de entregar ninguno. Ya la tiene, así que la
+        tarjeta se enseña en los dos sitios y esta pregunta solo decide quién
+        reparte y qué se puede editar.
         """
         try:
             return not is_sqlite_url(str(self._engine.url))
@@ -1078,9 +1083,6 @@ class Storage:
         a window built in any other zone is an hour wrong on the two changeover
         Sundays, which is exactly when the 06:45 and 21:45 rows sit near it.
         """
-        if not self.reminders_available():
-            return []
-
         zona = _madrid()
         ahora = (now or datetime.now(timezone.utc)).astimezone(zona)
         hoy = ahora.date()
@@ -1121,6 +1123,89 @@ class Storage:
                 }
             )
         return salida
+
+    def get_all_reminders(self) -> list[dict]:
+        """Todas las filas, activas o no, para la pantalla de gestión."""
+        with self._Session() as se:
+            filas = list(se.scalars(select(Recordatorio).order_by(Recordatorio.proxima)))
+        return [
+            {
+                "id": r.id,
+                "texto": r.texto,
+                "proxima": r.proxima,
+                "cron": r.cron,
+                "clave": r.clave,
+                "origen": r.origen,
+                "plantilla": r.plantilla,
+                "activo": bool(r.activo),
+            }
+            for r in filas
+        ]
+
+    def add_reminder(self, texto: str, proxima: datetime, cron: str | None = None) -> int:
+        """Alta de un aviso del usuario. Devuelve el id de la fila.
+
+        Siempre `origen="usuario"` y sin `clave`: las filas `fijo` las siembra
+        el bot con su clave de idempotencia, y una fila fija creada desde aquí
+        colisionaría con esa siembra en el arranque siguiente del bot.
+        """
+        limpio = (texto or "").strip()
+        if not limpio:
+            raise ValueError("El aviso necesita un texto.")
+        if proxima.tzinfo is None:
+            raise ValueError("`proxima` debe llevar zona horaria.")
+        with self._Session() as se:
+            fila = Recordatorio(
+                texto=limpio[:500],
+                proxima=proxima,
+                cron=cron,
+                origen="usuario",
+                activo=True,
+                creado=datetime.now(timezone.utc),
+            )
+            se.add(fila)
+            se.commit()
+            return fila.id
+
+    def delete_reminder(self, rid: int) -> bool:
+        """Borra un aviso **del usuario**. Los `fijo` no se tocan desde la app.
+
+        Son la siembra del bot (pesaje, entreno, sueño, check-in): borrarlos
+        aquí en el PC solo haría que el bot los re-sembrara en su siguiente
+        arranque, con otro id — un borrado que parece funcionar y no funciona.
+        Se devuelve False en vez de lanzar: la fila puede haber desaparecido
+        entre el render y el toque.
+        """
+        with self._Session() as se:
+            fila = se.get(Recordatorio, int(rid))
+            if fila is None or fila.origen == "fijo":
+                return False
+            se.delete(fila)
+            se.commit()
+            return True
+
+    def set_reminder_active(self, rid: int, activo: bool) -> bool:
+        """Pausa o reactiva un aviso del usuario (los `fijo` son del bot)."""
+        with self._Session() as se:
+            fila = se.get(Recordatorio, int(rid))
+            if fila is None or fila.origen == "fijo":
+                return False
+            fila.activo = bool(activo)
+            se.commit()
+            return True
+
+    def touch_reminder(self, rid: int, proxima: datetime) -> None:
+        """Refresca `proxima` tras materializar ocurrencias — **solo en SQLite**.
+
+        Lo llama `notificaciones.sync()`, que ya ha comprobado el backend: en el
+        PostgreSQL compartido `proxima` la avanza el bot al disparar, y un
+        segundo escritor es como un aviso acaba sonando dos veces.
+        """
+        with self._Session() as se:
+            fila = se.get(Recordatorio, int(rid))
+            if fila is not None:
+                fila.proxima = proxima
+                se.commit()
 
     # ── notes ───────────────────────────────────────────────
     def get_session_note(self, on_date: str | date | None = None) -> str | None:

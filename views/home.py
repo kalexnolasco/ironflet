@@ -9,7 +9,7 @@ the same reason `bar_flex` is imported from the food screen: two versions of the
 control that decides which week Alex is in would drift, and this one decides
 which gym session he does.
 
-That card says "I do not know" out loud when nothing records when the routine
+That card says "no lo sé" out loud when nothing records when the routine
 started, which is the state of a fresh install. It is not softened into a guess:
 a confident wrong session is a wasted training day, an admitted unknown is one
 tap from being fixed. `current_program_week()` runs a query, so it is taken in
@@ -20,7 +20,7 @@ the exercise catalogue (Browse) and — by tapping the nutrition card — the fo
 diary. A screen nobody can navigate to may as well not have been written.
 
 The numbers here are deliberately literal. The streak counts *weeks*, not days,
-and "Sessions" counts *days trained*, not table rows; both labels used to claim
+and "Sesiones" counts *days trained*, not table rows; both labels used to claim
 something the value did not mean. See `analytics.training_streak` for why the
 weekly definition is the honest one, and `storage.weekly_session_minimum` for
 where the weekly bar comes from — routines here train 3 to 6 days a week, so
@@ -29,7 +29,7 @@ the bar is read off the active routine rather than fixed.
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, time, timezone
 
 import flet as ft
 
@@ -58,7 +58,7 @@ from theme import (
     section_title,
 )
 from views.plan import next_session, open_start_date_dialog, start_caveat, week_headline
-from views.shared_ui import db_error_screen, plural
+from views.shared_ui import db_error_screen, dialog_height, dialog_width, plural
 
 # main.py owns the routing table; naming the indices here keeps the calls
 # readable and makes it obvious what breaks if that table is reordered.
@@ -73,7 +73,7 @@ VIEW_COACH = 9
 
 # Trailing window behind get_week_stats(); shown so the three numbers below it
 # are not read as "all time".
-STATS_WINDOW_LABEL = "Last 7 days"
+STATS_WINDOW_LABEL = "Últimos 7 días"
 
 
 def today_display() -> str:
@@ -247,27 +247,27 @@ class HomeView:
             dias = (date.today() - date.fromisoformat(ultimo["date"])).days
             valor, tono = f"{ultimo['kg']:g} kg", C.warning
             return self._day_tile(
-                "WEIGHT",
+                "PESO",
                 valor,
-                f"{plural(dias, 'day')} ago · not today",
+                f"hace {plural(dias, 'día')} · hoy no",
                 tone=tono,
                 on_click=lambda _: nav(VIEW_PROFILE),
             )
         else:
             return self._day_tile(
-                "WEIGHT",
+                "PESO",
                 "—",
-                "never logged · tap to add",
+                "sin registrar · toca para añadir",
                 on_click=lambda _: nav(VIEW_PROFILE),
             )
 
         if ritmo is not None:
-            pie = f"avg {media:.1f} · {ritmo:+.2f} kg/wk"
+            pie = f"media {media:.1f} · {ritmo:+.2f} kg/sem"
         elif media is not None:
-            pie = f"avg {media:.1f} · rate needs {MIN_TREND_DAYS}d"
+            pie = f"media {media:.1f} · ritmo a los {MIN_TREND_DAYS} d"
         else:
-            pie = "weighed in today"
-        return self._day_tile("WEIGHT", valor, pie, tone=tono, on_click=lambda _: nav(VIEW_PROFILE))
+            pie = "pesado hoy"
+        return self._day_tile("PESO", valor, pie, tone=tono, on_click=lambda _: nav(VIEW_PROFILE))
 
     def _waist_tile(self) -> ft.Control:
         """Waist, its age, and how far it has drifted — with no verdict.
@@ -289,31 +289,31 @@ class HomeView:
 
         if not resumen.known:
             return self._day_tile(
-                "WAIST",
+                "CINTURA",
                 "—",
-                "no baseline · tap to add",
+                "sin base · toca para añadir",
                 tone=C.warning,
                 on_click=lambda _: nav(VIEW_PROFILE),
             )
 
         if resumen.vs_baseline is None:
-            pie = f"baseline · {plural(resumen.days_ago or 0, 'day')} ago"
-            consejo = "One measurement is the baseline, not a change."
+            pie = f"base · hace {plural(resumen.days_ago or 0, 'día')}"
+            consejo = "Una sola medición es la base, no un cambio."
         else:
-            pie = f"{resumen.vs_baseline:+.1f} cm vs start · {plural(resumen.days_ago or 0, 'day')} ago"
+            pie = f"{resumen.vs_baseline:+.1f} cm desde el inicio · hace {plural(resumen.days_ago or 0, 'día')}"
             consejo = (
-                f"{resumen.vs_baseline:+.1f} cm since {resumen.baseline_on} "
-                f"(vs the initial measurement)\n"
-                f"{resumen.vs_previous:+.1f} cm since {resumen.previous_on} "
-                f"(vs the previous one)\n"
-                f"The plan cuts 150 kcal at +1.0 cm, and states the window both ways — "
-                f"so both are here. Tape noise is about ±0.5 cm.\n"
-                f"Measured every {MEASUREMENT_EVERY_DAYS} days."
+                f"{resumen.vs_baseline:+.1f} cm desde {resumen.baseline_on} "
+                f"(respecto a la medición inicial)\n"
+                f"{resumen.vs_previous:+.1f} cm desde {resumen.previous_on} "
+                f"(respecto a la anterior)\n"
+                f"El plan recorta 150 kcal a +1,0 cm, y enuncia la ventana de dos formas — "
+                f"así que aquí están las dos. El ruido de la cinta ronda ±0,5 cm.\n"
+                f"Se mide cada {MEASUREMENT_EVERY_DAYS} días."
             )
         if resumen.due:
-            pie += " · due"
+            pie += " · toca medir"
         return self._day_tile(
-            "WAIST",
+            "CINTURA",
             f"{resumen.latest:g} cm",
             pie,
             tone=C.warning if resumen.due else None,
@@ -321,49 +321,50 @@ class HomeView:
             tooltip=consejo,
         )
 
-    def _reminders_card(self) -> ft.Control | None:
-        """What the coach is still going to send today. `None` when it cannot know.
+    def _reminders_card(self) -> ft.Control:
+        """Los avisos de hoy, y la puerta de entrada a gestionarlos.
 
-        Returns `None` rather than an empty card on the phone. `recordatorios`
-        is written by the Telegram coach against PostgreSQL; on Android
-        `create_all()` makes the table and it stays empty for the life of the
-        install, so a panel that decides by counting rows would be a permanently
-        blank box that reads as broken. `reminders_available()` asks about the
-        backend instead.
+        Ya no devuelve `None` en el móvil: desde que la plantilla forkeada
+        programa notificaciones (`notificaciones.py` + `main.dart`), el móvil
+        entrega sus propios avisos y la tarjeta vacía es accionable — "añade el
+        primero" — en vez de una caja en blanco que parece rota.
 
-        An empty list on the PC is a different fact and does get a card: it
-        means nothing else is due today, which is worth saying.
+        Sigue habiendo dos repartidores y la tarjeta lo dice: en el PC entrega
+        el bot por Telegram; en el móvil, Android. La lista es "lo que queda por
+        sonar HOY" — un diario ya disparado apunta a mañana y es correcto que no
+        esté; el diálogo de gestión enseña todos.
         """
         try:
-            if not self.store.reminders_available():
-                return None
             avisos = self.store.get_reminders_today()
+            todos = self.store.get_all_reminders()
         except Exception:
-            return None
+            avisos, todos = [], []
 
+        filas: list[ft.Control] = []
         if not avisos:
-            return card(
+            vacio = (
+                "Nada más pendiente hoy"
+                if any(a["activo"] for a in todos)
+                else "Sin avisos aún — añade el primero"
+            )
+            filas.append(
                 ft.Row(
                     [
                         ft.Icon(ft.Icons.NOTIFICATIONS_NONE_ROUNDED, size=16, color=C.text_muted),
-                        ft.Text("Nothing else due today", size=12, color=C.text_secondary),
+                        ft.Text(vacio, size=12, color=C.text_secondary, expand=True),
                     ],
                     spacing=8,
-                ),
-                padding=12,
+                )
             )
-
-        filas: list[ft.Control] = []
         for a in avisos:
-            # The first line only. A template reminder's `texto` is a title the
-            # coach re-renders at send time, and the fixed ones are several
-            # paragraphs of Markdown — pasting those in would bury the screen.
-            titulo = (a["text"] or "").splitlines()[0].strip() or "(no text)"
+            # Solo la primera línea: los fijos del bot traen párrafos de
+            # Markdown pensados para Telegram y enterrarían la pantalla.
+            titulo = (a["text"] or "").splitlines()[0].strip() or "(sin texto)"
             filas.append(
                 ft.Row(
                     [
                         ft.Text(
-                            "!" if a["overdue"] else a["at"],
+                            "¡ya!" if a["overdue"] else a["at"],
                             size=11,
                             weight=ft.FontWeight.W_800,
                             color=C.warning if a["overdue"] else C.accent,
@@ -375,17 +376,285 @@ class HomeView:
                     vertical_alignment=ft.CrossAxisAlignment.START,
                 )
             )
+
         return card(
-            ft.Text(
-                "STILL TO COME TODAY",
-                size=10,
-                weight=ft.FontWeight.W_800,
-                color=C.text_secondary,
+            ft.Row(
+                [
+                    ft.Text(
+                        "AVISOS DE HOY",
+                        size=10,
+                        weight=ft.FontWeight.W_800,
+                        color=C.text_secondary,
+                        expand=True,
+                    ),
+                    ft.Container(
+                        content=ft.Icon(ft.Icons.ADD_ROUNDED, size=16, color=C.accent),
+                        on_click=lambda _: self._open_reminders(),
+                        ink=True,
+                        padding=4,
+                        border_radius=Radius.pill,
+                        tooltip="Añadir o gestionar avisos",
+                    ),
+                ],
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
             ),
-            ft.Container(height=4),
+            ft.Container(height=2),
             *filas,
             padding=12,
         )
+
+    def _open_reminders(self):
+        """Gestión de avisos: la lista completa y el alta, en un diálogo.
+
+        El alta escribe una fila `origen="usuario"` y llama a
+        `notificaciones.sync()`: en el móvil eso reescribe `notifications.json`
+        y Android queda programado aunque la app se cierre; en el PC la fila la
+        recoge el bot en su siguiente vuelta y la entrega por Telegram. Los
+        `fijo` del bot se enseñan sin papelera — borrarlos aquí solo haría que
+        el bot los resembrara con otro id en su siguiente arranque.
+        """
+        import notificaciones
+
+        texto = ft.TextField(
+            label="Texto del aviso",
+            hint_text="Sacar el pollo del congelador",
+            dense=True,
+            border_color=C.border,
+            color=C.text,
+        )
+        hora = ft.TextField(
+            label="Hora (HH:MM)",
+            value="20:00",
+            dense=True,
+            width=110,
+            border_color=C.border,
+            color=C.text,
+        )
+        fecha = ft.TextField(
+            label="Fecha (AAAA-MM-DD)",
+            value=date.today().isoformat(),
+            dense=True,
+            expand=True,
+            visible=True,
+            border_color=C.border,
+            color=C.text,
+        )
+        error = ft.Text("", size=11, color=C.danger)
+
+        DIAS = [("L", 1), ("M", 2), ("X", 3), ("J", 4), ("V", 5), ("S", 6), ("D", 0)]
+        elegidos: set[int] = set()
+        chips_dias: list[ft.Container] = []
+
+        def _pinta_chip(caja: ft.Container, activo: bool):
+            caja.bgcolor = C.accent_soft if activo else None
+            caja.border = ft.border.all(1, C.accent if activo else C.border)
+            caja.content.color = C.accent if activo else C.text_secondary
+
+        def _toca_dia(caja: ft.Container, valor: int):
+            def go(_):
+                if valor in elegidos:
+                    elegidos.discard(valor)
+                else:
+                    elegidos.add(valor)
+                _pinta_chip(caja, valor in elegidos)
+                self.page.update()
+
+            return go
+
+        for etiqueta, valor in DIAS:
+            caja = ft.Container(
+                content=ft.Text(etiqueta, size=12, weight=ft.FontWeight.W_700),
+                width=32,
+                height=32,
+                alignment=ft.alignment.center,
+                border_radius=Radius.pill,
+                ink=True,
+            )
+            caja.on_click = _toca_dia(caja, valor)
+            _pinta_chip(caja, False)
+            chips_dias.append(caja)
+        fila_dias = ft.Row(chips_dias, spacing=4, visible=False)
+
+        tipo = ft.Dropdown(
+            label="Repetición",
+            value="once",
+            dense=True,
+            expand=True,
+            border_color=C.border,
+            color=C.text,
+            options=[
+                ft.dropdown.Option("once", "Una vez"),
+                ft.dropdown.Option("daily", "Cada día"),
+                ft.dropdown.Option("weekly", "Días de la semana"),
+            ],
+        )
+
+        def _cambia_tipo(_):
+            fila_dias.visible = tipo.value == "weekly"
+            fecha.visible = tipo.value == "once"
+            self.page.update()
+
+        tipo.on_change = _cambia_tipo
+
+        lista = ft.Column(spacing=4, tight=True)
+
+        def _refresca_lista():
+            try:
+                todos = self.store.get_all_reminders()
+            except Exception:
+                todos = []
+            filas: list[ft.Control] = []
+            for a in todos:
+                encabezado = (a["texto"] or "").splitlines()[0].strip()[:60]
+                receta = notificaciones.parse_cron_simple(a["cron"])
+                if a["cron"] is None:
+                    pauta = "una vez"
+                elif receta is None:
+                    pauta = "pauta del bot"
+                elif receta["weekdays"] is None:
+                    pauta = f"cada día · {receta['hour']:02d}:{receta['minute']:02d}"
+                else:
+                    nombres = {1: "L", 2: "M", 3: "X", 4: "J", 5: "V", 6: "S", 0: "D"}
+                    dias_txt = "".join(
+                        nombres[d] for d in sorted(receta["weekdays"], key=lambda x: (x - 1) % 7)
+                    )
+                    pauta = f"{dias_txt} · {receta['hour']:02d}:{receta['minute']:02d}"
+                if not a["activo"]:
+                    pauta += " · pausado"
+                es_usuario = a["origen"] != "fijo"
+                acciones: list[ft.Control] = []
+                if es_usuario:
+                    acciones.append(
+                        ft.Container(
+                            content=ft.Icon(ft.Icons.DELETE_OUTLINE, size=16, color=C.danger),
+                            on_click=(lambda rid: lambda _: _borra(rid))(a["id"]),
+                            ink=True,
+                            padding=4,
+                            tooltip="Borrar este aviso",
+                        )
+                    )
+                else:
+                    acciones.append(
+                        ft.Icon(ft.Icons.SMART_TOY_OUTLINED, size=14, color=C.text_muted)
+                    )
+                filas.append(
+                    ft.Row(
+                        [
+                            ft.Column(
+                                [
+                                    ft.Text(encabezado, size=12, color=C.text, max_lines=1),
+                                    ft.Text(pauta, size=10, color=C.text_muted),
+                                ],
+                                spacing=0,
+                                tight=True,
+                                expand=True,
+                            ),
+                            *acciones,
+                        ],
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                    )
+                )
+            lista.controls = filas or [ft.Text("Sin avisos todavía.", size=11, color=C.text_muted)]
+
+        def _borra(rid: int):
+            self.store.delete_reminder(rid)
+            notificaciones.sync(self.store)
+            _refresca_lista()
+            self.page.update()
+
+        def _guarda(_):
+            try:
+                h, m = (texto_hora := (hora.value or "").strip()).split(":")
+                h, m = int(h), int(m)
+                if not (0 <= h <= 23 and 0 <= m <= 59):
+                    raise ValueError(texto_hora)
+            except ValueError:
+                error.value = "La hora tiene que ser HH:MM, de 00:00 a 23:59."
+                self.page.update()
+                return
+            if not (texto.value or "").strip():
+                error.value = "El aviso necesita un texto."
+                self.page.update()
+                return
+            try:
+                if tipo.value == "once":
+                    from storage import _madrid
+
+                    dia = date.fromisoformat((fecha.value or "").strip())
+                    cuando = datetime.combine(dia, time(h, m), tzinfo=_madrid()).astimezone(
+                        timezone.utc
+                    )
+                    if cuando <= datetime.now(timezone.utc):
+                        error.value = "Ese momento ya ha pasado."
+                        self.page.update()
+                        return
+                    cron = None
+                else:
+                    if tipo.value == "weekly" and not elegidos:
+                        error.value = "Elige al menos un día de la semana."
+                        self.page.update()
+                        return
+                    cron = notificaciones.cron_para(
+                        tipo.value, h, m, elegidos if tipo.value == "weekly" else None
+                    )
+                    cuando = notificaciones.next_occurrence(cron, datetime.now(timezone.utc))
+                self.store.add_reminder(texto.value, cuando, cron)
+                notificaciones.sync(self.store)
+            except (ValueError, Exception) as exc:  # noqa: B014 - un alta fallida se explica, no revienta
+                error.value = f"No se pudo guardar: {exc}"
+                self.page.update()
+                return
+            texto.value = ""
+            error.value = ""
+            _refresca_lista()
+            self.page.update()
+
+        _refresca_lista()
+
+        entrega = (
+            "Los entrega Telegram (el bot del PC)."
+            if self.store.bot_delivers_reminders()
+            else "Los entrega el móvil, con la app cerrada incluso."
+        )
+
+        dlg = ft.AlertDialog(
+            bgcolor=C.bg_surface,
+            title=ft.Text("Avisos", size=16, weight=ft.FontWeight.W_900, color=C.text),
+            content=ft.Container(
+                content=ft.Column(
+                    [
+                        texto,
+                        ft.Row([tipo, hora], spacing=8),
+                        fecha,
+                        fila_dias,
+                        error,
+                        ft.Row([primary_button("Añadir aviso", on_click=_guarda, expand=True)]),
+                        ft.Container(height=6),
+                        ft.Text(
+                            "TODOS LOS AVISOS",
+                            size=10,
+                            weight=ft.FontWeight.W_800,
+                            color=C.text_secondary,
+                        ),
+                        lista,
+                        ft.Text(entrega, size=10, color=C.text_muted),
+                    ],
+                    spacing=8,
+                    tight=True,
+                    scroll=ft.ScrollMode.AUTO,
+                ),
+                width=dialog_width(self.page),
+                height=dialog_height(self.page, 520),
+            ),
+            actions=[
+                ft.TextButton(
+                    "Cerrar",
+                    on_click=lambda _: self.page.close(dlg),
+                    style=ft.ButtonStyle(color=C.text_secondary),
+                )
+            ],
+        )
+        self.page.open(dlg)
 
     def _streak_card(self, streak: int) -> ft.Control:
         return card(
@@ -398,7 +667,7 @@ class HomeView:
                 text_align=ft.TextAlign.CENTER,
             ),
             ft.Text(
-                "week" if streak == 1 else "weeks",  # the number is above it, so noun only
+                "semana" if streak == 1 else "semanas",  # the number is above it, so noun only
                 size=9,
                 weight=ft.FontWeight.W_700,
                 color=C.text_muted,
@@ -406,7 +675,7 @@ class HomeView:
             ),
             padding=ft.padding.symmetric(horizontal=14, vertical=8),
             alignment=ft.alignment.center,
-            tooltip="Consecutive weeks that hit your routine's session minimum",
+            tooltip="Semanas seguidas cumpliendo el mínimo de sesiones de tu rutina",
         )
 
     def _today_item(self, w) -> ft.Container:
@@ -465,22 +734,22 @@ class HomeView:
 
         phase = pw.phase
         focus = pw.today_focus
-        sub = f"Phase {phase.id} · {phase.name}"
+        sub = f"Fase {phase.id} · {phase.name}"
         tip: str | None
 
         if pw.rotation is None:
             # The phase name is the headline here, so the line under it carries
             # the subtitle instead — printing the name twice tells nobody
             # anything.
-            headline, target, tip = phase.name, VIEW_WORKOUT, "Pick today's session in Train"
-            sub = f"Phase {phase.id} · {phase.subtitle}" if phase.subtitle else f"Phase {phase.id}"
+            headline, target, tip = phase.name, VIEW_WORKOUT, "Elige la sesión de hoy en Entreno"
+            sub = f"Fase {phase.id} · {phase.subtitle}" if phase.subtitle else f"Fase {phase.id}"
         elif focus is None or is_rest_label(focus):
             nxt = next_session(pw)
-            headline, target = "Rest day", VIEW_PLAN
+            headline, target = "Día de descanso", VIEW_PLAN
             if nxt:
-                tip = f"Next: {day_name(nxt[0])} · {nxt[1]}"
+                tip = f"Siguiente: {day_name(nxt[0])} · {nxt[1]}"
             else:
-                tip = "The new week's plan starts on Monday"
+                tip = "El plan de la semana nueva empieza el lunes"
         else:
             headline, target = focus, VIEW_WORKOUT
             # The label is a session name; the phase turns it into real work.
@@ -491,7 +760,7 @@ class HomeView:
 
         lines: list[ft.Control] = [
             ft.Text(
-                f"TODAY · {week_headline(pw)}", size=10, weight=ft.FontWeight.W_900, color=C.accent
+                f"HOY · {week_headline(pw)}", size=10, weight=ft.FontWeight.W_900, color=C.accent
             ),
             ft.Text(
                 headline,
@@ -514,7 +783,7 @@ class HomeView:
         if pw.stale:
             lines.append(
                 ft.Text(
-                    f"Nothing logged for {plural(pw.weeks_idle, 'week')} — see Plan to restart",
+                    f"Nada registrado en {plural(pw.weeks_idle, 'semana')} — mira Plan para retomar",
                     size=10,
                     color=C.warning,
                 )
@@ -534,7 +803,7 @@ class HomeView:
             border_color=C.accent,
             on_click=lambda _, v=target: nav(v),
             ink=True,
-            tooltip="Open Train" if target == VIEW_WORKOUT else "Open the week's plan",
+            tooltip="Abrir Entreno" if target == VIEW_WORKOUT else "Abrir el plan de la semana",
         )
 
     def _no_session_card(self, pw: ProgramWeek) -> ft.Control:
@@ -548,42 +817,42 @@ class HomeView:
         """
         started = pw.start.day
         if pw.status is WeekStatus.SCHEDULED:
-            title = "Not started yet"
+            title = "Sin empezar todavía"
             body = (
-                f"This routine is set to start on {started.isoformat()}."
+                f"Esta rutina está fijada para empezar el {started.isoformat()}."
                 if started
-                else "This routine is set to start in a later week."
+                else "Esta rutina está fijada para empezar más adelante."
             )
         elif pw.status is WeekStatus.FINISHED:
-            title = "Routine finished"
+            title = "Rutina terminada"
             body = (
-                f"{week_headline(pw).capitalize()} is past the end of this routine. "
-                "Set a new start date to run it again, or pick another routine in Plan."
+                f"{week_headline(pw).capitalize()} ya pasa del final de esta rutina. "
+                "Fija otra fecha de inicio para repetirla, o elige otra rutina en Plan."
             )
         elif pw.status is WeekStatus.ACTIVE:  # active, but no phase claims the week
-            title = "No phase covers this week"
+            title = "Ninguna fase cubre esta semana"
             body = (
-                f"{week_headline(pw).capitalize()} falls in a gap between the phase "
-                "ranges of this routine. Check them in Plan."
+                f"{week_headline(pw).capitalize()} cae en un hueco entre los rangos "
+                "de fases de esta rutina. Revísalos en Plan."
             )
         elif pw.start.source is StartSource.OTHER_ROUTINE:
             # A date exists, it just belongs to a routine he switched away from.
             # Saying "nothing records when you started" here would be a lie he
             # could disprove, and the fix is one tap: the dialog opens on that
             # date, so adopting it is a save.
-            title = "Week unknown"
+            title = "Semana desconocida"
             body = (
-                "A start date is stored, but it was saved for another routine, so "
-                "it cannot place you in this one — switching routines starts a new "
-                "program. Set the date to carry it over."
+                "Hay una fecha de inicio guardada, pero era de otra rutina, así que "
+                "no puede situarte en esta — cambiar de rutina arranca un programa "
+                "nuevo. Fija la fecha para traerla."
             )
         else:
-            title = "Week unknown"
+            title = "Semana desconocida"
             body = (
-                "Nothing records when you started this routine, so the app cannot "
-                "say which session today is — and a guess would send you to the gym "
-                "on the wrong day. Set the date, or just train: the first session "
-                "you log dates the routine."
+                "Nada registra cuándo empezaste esta rutina, así que la app no puede "
+                "decir qué sesión toca hoy — y adivinar te mandaría al gimnasio el "
+                "día equivocado. Fija la fecha, o simplemente entrena: la primera "
+                "sesión que registres fecha la rutina."
             )
         prefill = started if pw.start.source is StartSource.OTHER_ROUTINE else None
         return card(
@@ -598,7 +867,7 @@ class HomeView:
             ft.Text(body, size=11, color=C.text_secondary),
             ft.Container(height=Space.x1),
             ghost_button(
-                "Set start date",
+                "Fijar fecha de inicio",
                 on_click=lambda _, d=prefill: open_start_date_dialog(
                     self.page, self.store, on_saved=self._reload, initial=d
                 ),
@@ -612,7 +881,7 @@ class HomeView:
     def _macro_line(self, label: str, current: float, target: float, unit: str) -> ft.Control:
         # Overshooting calories is worth a warning; overshooting protein is not,
         # so each line says for itself what "past the target" looks like.
-        over_target = label == "Calories"
+        over_target = label == "Calorías"
         value = f"{_n(current)} / {_n(target)} {unit}" if target > 0 else f"{_n(current)} {unit}"
         return ft.Column(
             [
@@ -636,20 +905,20 @@ class HomeView:
 
     def _nutrition_body(self, totals: dict, targets: dict, logged: bool) -> ft.Control:
         target_kcal = float(targets.get("kcal") or 0)
-        target_protein = float(targets.get("protein") or 0)
+        target_protein = float(targets.get("proteína") or 0)
 
         if not logged:
             # Zeroes against a target read as failure at 9am. An empty day is an
             # invitation, so it gets one.
             hint = (
-                f"Today's target: {_n(target_kcal)} kcal · {_n(target_protein)} g protein"
+                f"Objetivo de hoy: {_n(target_kcal)} kcal · {_n(target_protein)} g de proteína"
                 if target_kcal > 0
-                else "Log a meal to start tracking calories and protein"
+                else "Apunta una comida para empezar a contar calorías y proteína"
             )
             return ft.Column(
                 [
                     ft.Text(
-                        "Nothing logged today", size=13, weight=ft.FontWeight.W_700, color=C.text
+                        "Nada registrado hoy", size=13, weight=ft.FontWeight.W_700, color=C.text
                     ),
                     ft.Text(hint, size=11, color=C.text_muted),
                 ],
@@ -660,9 +929,11 @@ class HomeView:
 
         return ft.Column(
             [
-                ft.Text("Food today", size=13, weight=ft.FontWeight.W_700, color=C.text),
-                self._macro_line("Calories", float(totals.get("kcal") or 0), target_kcal, "kcal"),
-                self._macro_line("Protein", float(totals.get("protein") or 0), target_protein, "g"),
+                ft.Text("Comida de hoy", size=13, weight=ft.FontWeight.W_700, color=C.text),
+                self._macro_line("Calorías", float(totals.get("kcal") or 0), target_kcal, "kcal"),
+                self._macro_line(
+                    "Proteína", float(totals.get("proteína") or 0), target_protein, "g"
+                ),
             ],
             spacing=Space.x2,
             tight=True,
@@ -694,7 +965,7 @@ class HomeView:
             padding=14,
             on_click=lambda _: nav(VIEW_NUTRITION),
             ink=True,
-            tooltip="Open the food diary",
+            tooltip="Abrir el diario de comida",
         )
 
     # ── screen ───────────────────────────────────────────────
@@ -719,7 +990,7 @@ class HomeView:
         # short form — it has room for five characters — and the tooltip
         # carries the whole number, its unit and how it was worked out.
         vol_str = f"{vol / 1000:.1f}k" if vol >= 1000 else f"{int(vol)}"
-        vol_tooltip = f"Weight × reps, added up over {STATS_WINDOW_LABEL.lower()}: {vol:,.0f} kg"
+        vol_tooltip = f"Peso × reps, sumado en {STATS_WINDOW_LABEL.lower()}: {vol:,.0f} kg"
 
         nav = self.page.data["navigate_to"]
         profile_btn = ft.Container(
@@ -732,7 +1003,7 @@ class HomeView:
             alignment=ft.alignment.center,
             on_click=lambda _: nav(VIEW_PROFILE),
             ink=True,
-            tooltip="Settings",
+            tooltip="Ajustes",
         )
 
         coach_btn = ft.Container(
@@ -745,7 +1016,7 @@ class HomeView:
             alignment=ft.alignment.center,
             on_click=lambda _: nav(VIEW_COACH),
             ink=True,
-            tooltip="Coach",
+            tooltip="Entrenador",
         )
 
         header = ft.Row(
@@ -773,9 +1044,9 @@ class HomeView:
             [
                 # The window is named once, above the row, so the tooltips only
                 # have to say what each number counts.
-                self._stat_card(str(stats["sessions"]), "Sessions", tooltip="Days you trained"),
+                self._stat_card(str(stats["sessions"]), "Sesiones", tooltip="Días que entrenaste"),
                 self._stat_card(
-                    str(stats["sets"]), "Sets", tooltip="Working sets logged — warm-ups excluded"
+                    str(stats["sets"]), "Sets", tooltip="Series efectivas — calentamientos fuera"
                 ),
                 self._stat_card(vol_str, "Vol (kg)", tooltip=vol_tooltip),
             ],
@@ -783,7 +1054,7 @@ class HomeView:
         )
 
         start_btn = primary_button(
-            "Start Routine",
+            "Empezar sesión",
             icon=ft.Icons.PLAY_ARROW_ROUNDED,
             on_click=lambda _: nav(VIEW_WORKOUT),
             expand=True,
@@ -791,11 +1062,11 @@ class HomeView:
         # Browse lost its tab when the bar went down to five. This is now the
         # only entrance to the catalogue, so it is a labelled button, not an icon.
         browse_btn = ghost_button(
-            "Exercises",
+            "Ejercicios",
             on_click=lambda _: nav(VIEW_BROWSE),
             width=112,
             height=48,
-            tooltip="Browse the exercise library",
+            tooltip="Abrir el catálogo de ejercicios",
         )
 
         if today:
@@ -810,7 +1081,7 @@ class HomeView:
                     [
                         ft.Text("💤", size=28, text_align=ft.TextAlign.CENTER),
                         ft.Text(
-                            "No records",
+                            "Sin registros",
                             size=12,
                             color=C.text_muted,
                             text_align=ft.TextAlign.CENTER,
@@ -859,7 +1130,7 @@ class HomeView:
                 ft.Container(height=Space.x2),
                 ft.Row([start_btn, browse_btn], spacing=8),
                 ft.Container(height=Space.x4),
-                section_title("Your day"),
+                section_title("Tu día"),
                 ft.Container(height=Space.x1),
                 *dia,
                 ft.Container(height=Space.x4),
@@ -867,14 +1138,14 @@ class HomeView:
                 ft.Container(height=Space.x1),
                 stats_row,
                 ft.Container(height=Space.x4),
-                # "Today" twice on one screen would be two different meanings of
+                # "Hoy" twice on one screen would be two different meanings of
                 # the word: the card at the top is the *plan*, this is what was
                 # actually logged.
-                section_title("Logged today"),
+                section_title("Registrado hoy"),
                 ft.Container(height=Space.x1),
                 today_block,
                 ft.Container(height=18),
-                section_title("Guides"),
+                section_title("Guías"),
                 ft.Container(height=Space.x1),
                 self._guides_row(),
                 ft.Container(height=Space.x4),
