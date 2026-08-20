@@ -1,6 +1,6 @@
 [project]
 name = "ironflet"
-version = "0.2.0"
+version = "0.8.0"
 description = "English-only weight-training tracker built with Flet — runs on Android, desktop and web from a single Python codebase."
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -56,9 +56,40 @@ classifiers = [
 # the Postgres branch when the resolved URL asks for it. On Android the URL
 # resolves to SQLite, so psycopg is never imported. sqlite3 is in the stdlib
 # CPython that serious-python embeds, so the phone needs no driver at all.
+#
+# `anthropic` IS ON THE PHONE ON PURPOSE, and it is the only entry here that
+# pulls compiled code. The in-app coach (agent.py) talks to the Claude API, and
+# it has to work from the gym, so the client has to be inside the APK.
+#
+# It survives `flet build apk` because of a coincidence worth writing down:
+# `anthropic` needs exactly two non-pure-Python packages — `jiter` and
+# `pydantic-core` — and pypi.flet.dev publishes
+# `cp312-cp312-android_24_arm64_v8a` wheels for both, which is precisely the
+# CPython that serious-python embeds. Everything else it needs (anyio, distro,
+# docstring-parser, httpx, pydantic, sniffio, typing-extensions) is pure Python
+# and comes from PyPI. The `aiohttp` extra is NOT installed and must not be:
+# that is the one that would drag in aiohttp/yarl/frozenlist.
+#
+# So `pydantic` is pinned below its floor: pip must land on a version whose
+# pinned `pydantic-core` has an Android wheel. Left unpinned, a pydantic release
+# newer than the flet index would resolve, pip would find no matching
+# `pydantic-core` wheel, fall back to the sdist, and the build would die trying
+# to compile Rust for ARM. Raising this pin means checking
+# https://pypi.flet.dev/pydantic-core/ first.
+#
+# NO API KEY IS COMPILED IN. An APK is a zip; `unzip` plus `strings` reads any
+# constant out of it in seconds. Alex types the key once into Settings and it is
+# stored in `preferencias`, in the app's private storage — see agent.py.
 dependencies = [
     "flet>=0.25,<0.30",
     "sqlalchemy>=2.0",
+    # Floor is the version actually verified inside an APK (0.125.0, alongside
+    # pydantic 2.13.4 / jiter 0.15.0), not the oldest that might work: the
+    # `output_config.effort` parameter agent.py sends is newer than the SDK's
+    # own history, and an older resolve would fail on the phone, at the one
+    # moment there is no console to read the traceback on.
+    "anthropic>=0.125,<1",
+    "pydantic>=2.11,<2.15",
 ]
 
 [project.optional-dependencies]
@@ -80,6 +111,10 @@ postgres = ["psycopg[binary]>=3.2"]
 dev = [
     "flet[all]>=0.25,<0.30",
     "psycopg[binary]>=3.2",
+    # Repeated from `[project] dependencies` for the same reason the two extras
+    # above are: `uv sync --group dev` installs only what is listed here, and
+    # tests/test_agent.py imports the SDK's exception classes.
+    "anthropic>=0.125,<1",
     "ruff>=0.7",
     "pytest>=8",
     "pytest-asyncio>=0.24",
@@ -103,6 +138,33 @@ app.module = "main"
 # slug of `[project] name`, lower-case and all. Verified in the built APK's
 # manifest, not assumed; see the note in [tool.flet.android].
 product = "IronFlet"
+
+# THE FORKED FLUTTER BUILD TEMPLATE, AND WHY THIS REPO CARRIES ONE.
+#
+# `flet build` normally clones flet-dev/flet-build-template. `build_template/`
+# is that template with three lines added to `lib/main.dart`, and it exists for
+# one reason: **keeping the screen on**.
+#
+# Flet 0.28.3 offers no way to ask for that from Python. Verified against the
+# installed package, not from memory: `Page` exposes nothing about the screen,
+# `flet.core.window` does not exist in this version, the Dart client answers
+# exactly nine `_invoke_method` names and none touches the display, and there
+# is no JavaScript evaluation either, so even the web build cannot reach the
+# browser's Screen Wake Lock. See the long note in views/workout.py.
+#
+# Meanwhile `wakelock_plus` was *already compiled into the APK* — flet depends
+# on it, `GeneratedPluginRegistrant.java` registers it — with nobody calling
+# it. The fork calls it. Between sets the phone lies on the floor or the bench
+# and locks, so every set cost an unlock with chalked hands before the app was
+# even back; the rest timer, the plate hint and the prescribed target are all
+# worth less behind that.
+#
+# THE PRICE, so nobody discovers it the hard way: this pins the build to a copy
+# of the template. **Raising the flet pin means re-forking it** — diff the new
+# upstream template against `build_template/` and re-apply the wakelock block.
+# `cookiecutter` takes a plain local directory, so the fork costs a copy rather
+# than a hosted repo; the changes are marked with a comment naming this note.
+template.url = "build_template"
 
 # WHAT DOES NOT GET COPIED INTO THE APK.
 #
@@ -134,6 +196,10 @@ app.exclude = [
     ".pytest_cache",
     ".ruff_cache",
     "assets/exercises",
+    # The forked Flutter build template. It is *input* to the build, not part
+    # of the Python app, so shipping its 1.2 MB of Dart inside app.zip would be
+    # dead weight on the phone.
+    "build_template",
     "tests",
     "uv.lock",
     "__pycache__",
@@ -176,6 +242,52 @@ color = "#F4F6F8"
 dark_color = "#0A0A0B"
 
 [tool.flet.android]
+# TWO ARCHITECTURES, NOT THREE — this halves the APK for free.
+#
+# The default build ships arm64-v8a, armeabi-v7a AND x86_64: 49.4 + 43.1 + 50.7
+# MB of native libraries, 83.2 MB in the finished file. A phone runs exactly one
+# of them. Measured on this project, not assumed:
+#
+#   three ABIs (flet's default)   83.2 MB
+#   arm64-v8a + x86_64            49.5 MB   <- this
+#   arm64-v8a alone               29.8 MB
+#
+# `armeabi-v7a` is 32-bit ARM: phones from roughly 2016 and earlier. Nothing
+# that would run this app is on one.
+#
+# `x86_64` is kept ON PURPOSE and it is not for a phone. It is the only ABI the
+# test emulator (`system-images/android-34/google_apis/x86_64`) can install, and
+# every device check this project relies on was made by driving a real APK
+# there. Dropping it saves another 20 MB and costs the ability to verify
+# anything before it is installed — a bad trade. Run
+# `flet build apk --arch arm64-v8a` when the 30 MB file is what is wanted; the
+# Python payload is byte-identical either way.
+#
+# NOTE THE SYNTAX on the command line: `--arch` is `nargs="+"`, i.e.
+# SPACE-separated. `--arch arm64-v8a,x86_64` is read as a single architecture
+# named "arm64-v8a,x86_64", quietly produces an arm64-only APK, and looks like
+# it worked.
+#
+# ⚠️ AND THE REASON THIS LINE IS COMMENTED OUT. **Listing two architectures
+# produces a broken APK.** serious_python packages the Python payload for the
+# FIRST entry only:
+#
+#   target_arch = ["arm64-v8a", "x86_64"]  ->  lib/x86_64/ is missing
+#                                              libpythonsitepackages.so (7.6 MB)
+#                                              and libc++_shared.so
+#
+# The x86_64 slice then has a CPython and no site-packages, and the app opens on
+# a purple "Error running app — ModuleNotFoundError: No module named 'certifi'"
+# screen. Found by installing it, not by reading the build log, which reported
+# success — and note the app's own logcat contained no traceback either, because
+# Flet renders that error into the UI. A screenshot was the only thing that saw
+# it.
+#
+# So it is all three or exactly one. `--arch arm64-v8a` on its own is correct
+# and gives a 29.8 MB file — use it for a release to the phone, and smoke-test
+# that build on the phone, because the x86_64 emulator cannot install it.
+# target_arch = ["arm64-v8a"]
+
 # TWO KEYS THAT USED TO BE HERE AND WERE READ BY NOTHING. Both removed rather
 # than left in place looking like configuration:
 #
@@ -199,7 +311,10 @@ adaptive_icon_background = "#0A0A0B"
 [tool.ruff]
 line-length = 100
 target-version = "py310"
-extend-exclude = ["exercise_details.py", ".venv"]
+# `build_template/` is a vendored fork of the upstream Flutter build template
+# (see `[tool.flet] template.url`). It is third-party Dart and Python that must
+# stay diffable against upstream, so it is not ours to reformat.
+extend-exclude = ["exercise_details.py", ".venv", "build_template"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM"]

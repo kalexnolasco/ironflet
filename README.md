@@ -154,7 +154,9 @@ Dos cosas que conviene tener claras antes de tocar el botón:
 - **Importar con "borrar" puesto vacía las 12 tablas** y deja solo lo del fichero. En un móvil recién estrenado da igual (no hay nada que perder), pero en uno con datos sí.
 - **Las imágenes de los ejercicios no viajan en el backup.** Son ~9 MB que se descargan aparte, desde la propia app, cuando tengas wifi. Es a propósito: meterlas en la APK la engordaría para algo que se baja una vez.
 
-> **⚠️ Ojo, esto todavía no está terminado.** El motor de backup de 12 tablas (`backup.py`) está hecho y probado, y la pantalla que lo usa (`views/data_view.py`) también. Pero **esa pantalla aún no está enganchada al menú**: `main.py` no la registra. Mientras tanto, el único backup al que se llega desde la app es el viejo de **Settings → Backup**, que exporta **4 tablas de 12** y **se deja la comida y tus rutinas sin avisar de nada**. Hasta que se enganche, para una copia completa usa `pg_dump` (más abajo).
+  > **Si en el móvil no ves ninguna foto** y la app dice que están instaladas, actualiza a la 0.3.0. Hasta esa versión se descargaban bien y luego **no podían aparecer nunca**: la pantalla las pedía por una ruta que dentro de la APK no lleva a ningún sitio. Volver a descargarlas, borrar la caché o reinstalar no cambiaban nada, porque ninguna de esas cosas era el problema.
+
+> El backup de la app cubre **las 12 tablas** y se llega desde **Settings → Backup & restore**. El export escribe primero en el almacenamiento de la app y luego te deja elegir dónde copiarlo; si el móvil no tiene selector de carpetas, la copia interna ya es un backup completo. Verificado en un móvil: 50 filas anunciadas en pantalla, 50 filas en el fichero.
 
 ### Qué necesitas para compilar la APK
 
@@ -290,6 +292,49 @@ Vienen **4 rutinas ya hechas**: CambiaTuFísico (7 fases, la de por defecto), Up
 ---
 
 ## Lo nuevo
+
+### 🏋️ Herramientas de la serie (0.3.0)
+
+Todo esto vive **dentro de la fila del ejercicio**, ya visible, sin abrir nada.
+Es a propósito: un diálogo a mitad de serie, con el descanso sonando y el móvil
+en el suelo, es la peor interacción posible en un gimnasio.
+
+**El objetivo prescrito, bajo cada fila.** `→ 5-8 @ RIR 2-3`. Antes ese dato
+existía pero repartido entre el título del ejercicio (`[4×5-8]`) y la
+descripción de la fase, o sea en ningún sitio mientras haces la serie. Si la
+rutina es una pirámide (`[5×12,10,8,8,8]`) cada fila lleva su propio número, y
+si la fase dice "fallo en la última serie" eso sale **solo en la última**.
+
+**Los discos, bajo el peso.** Escribes 82.5 y debajo aparece `20 + 10 per side`.
+Si el peso no se puede montar con los discos de la sala te da los dos vecinos:
+`not loadable · 80 kg or 82.5 kg`. Sabe que la barra EZ pesa 7,5 kg y no 20.
+Solo sale en ejercicios de barra: en máquina o polea no hay discos que resolver,
+y en el multipower el peso de la barra depende de la máquina, así que preferimos
+no decir un número con seguridad antes que decir uno equivocado.
+
+**Progresión sugerida**, sobre las filas y antes de la primera serie:
+`Go up · 82.5 kg × 5-8`. Es tu propia regla, la que estaba escrita en prosa
+dentro del plan ("dobla progresión: llega al tope del rango en todas las series,
+entonces +2,5 kg arriba / +5 kg abajo"), ahora en código. Tócala y te dice por
+qué, citando los números de la sesión anterior. **Y calla cuando debe**: sin
+historial no se inventa un peso, tras tres semanas de parón no manda subir, y en
+la semana de descarga nunca sube — llegar al tope con la mitad de las series es
+lo que se espera de una descarga, no una señal para cargar más.
+
+**Calentamiento de un toque.** Una banda encima de las filas:
+`Add 4 warm-up sets · 30×8 · 42.5×5 · 55×3 · 67.5×2`. Un solo botón grande, no
+cuatro chips: cuatro objetivos pequeños son cuatro ocasiones de pulsar el que no
+era con las manos mojadas. Las series entran como sugerencias sin confirmar, así
+que si no las haces no ensucian el registro.
+
+**La pantalla ya no se apaga** mientras la app está delante. Antes se bloqueaba
+entre serie y serie y había que desbloquearla con magnesio en las manos,
+veinticinco veces por sesión. Android suelta el bloqueo solo en cuanto sales de
+la app, así que no gasta batería de fondo.
+
+**Botón de vibración** junto al del altavoz, independiente: el pitido es para el
+móvil en el bolsillo, la vibración para un gimnasio con música alta. En uno
+silencioso querrás lo contrario.
 
 ### 🍽 Comida (pestaña "Food")
 
@@ -531,22 +576,16 @@ systemctl --user start ironflet-web entrenador-bot entrenador-panel
 
 ### La copia desde dentro de la app
 
-Aquí hay que distinguir **lo que ya funciona** de **lo que todavía no se puede tocar**, porque ahora mismo conviven dos backups distintos y el que está a la vista es el malo.
+**Settings → Backup & restore.** La pantalla te enseña, antes de tocar nada, cuántas filas tiene cada una de las **12 tablas** y cuánto ocupa la copia. El export (`backup.py`, formato versión 3, sigue leyendo los ficheros de la versión 2) escribe el JSON en el almacenamiento de la app y después abre el selector para que lo copies donde quieras; si el móvil no tiene selector, la copia interna ya está completa y la pantalla te lo dice en vez de fallar en silencio. El import enseña qué trae el fichero y qué va a reemplazar, con doble confirmación antes de borrar.
 
-**Lo que ves hoy en Settings → Backup** saca un JSON con perfil, preferencias, entrenos y pesos: **4 tablas de 12**. Se deja fuera, sin decírtelo:
+Verificado de dos maneras:
 
-- el catálogo de alimentos y sus raciones,
-- **el diario de comidas entero**,
-- los objetivos de macros,
-- **las rutinas que te hayas construido tú**.
+- **En un móvil**: exportado desde la APK, sacado del dispositivo y contado. La pantalla anunciaba 50 filas y el fichero tenía 50 — 18 alimentos, sus 30 raciones anidadas, 1 objetivo de macros y 1 preferencia.
+- **En banco**: base SQLite con las 12 tablas llenas (119 filas), export a fichero, import en una base vacía y comparación **tabla por tabla y columna por columna**. No se pierde ni cambia nada, y el documento reexportado sale idéntico al original.
 
-Comprobado midiéndolo sobre una base de prueba: ese backup exporta `workouts`, `weights`, `profile` y `prefs`, y nada más. Si haces esa copia y la restauras encima, la comida y tus rutinas **desaparecen sin un aviso**.
+Un aviso que ya no aplica pero conviene recordar: hasta la 0.2.0 el botón de Settings exportaba **4 tablas de 12** y se dejaba fuera el diario de comidas y tus rutinas **sin decírtelo**. Restaurar una de aquellas copias encima borraba las dos cosas. Esas copias viejas siguen siendo legibles, pero no son completas.
 
-**Lo que ya está escrito y probado pero aún no se puede usar**: `backup.py` hace el export/import de las **12 tablas** (formato versión 3, y sigue leyendo los ficheros viejos de la versión 2), y `views/data_view.py` es la pantalla que lo maneja, con vista previa y doble confirmación antes de borrar nada. Falta un paso: **registrar esa pantalla en `main.py`** para que se pueda llegar a ella.
-
-He verificado el motor de punta a punta: llené una base SQLite con las 12 tablas (119 filas), exporté a fichero, importé en una base vacía y comparé **tabla por tabla y columna por columna**. No se pierde ni cambia nada, y el documento reexportado sale idéntico al original.
-
-**Mientras tanto: para una copia completa, usa `pg_dump`** (arriba). No uses el botón de Settings creyendo que te lo lleva todo.
+Para una copia del servidor entero (incluidas las tablas que solo usa el bot), sigue estando `pg_dump` (arriba).
 
 ---
 
