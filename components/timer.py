@@ -49,7 +49,14 @@ HAPTICS_PREF = "timer_haptics"
 #: leaves a 36 pt countdown inside a 56 px ring, which is how the digits ended
 #: up clipped the first time this was written.
 RING_PX, DISPLAY_PT = 56, 14
-RING_PX_LARGE, DISPLAY_PT_LARGE = 128, 36
+# El dial zen era 128 px con el texto a 36 pt y en el móvil se comía la
+# pantalla — "el REST se ve muy grande", palabras de Alex, mirándolo en su
+# teléfono. 104/28 sigue leyéndose de pie con el móvil en el suelo (los
+# dígitos "1:30" a 28 pt miden ~11 mm en un panel de 420 dpi) y devuelve una
+# fila entera de altura a la serie que tiene delante. La palabra DESCANSO ya
+# no vive DENTRO del anillo — a 28 pt no cabe ni de lejos —: es una etiqueta
+# fija de 10 pt encima, y el anillo solo lleva dígitos, o — en reposo.
+RING_PX_LARGE, DISPLAY_PT_LARGE = 104, 28
 
 #: `main.py` passes `assets_dir="assets"`, so Flet serves this directory at the
 #: web root and the src is an app-relative URL. It must NOT be a filesystem
@@ -158,7 +165,7 @@ class RestTimer:
         self._haptics: ft.HapticFeedback | None = None
         self._mounted = False
 
-        self.display = ft.Text("REST", size=DISPLAY_PT, weight=ft.FontWeight.W_800, color=C.accent)
+        self.display = ft.Text("—", size=DISPLAY_PT, weight=ft.FontWeight.W_800, color=C.accent)
         self.ring = ft.ProgressRing(
             width=RING_PX,
             height=RING_PX,
@@ -168,7 +175,7 @@ class RestTimer:
             value=0,
         )
         self.stop_btn = ft.TextButton(
-            "Stop",
+            "Parar",
             on_click=lambda _: self.stop(),
             style=ft.ButtonStyle(color=C.accent_2),
             visible=False,
@@ -179,7 +186,7 @@ class RestTimer:
             border=ft.border.all(1, C.border),
             border_radius=Radius.sm,
             padding=ft.padding.symmetric(horizontal=8, vertical=5),
-            tooltip="Rest alert sound",
+            tooltip="Sonido al acabar el descanso",
             on_click=lambda _: self.toggle_sound(),
         )
         # The vibration toggle. `HAPTICS_PREF` was written, read on every
@@ -195,7 +202,7 @@ class RestTimer:
             border=ft.border.all(1, C.border),
             border_radius=Radius.sm,
             padding=ft.padding.symmetric(horizontal=8, vertical=5),
-            tooltip="Rest alert vibration",
+            tooltip="Vibración al acabar el descanso",
             on_click=lambda _: self.toggle_haptics(),
         )
 
@@ -271,7 +278,7 @@ class RestTimer:
             icon.color = C.accent if self._haptics_on else C.text_muted
         self.haptics_btn.bgcolor = C.accent_soft if self._haptics_on else C.bg_sunken
         self.haptics_btn.tooltip = (
-            "Rest alert vibration: on" if self._haptics_on else "Rest alert vibration: off"
+            "Vibración al acabar: sí" if self._haptics_on else "Vibración al acabar: no"
         )
 
     def _style_sound_btn(self) -> None:
@@ -284,7 +291,7 @@ class RestTimer:
         self.sound_btn.bgcolor = C.accent_soft if self._sound_on else C.bg_sunken
         self.sound_btn.border = ft.border.all(1, C.border)
         self.sound_btn.tooltip = (
-            "Rest alert sound: on" if self._sound_on else "Rest alert sound: off"
+            "Sonido al acabar: sí" if self._sound_on else "Sonido al acabar: no"
         )
 
     # ── alerts ────────────────────────────────────────────────
@@ -409,7 +416,7 @@ class RestTimer:
     def stop(self):
         self.running = False
         self.seconds = 0
-        self.display.value = "REST"
+        self.display.value = "—"
         self.ring.value = 0
         self.stop_btn.visible = False
         # Invalidate the running loop so a manual stop cannot fall through to
@@ -438,7 +445,7 @@ class RestTimer:
             self.page.update()
         if tick_id == self._tick_id and self.seconds <= 0 and self.running:
             self.running = False
-            self.display.value = "GO!"
+            self.display.value = "¡YA!"
             self.ring.value = 1
             self.stop_btn.visible = False
             if self._done_tick != tick_id:
@@ -536,11 +543,23 @@ class RestTimer:
         is not. Shrinking when idle would mean re-rendering on `start()` and
         `stop()`, and a rebuild while a set is being typed steals the focus and
         the caret mid-number — the same trap `_set_row.touched()` exists to dodge.
-        A steady dial that reads REST, then the seconds, then GO! costs some
+        A steady dial that reads —, then the seconds, then ¡YA! costs some
         pixels and cannot eat a keystroke.
         """
-        self._restyle(ring_px=RING_PX_LARGE, display_pt=DISPLAY_PT_LARGE, stroke=8)
-        children: list[ft.Control] = [self._dial(RING_PX_LARGE)]
+        self._restyle(ring_px=RING_PX_LARGE, display_pt=DISPLAY_PT_LARGE, stroke=6)
+        children: list[ft.Control] = [
+            # La palabra vive FUERA del anillo. Dentro solo caben dígitos a
+            # 28 pt; "DESCANSO" ahí dentro es exactamente el desbordamiento que
+            # motivó este rediseño.
+            ft.Text(
+                "DESCANSO",
+                size=10,
+                weight=ft.FontWeight.W_800,
+                color=C.text_muted,
+                text_align=ft.TextAlign.CENTER,
+            ),
+            self._dial(RING_PX_LARGE),
+        ]
         if caption:
             children.append(
                 ft.Text(

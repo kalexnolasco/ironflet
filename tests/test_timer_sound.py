@@ -250,7 +250,7 @@ async def test_muted_timer_makes_no_sound():
     assert t.sound_on is False
     assert fired == []
     # Muted or not, the countdown still ran to the end.
-    assert t.display.value == "GO!"
+    assert t.display.value == "¡YA!"
 
 
 async def test_unmuted_timer_sounds_the_finish():
@@ -301,7 +301,7 @@ async def test_haptics_have_their_own_switch():
 
 async def test_restart_does_not_replay_the_previous_alert():
     """The bug this guards: `start()` while a countdown is running used to be
-    able to leave two loops racing, and two "GO!" beeps is worse than none."""
+    able to leave two loops racing, and two "¡YA!" beeps is worse than none."""
     page = FakePage(FakeStore())
     t = RestTimer(page)
     fired = _instrument(t)
@@ -328,7 +328,7 @@ async def test_stop_cancels_the_alert():
 
     assert fired == []
     assert t.running is False
-    assert t.display.value == "REST"
+    assert t.display.value == "—"
 
 
 async def test_pre_alert_fires_once_and_before_the_finish():
@@ -393,7 +393,7 @@ async def test_player_failure_does_not_break_the_countdown():
     await page.drain()
 
     assert t.running is False
-    assert t.display.value == "GO!"
+    assert t.display.value == "¡YA!"
     assert t.ring.value == 1
 
 
@@ -415,7 +415,7 @@ async def test_unmountable_overlay_does_not_break_start():
     t.start(3)
     await page.drain()
 
-    assert t.display.value == "GO!"
+    assert t.display.value == "¡YA!"
 
 
 async def test_alert_with_nothing_mounted_is_a_no_op():
