@@ -120,7 +120,11 @@ class AgentView:
             self.bubbles.append(Bubble("error", "The coach had nothing to say."))
 
         self.pending = reply.proposal
-        self.last_cost = agent.estimate_cost(reply, agent.read_model(self.store))
+        # `priced_model` rather than the id: `estimate_cost` prefers the number
+        # OpenRouter actually billed and only falls back to arithmetic, and the
+        # arithmetic needs a price. The snapshot saved when the model was chosen
+        # is what makes that work with no signal.
+        self.last_cost = agent.estimate_cost(reply, agent.priced_model(self.store))
         self._render()
 
     def _on_submit(self, _=None):
@@ -268,9 +272,9 @@ class AgentView:
         return card(
             ft.Text("The coach is not set up", size=14, weight=ft.FontWeight.W_900, color=C.text),
             ft.Text(
-                "It runs on the Anthropic API and needs your own key. Settings → Coach, paste "
-                "it once. It is stored in this app's private storage, never in the installed "
-                "file and never in a backup.",
+                "It runs on OpenRouter and needs your own key — one key, ~350 models to pick "
+                "from. Settings → Coach, paste it once. It is stored in this app's private "
+                "storage, never in the installed file and never in a backup.",
                 size=12,
                 color=C.text_secondary,
             ),

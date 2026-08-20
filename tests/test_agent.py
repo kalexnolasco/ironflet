@@ -22,16 +22,18 @@ silently duplicated a row; a failed request that poisoned the next question.
 
 from __future__ import annotations
 
+import json
 from datetime import date, timedelta
 
 import pytest
 
 import agent
 import backup
+import openrouter
 from data import set_active_routine
 from storage import SECRET_PREF_KEYS, Storage, WorkoutEntry, sqlite_url
 
-CLAVE = "sk-ant-api03-" + "A" * 40
+CLAVE = "sk-or-v1-" + "a" * 48
 HOY = date.today()
 AYER = HOY - timedelta(days=1)
 
@@ -202,7 +204,7 @@ def test_restaurar_no_borra_ni_importa_claves(store, tmp_path):
     doc = backup.export_all(store)
     # A document written before the exclusion existed — the one case the
     # exporter cannot fix retroactively.
-    doc["prefs"][agent.API_KEY_PREF] = "sk-ant-de-otra-persona-" + "B" * 30
+    doc["prefs"][agent.API_KEY_PREF] = "sk-or-v1-de-otra-persona-" + "b" * 30
 
     backup.import_all(store, doc, wipe=True)
     assert agent.read_key(store) == CLAVE, "the restore dropped or replaced his key"
@@ -217,13 +219,14 @@ def test_el_repositorio_no_lleva_ninguna_clave():
     characters after the prefix is not something anyone types by accident.
 
     The placeholders in this file are deliberately built by concatenation
-    (`"sk-ant-api03-" + "A" * 40`) so that this test can be strict without
-    having to know about itself.
+    (`"sk-or-v1-" + "a" * 48`) so that this test can be strict without having to
+    know about itself. Both prefixes are checked — the coach moved to OpenRouter
+    but an Anthropic key left behind in a file would be just as leaked.
     """
     import re
     from pathlib import Path
 
-    parece_clave = re.compile(r"sk-ant-[A-Za-z0-9_\-]{20,}")
+    parece_clave = re.compile(r"sk-(?:ant|or)-[A-Za-z0-9_\-]{20,}")
     raiz = Path(__file__).resolve().parent.parent
     sospechosos = []
     for archivo in sorted(raiz.rglob("*.py")):
@@ -238,7 +241,7 @@ def test_el_repositorio_no_lleva_ninguna_clave():
 
 
 def test_la_clave_se_enmascara():
-    assert agent.mask_key(CLAVE).endswith("AAAA")
+    assert agent.mask_key(CLAVE).endswith("aaaa")
     assert CLAVE not in agent.mask_key(CLAVE)
     assert agent.mask_key("") == ""
 
@@ -392,55 +395,57 @@ def test_un_peso_corporal_absurdo_se_rechaza(store):
 # ── the loop, with the model stubbed out ──────────────────────────────────
 
 
-class Bloque:
-    def __init__(self, **kw):
-        self.__dict__.update(kw)
+class RespuestaFalsa:
+    """What `_post_chat` would have returned, without a network."""
+
+    def __init__(self, contenido=None, llamadas=None, finish="stop", cost=0.0):
+        mensaje = {"role": "assistant", "content": contenido}
+        if llamadas:
+            mensaje["tool_calls"] = llamadas
+        self.cuerpo = {
+            "id": "gen-fake",
+            "model": "anthropic/claude-sonnet-5",
+            "choices": [{"index": 0, "message": mensaje, "finish_reason": finish}],
+            "usage": {"prompt_tokens": 100, "completion_tokens": 50, "cost": cost},
+        }
 
 
-class Uso:
-    input_tokens = 100
-    output_tokens = 50
+def _llamada(nombre, argumentos, ident="call_1"):
+    """A tool call in OpenRouter's shape.
+
+    `arguments` is serialised with `json.dumps` ON PURPOSE. The API sends a JSON
+    **string**, and a fake that passes a dict would let a client that forgets to
+    parse it sail through the tests and then see every tool called with no
+    arguments against the real endpoint.
+    """
+    return {
+        "id": ident,
+        "type": "function",
+        "function": {"name": nombre, "arguments": json.dumps(argumentos)},
+    }
 
 
-class Respuesta:
-    def __init__(self, content, stop_reason="end_turn"):
-        self.content = content
-        self.stop_reason = stop_reason
-        self.usage = Uso()
-
-
-class ClienteFalso:
-    """Replays a scripted list of responses and records what it was sent."""
+class TransporteFalso:
+    """Replays scripted responses and records exactly what was posted."""
 
     def __init__(self, guion):
         self.guion = list(guion)
         self.peticiones: list[dict] = []
-        self.messages = self
 
-    def create(self, **kwargs):
-        # `messages` is the Coach's own list, passed by reference, and the loop
-        # keeps appending to it after this call returns. Recording the live
-        # object would mean every recorded request showed the *final* state of
-        # the conversation — which is how a test can assert on a message the
-        # request never contained. The real SDK serialises at call time; so does
-        # this.
-        registro = dict(kwargs)
-        registro["messages"] = list(kwargs.get("messages") or [])
+    def __call__(self, payload, api_key, timeout=90.0):
+        # Deep-ish copy: `messages` is the Coach's own list and the loop keeps
+        # appending to it after this returns, so recording the live object would
+        # show every request holding the FINAL conversation.
+        registro = dict(payload)
+        registro["messages"] = [dict(m) for m in payload.get("messages") or []]
+        registro["_key"] = api_key
         self.peticiones.append(registro)
         if not self.guion:
             raise AssertionError("the loop asked for more turns than the script has")
         siguiente = self.guion.pop(0)
         if isinstance(siguiente, Exception):
             raise siguiente
-        return siguiente
-
-
-def _texto(t):
-    return Bloque(type="text", text=t)
-
-
-def _uso(nombre, entrada, ident="tu_1"):
-    return Bloque(type="tool_use", name=nombre, input=entrada, id=ident)
+        return siguiente.cuerpo
 
 
 def test_sin_clave_no_revienta_solo_avisa(store):
@@ -454,60 +459,111 @@ def test_sin_clave_no_revienta_solo_avisa(store):
 def test_una_vuelta_con_herramienta_y_propuesta(store, monkeypatch):
     """The whole path: he speaks, a tool runs, a card appears, nothing is written."""
     agent.save_key(store, CLAVE)
-    cliente = ClienteFalso(
+    transporte = TransporteFalso(
         [
-            Respuesta(
-                [
-                    _uso(
+            RespuestaFalsa(
+                llamadas=[
+                    _llamada(
                         "propose_workout_log",
                         {"exercise": "Squat", "sets": [{"weight": 100, "reps": 5}]},
                     )
                 ],
-                "tool_use",
+                finish="tool_calls",
             ),
-            Respuesta([_texto("Te lo dejo en pantalla, dale a guardar si está bien.")]),
+            RespuestaFalsa("Te lo dejo en pantalla, dale a guardar si está bien.", cost=0.0042),
         ]
     )
-    monkeypatch.setattr(agent, "_client", lambda key: cliente)
+    monkeypatch.setattr(agent, "_post_chat", transporte)
 
     coach = agent.Coach(store, today=HOY)
-    respuesta = coach.ask("hice 5 series... digo, una serie de sentadilla a 100 por 5")
+    respuesta = coach.ask("hice una serie de sentadilla a 100 por 5")
 
     assert respuesta.ok, respuesta.error
-    assert respuesta.proposal is not None
-    assert respuesta.proposal.exercise == "Squat"
+    assert respuesta.proposal is not None and respuesta.proposal.exercise == "Squat"
     assert respuesta.tool_calls == ("propose_workout_log",)
     assert store.get_all() == [], "the turn wrote to the database"
     assert respuesta.input_tokens == 200 and respuesta.output_tokens == 100
+    assert respuesta.charged == pytest.approx(0.0042), "OpenRouter's own price was dropped"
 
 
-def test_el_prompt_del_sistema_va_cacheado(store, monkeypatch):
-    """A cache breakpoint on a byte-stable prefix, or every follow-up pays full price."""
+def test_los_argumentos_llegan_como_json_de_texto(store, monkeypatch):
+    """`function.arguments` is a STRING. Reading it as a dict loses every argument.
+
+    The failure is silent: the tool runs with no arguments, refuses, and the
+    coach says it could not find the exercise — which reads like a matching bug,
+    not a parsing one.
+    """
     agent.save_key(store, CLAVE)
-    cliente = ClienteFalso([Respuesta([_texto("hola")])])
-    monkeypatch.setattr(agent, "_client", lambda key: cliente)
+    transporte = TransporteFalso(
+        [
+            RespuestaFalsa(
+                llamadas=[_llamada("exercise_history", {"exercise": "Squat", "limit": 3})],
+                finish="tool_calls",
+            ),
+            RespuestaFalsa("Vas bien."),
+        ]
+    )
+    monkeypatch.setattr(agent, "_post_chat", transporte)
+    agent.Coach(store, today=HOY).ask("¿cómo voy de sentadilla?")
+
+    resultado = transporte.peticiones[1]["messages"][-1]
+    assert resultado["role"] == "tool"
+    assert "Squat" in resultado["content"], "the arguments never reached the tool"
+    assert resultado["tool_call_id"] == "call_1"
+
+
+def test_la_peticion_tiene_la_forma_de_openrouter(store, monkeypatch):
+    agent.save_key(store, CLAVE)
+    transporte = TransporteFalso([RespuestaFalsa("hola")])
+    monkeypatch.setattr(agent, "_post_chat", transporte)
 
     agent.Coach(store, today=HOY).ask("hola")
-    enviado = cliente.peticiones[0]
-    assert enviado["system"][0]["cache_control"] == {"type": "ephemeral"}
-    assert enviado["output_config"] == {"effort": agent.DEFAULT_EFFORT}
+    enviado = transporte.peticiones[0]
+
+    # The system prompt is a MESSAGE, not a top-level field. Getting this wrong
+    # gives a coach with no instructions rather than an error.
+    assert enviado["messages"][0]["role"] == "system"
+    assert "IronFlet" in enviado["messages"][0]["content"]
+    assert "system" not in enviado, "sent the Anthropic way; OpenRouter would ignore it"
     assert enviado["model"] == agent.DEFAULT_MODEL
+    assert enviado["usage"] == {"include": True}, "no cost asked for, so none comes back"
+    # Tools must ride on EVERY request, not just the first.
+    assert enviado["tools"] and enviado["tools"][0]["type"] == "function"
+    assert "parameters" in enviado["tools"][0]["function"]
     # The date must not be interpolated into the system prompt: it would change
     # the cached prefix at midnight and re-bill the whole thing.
-    assert HOY.isoformat() not in enviado["system"][0]["text"]
+    assert HOY.isoformat() not in enviado["messages"][0]["content"]
+
+
+def test_las_herramientas_van_en_todas_las_vueltas(store, monkeypatch):
+    """OpenRouter validates the tool schema per call — omit it and the second
+    round has no tools to call."""
+    agent.save_key(store, CLAVE)
+    transporte = TransporteFalso(
+        [
+            RespuestaFalsa(llamadas=[_llamada("today", {})], finish="tool_calls"),
+            RespuestaFalsa("Hoy toca pecho."),
+        ]
+    )
+    monkeypatch.setattr(agent, "_post_chat", transporte)
+    agent.Coach(store, today=HOY).ask("¿qué toca?")
+
+    assert len(transporte.peticiones) == 2
+    for i, envio in enumerate(transporte.peticiones):
+        assert envio.get("tools"), f"request {i + 1} carried no tools"
 
 
 def test_un_fallo_de_red_no_envenena_la_siguiente_pregunta(store, monkeypatch):
     """A half-built exchange left behind makes the *next* question fail too."""
     agent.save_key(store, CLAVE)
-    cliente = ClienteFalso(
+    transporte = TransporteFalso(
         [
-            Respuesta([_uso("today", {})], "tool_use"),
-            RuntimeError("la red se cayó"),
-            Respuesta([_texto("todo bien")]),
+            RespuestaFalsa(llamadas=[_llamada("today", {})], finish="tool_calls"),
+            agent.ApiError("la red se cayó"),
+            RespuestaFalsa("todo bien"),
         ]
     )
-    monkeypatch.setattr(agent, "_client", lambda key: cliente)
+    monkeypatch.setattr(agent, "_post_chat", transporte)
 
     coach = agent.Coach(store, today=HOY)
     primera = coach.ask("¿qué toca?")
@@ -518,66 +574,107 @@ def test_un_fallo_de_red_no_envenena_la_siguiente_pregunta(store, monkeypatch):
     assert segunda.ok, segunda.error
 
 
-def test_un_rechazo_del_modelo_se_cuenta_no_se_traga(store, monkeypatch):
-    """`stop_reason: refusal` arrives as HTTP 200 with no text. Reading content[0] crashes."""
+def test_un_filtro_de_contenido_se_cuenta_no_se_traga(store, monkeypatch):
     agent.save_key(store, CLAVE)
-    cliente = ClienteFalso([Respuesta([], "refusal")])
-    monkeypatch.setattr(agent, "_client", lambda key: cliente)
-
+    monkeypatch.setattr(
+        agent, "_post_chat", TransporteFalso([RespuestaFalsa("", finish="content_filter")])
+    )
     respuesta = agent.Coach(store, today=HOY).ask("algo raro")
-    assert not respuesta.ok
-    assert "declined" in respuesta.error
+    assert not respuesta.ok and "declined" in respuesta.error
+
+
+def test_una_respuesta_cortada_se_marca(store, monkeypatch):
+    agent.save_key(store, CLAVE)
+    monkeypatch.setattr(
+        agent, "_post_chat", TransporteFalso([RespuestaFalsa("Media frase", finish="length")])
+    )
+    respuesta = agent.Coach(store, today=HOY).ask("cuéntame")
+    assert respuesta.ok and "cut off" in respuesta.text
 
 
 def test_el_bucle_no_gira_para_siempre(store, monkeypatch):
     agent.save_key(store, CLAVE)
-    cliente = ClienteFalso([Respuesta([_uso("today", {})], "tool_use")] * 20)
-    monkeypatch.setattr(agent, "_client", lambda key: cliente)
-
+    monkeypatch.setattr(
+        agent,
+        "_post_chat",
+        TransporteFalso(
+            [RespuestaFalsa(llamadas=[_llamada("today", {})], finish="tool_calls")] * 20
+        ),
+    )
     respuesta = agent.Coach(store, today=HOY).ask("da vueltas")
     assert not respuesta.ok
     assert len(respuesta.tool_calls) == agent.MAX_TOOL_ROUNDS
 
 
 def test_una_herramienta_rota_no_tumba_la_vuelta(store, monkeypatch):
-    """A tool that raises must come back as a tool_result, not kill the answer."""
+    """A tool that raises must come back as a tool message, not kill the answer."""
     agent.save_key(store, CLAVE)
 
     def explota(ctx, **kw):
         raise RuntimeError("boom")
 
     monkeypatch.setitem(agent._READ_TOOLS, "today", explota)
-    cliente = ClienteFalso(
-        [Respuesta([_uso("today", {})], "tool_use"), Respuesta([_texto("sigo aquí")])]
+    transporte = TransporteFalso(
+        [
+            RespuestaFalsa(llamadas=[_llamada("today", {})], finish="tool_calls"),
+            RespuestaFalsa("sigo aquí"),
+        ]
     )
-    monkeypatch.setattr(agent, "_client", lambda key: cliente)
+    monkeypatch.setattr(agent, "_post_chat", transporte)
 
     respuesta = agent.Coach(store, today=HOY).ask("¿qué toca?")
     assert respuesta.ok
-    resultados = cliente.peticiones[1]["messages"][-1]["content"]
-    assert "boom" in resultados[0]["content"]
+    assert "boom" in transporte.peticiones[1]["messages"][-1]["content"]
 
 
-def test_el_recorte_no_deja_un_tool_use_huerfano(store):
-    """The API rejects an assistant `tool_use` whose `tool_result` was cut away."""
+def test_varias_herramientas_en_paralelo_cada_una_su_respuesta(store, monkeypatch):
+    """One assistant turn, several calls, one `tool` message each keyed by id."""
+    agent.save_key(store, CLAVE)
+    transporte = TransporteFalso(
+        [
+            RespuestaFalsa(
+                llamadas=[
+                    _llamada("today", {}, "call_a"),
+                    _llamada("recent_training", {"days": 7}, "call_b"),
+                ],
+                finish="tool_calls",
+            ),
+            RespuestaFalsa("Ahí lo tienes."),
+        ]
+    )
+    monkeypatch.setattr(agent, "_post_chat", transporte)
+    agent.Coach(store, today=HOY).ask("resúmeme la semana")
+
+    mensajes = transporte.peticiones[1]["messages"]
+    respuestas = [m for m in mensajes if m.get("role") == "tool"]
+    assert [m["tool_call_id"] for m in respuestas] == ["call_a", "call_b"]
+
+
+def test_el_recorte_no_deja_llamadas_huerfanas(store):
+    """The API rejects an assistant `tool_calls` whose `tool` replies were cut."""
     coach = agent.Coach(store, today=HOY)
     for i in range(20):
         coach.messages.append({"role": "user", "content": f"pregunta {i}"})
-        coach.messages.append({"role": "assistant", "content": [_uso("today", {}, f"t{i}")]})
         coach.messages.append(
-            {
-                "role": "user",
-                "content": [{"type": "tool_result", "tool_use_id": f"t{i}", "content": "ok"}],
-            }
+            {"role": "assistant", "content": "", "tool_calls": [_llamada("today", {}, f"t{i}")]}
         )
-        coach.messages.append({"role": "assistant", "content": [_texto("respuesta")]})
+        coach.messages.append({"role": "tool", "tool_call_id": f"t{i}", "content": "ok"})
+        coach.messages.append({"role": "assistant", "content": "respuesta"})
     coach._trim()
 
     assert coach.messages, "trimming emptied the conversation"
-    primero = coach.messages[0]
-    assert primero["role"] == "user"
-    assert not agent._is_tool_result(primero), "the window opens on an orphaned tool_result"
+    assert coach.messages[0]["role"] == "user", "the window opens mid-exchange"
     assert len(coach.messages) <= agent.MAX_HISTORY_TURNS
+
+
+def test_el_coste_real_gana_a_la_estimacion(store):
+    """OpenRouter knows what it charged. A price table in this repo never will."""
+    barato = openrouter.Model("x/y", "Y", 1000, prompt_price=1.0, completion_price=2.0)
+    con_precio = agent.Reply(text="", input_tokens=1_000_000, output_tokens=0)
+    assert agent.estimate_cost(con_precio, barato) == pytest.approx(1.0)
+
+    cobrado = agent.Reply(text="", input_tokens=1_000_000, output_tokens=0, charged=0.37)
+    assert agent.estimate_cost(cobrado, barato) == pytest.approx(0.37)
 
 
 # ── what the tools actually say ───────────────────────────────────────────
@@ -667,16 +764,17 @@ def test_listar_ejercicios_dice_que_son_los_unicos(store):
 
 def test_las_herramientas_declaradas_existen_todas():
     """A schema with no handler is a tool that always errors at runtime."""
-    declaradas = {t["name"] for t in agent.tool_schemas()}
+    declaradas = {t["function"]["name"] for t in agent.tool_schemas()}
     implementadas = set(agent._READ_TOOLS) | set(agent._PROPOSE_TOOLS)
     assert declaradas == implementadas
 
 
 def test_el_esquema_avisa_de_que_no_guarda():
     """The description is the model's only contract. It has to say it plainly."""
-    for esquema in agent.tool_schemas():
+    for envoltorio in agent.tool_schemas():
+        esquema = envoltorio["function"]
         if esquema["name"].startswith("propose_"):
-            assert "does NOT save" in esquema["description"] or "NOT save" in esquema["description"]
+            assert "NOT save" in esquema["description"]
 
 
 def test_el_prompt_prohibe_decir_que_esta_guardado(store):
@@ -760,26 +858,25 @@ def agent_bubble(who, text):
     return Bubble(who, text)
 
 
-#: Two dropdowns side by side get about half a phone's width each, which is
-#: roughly this many characters at the size Settings uses. Flet does not
-#: shorten an option that does not fit — it cuts it.
-MAX_CARACTERES_DESPLEGABLE = 12
+#: A dropdown gets roughly this many characters on a phone before Flet cuts the
+#: label rather than shortening it.
+MAX_CARACTERES_DESPLEGABLE = 22
 
 
-def test_las_opciones_del_desplegable_caben(store):
+def test_las_opciones_del_desplegable_caben(store, monkeypatch):
     """ "Opus 5 — best, $5/$25" rendered as **"Opus 5 — be"** on the phone.
 
-    With "Low — faste" next to it. Same failure as the "Heig" height field, and
-    invisible from the desktop window, which is wide enough for both.
+    Same failure as the "Heig" height field, and invisible from a desktop window.
+    Now the labels come from the live catalogue, so the risk moved rather than
+    went away: a model id is `vendor/name` and some are very long.
     """
-
     import flet as ft
 
     from views.profile import ProfileView
 
+    monkeypatch.setattr(openrouter, "models_or_empty", lambda **k: (_catalogo(), False))
     vista = ProfileView(_pagina(store), store)
     vista.on_show()
-    tarjeta = vista._coach_section()
 
     largas = []
 
@@ -797,24 +894,129 @@ def test_las_opciones_del_desplegable_caben(store):
             elif hijo is not None and not isinstance(hijo, str):
                 recorrer(hijo)
 
-    recorrer(tarjeta)
+    recorrer(vista._coach_section())
     assert not largas, f"these would be cut off on a phone: {largas}"
 
 
-def test_los_precios_de_ajustes_y_los_del_coste_son_los_mismos():
-    """Two price tables, one truth. Settings shows them; `estimate_cost` bills them.
+def _catalogo():
+    """A small stand-in for OpenRouter's 348 tool-capable models."""
+    return [openrouter.Model(i, i.split("/")[-1], 200000, 1.0, 5.0) for i in openrouter.CURATED]
 
-    Split across two modules because one is prose for a screen and the other is
-    arithmetic, which is exactly how they drift: the visible number would keep
-    saying $5/$25 while the running cost under each answer used something else.
+
+def test_ajustes_se_dibuja_sin_red(store, monkeypatch):
+    """A phone in a basement must still show the dropdown and the stored choice.
+
+    The catalogue is a network call inside a settings screen — the one screen
+    someone opens *because* something is wrong. If it raised, the setting that
+    fixes it would be unreachable.
     """
-    import re
+    from views.profile import ProfileView
 
-    from views.profile import MODEL_PRICES
+    monkeypatch.setattr(openrouter, "models_or_empty", lambda **k: ([], True))
+    vista = ProfileView(_pagina(store), store)
+    vista.on_show()
+    assert vista._coach_section() is not None
 
-    for modelo, texto in MODEL_PRICES.items():
-        entrada, salida = (float(x) for x in re.findall(r"\$(\d+)", texto))
-        una_respuesta = agent.Reply(text="", input_tokens=1_000_000, output_tokens=0)
-        otra = agent.Reply(text="", input_tokens=0, output_tokens=1_000_000)
-        assert agent.estimate_cost(una_respuesta, modelo) == pytest.approx(entrada), modelo
-        assert agent.estimate_cost(otra, modelo) == pytest.approx(salida), modelo
+
+def test_solo_se_ofrecen_modelos_con_herramientas():
+    """A model without tool support looks fine and then breaks the coach.
+
+    It cannot read one fact about Alex's training without tool calls, so it
+    would answer from imagination rather than say it cannot.
+    """
+    payload = {
+        "data": [
+            {
+                "id": "con/herramientas",
+                "context_length": 1000,
+                "pricing": {"prompt": "0.000001", "completion": "0.000002"},
+                "supported_parameters": ["tools", "temperature"],
+            },
+            {
+                "id": "sin/herramientas",
+                "context_length": 1000,
+                "pricing": {"prompt": "0", "completion": "0"},
+                "supported_parameters": ["temperature"],
+            },
+        ]
+    }
+    ids = [m.id for m in openrouter.parse_models(payload)]
+    assert ids == ["con/herramientas"]
+
+
+def test_los_precios_se_convierten_a_millones():
+    """OpenRouter quotes per token. "$0.000003" tells nobody anything."""
+    modelo = openrouter.parse_models(
+        {
+            "data": [
+                {
+                    "id": "x/y",
+                    "context_length": 10,
+                    "pricing": {"prompt": "0.000003", "completion": "0.000015"},
+                    "supported_parameters": ["tools"],
+                }
+            ]
+        }
+    )[0]
+    assert modelo.prompt_price == pytest.approx(3.0)
+    assert modelo.completion_price == pytest.approx(15.0)
+    assert modelo.price_label() == "$3 / $15 per M"
+
+
+def test_un_catalogo_roto_no_vacia_la_lista():
+    """One bad row out of 417 must not empty the dropdown."""
+    payload = {
+        "data": [
+            {"nope": True},
+            "no soy un objeto",
+            {
+                "id": "bien/hecho",
+                "context_length": "no es un número",
+                "pricing": {"prompt": "gratis", "completion": None},
+                "supported_parameters": ["tools"],
+            },
+        ]
+    }
+    modelos = openrouter.parse_models(payload)
+    assert [m.id for m in modelos] == ["bien/hecho"]
+    assert modelos[0].context == 0 and modelos[0].prompt_price == 0.0
+
+
+def test_ya_no_hay_una_tabla_de_precios_en_el_codigo():
+    """The two hardcoded price tables are gone, and must not come back.
+
+    There were two — prose in `views/profile.py` and arithmetic in
+    `agent.estimate_cost` — holding the same numbers, which is exactly how the
+    price on the screen and the price on the bill drift apart. OpenRouter
+    publishes both per model and reports what it actually charged, so nothing in
+    this repo has an opinion about what a model costs any more.
+    """
+    from pathlib import Path
+
+    import views.profile as perfil
+
+    assert not hasattr(perfil, "MODEL_PRICES"), "the settings price table grew back"
+    fuente = (Path(__file__).resolve().parent.parent / "agent.py").read_text(encoding="utf-8")
+    assert '"claude-opus-5": (' not in fuente, "a rate table grew back in agent.py"
+
+
+def test_las_pantallas_no_nombran_al_proveedor_viejo():
+    """No screen may still say "Anthropic API key" or hint `sk-ant-`.
+
+    Three of them did after the move to OpenRouter, and they survived a green
+    test suite and a device check — the app worked perfectly while telling Alex
+    to paste the wrong kind of key into it. Caught on a screenshot. Wrong words
+    on a settings screen are a bug like any other; this is the cheap guard.
+    """
+    from pathlib import Path
+
+    vistas = Path(__file__).resolve().parent.parent / "views"
+    culpables = []
+    for archivo in sorted(vistas.glob("*.py")):
+        for numero, linea in enumerate(archivo.read_text(encoding="utf-8").splitlines(), 1):
+            desnuda = linea.strip()
+            if desnuda.startswith("#"):
+                continue  # a comment is documentation, not something Alex reads
+            if "Anthropic" in linea or "sk-ant-" in linea:
+                culpables.append(f"{archivo.name}:{numero}: {desnuda[:70]}")
+    assert not culpables, "screens still naming the old provider:\n" + "\n".join(culpables)

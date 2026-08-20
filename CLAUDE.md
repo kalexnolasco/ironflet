@@ -197,9 +197,9 @@ If the normalisation drifts, **nothing raises**. Rows simply stop matching: the 
 
 `tests/test_exercise_key.py` freezes it — `CADENAS_ESPERADAS = 219`, `CLAVES_ESPERADAS = 100`, idempotence, no leftover brackets or `*`, and a cross-repo check that every bot exercise exists in the app's routines (reading the bot's file with `ast`, never importing it, so production `.env` credentials stay out of the pytest process). Treat a failure there as a data-integrity incident, not a formatting nit.
 
-### The in-app coach — `agent.py`
+### The in-app coach — `agent.py` + `openrouter.py`
 
-`agent.py` is the Claude-API coach behind `views/agent_view.py`. It imports no Flet and unit-tests with no network, no key and no PostgreSQL.
+`agent.py` is the coach behind `views/agent_view.py`, talking to **OpenRouter**. It imports no Flet and unit-tests with no network, no key and no PostgreSQL.
 
 **The invariant: nothing here can write.** The model has no tool that touches the database. Logging is a *proposal* — `propose_workout_log` validates and returns a `WorkoutProposal`, the view draws it as a card, and `commit_proposal()` writes only when Alex taps Save. `commit_proposal()` is the single writing function in the feature and no tool can reach it, so the guarantee is structural rather than prompted. `tests/test_agent.py::test_ninguna_herramienta_escribe` runs every tool against a store that raises on every write.
 
@@ -207,7 +207,7 @@ Three more rules that are not obvious:
 
 - **A name that is not already a known key is refused, and so is an ambiguous one.** `entrenos.ejercicio` is shared with the Telegram coach, so an invented name starts a silent parallel history (trap #3). `resolve_exercise()` therefore returns `(None, options)` rather than picking: `"press banca"` scored a confident match on **Leg Press** on one shared word, and `"bench press"` preferred *Smith* over *Barbell* because the string was two characters shorter. Both would have written the wrong lift.
 - **The recommendation is `progression.py`'s, relayed.** The training screen shows that number; a second opinion from the model leaves Alex unsure which one the plan meant. `exercise_history` hands it over as a fact and says so.
-- **No key is compiled in, and no beta API is used.** The key is typed in Settings → Coach. The loop is hand-written rather than `beta.messages.tool_runner`, and there is no server-side `fallbacks`, for the same reason: a beta that changes shape leaves a sideloaded APK failing in a gym with no way to update it that afternoon.
+- **It talks to OpenRouter, in the OpenAI wire format.** One key, ~350 tool-capable models, chosen from a dropdown priced off the live public catalogue (`openrouter.py`) — no price is written down in this repo, and `usage.cost` is read back rather than estimated. Four things differ from the Anthropic format and all of them fail *quietly*: the system prompt is a `messages` entry; tools are `{"type":"function","function":{…,"parameters"}}`; `function.arguments` is a JSON **string**; each result is its own `{"role":"tool","tool_call_id"}` message. The transport is plain `httpx` rather than an SDK, which is what keeps the Android dependency list free of compiled code.
 
 Adding a tool means adding it to `_READ_TOOLS` **or** `_PROPOSE_TOOLS` and to `tool_schemas()`; `test_las_herramientas_declaradas_existen_todas` fails if the two drift.
 
@@ -293,9 +293,11 @@ Things that break quietly if you do not know them:
 18. **Giving the coach a tool that writes.** The whole safety story of that feature is that no tool can reach the database — a *proposal* goes on screen and Alex's tap is what writes. One helpful tool that saves directly deletes the guarantee, and nothing fails.
 19. **Adding a pref that holds a secret without listing it in `SECRET_PREF_KEYS`.** Both exporters copy `preferencias` verbatim into a file people mail themselves.
 20. **Calling `save_workout()` from anything re-submittable.** It always INSERTs. Use `replace_workout()`; see the note in Storage.
-21. **Restricting `target_arch` to two architectures.** serious_python packages `libpythonsitepackages.so` for the **first entry only**, so `["arm64-v8a", "x86_64"]` ships an x86_64 slice with a CPython and no site-packages. The build reports success and the app opens on *"ModuleNotFoundError: No module named 'certifi'"*. All three, or exactly one. See the note in `[tool.flet.android]`.
-22. **Trusting logcat to tell you the app crashed.** Flet renders a Python traceback *into the UI*, so `adb logcat | grep Traceback` comes back empty while the phone shows a purple error page. Screenshot the thing.
-23. **Adding a package to `[project] dependencies` that carries compiled code.** That list is pip-installed into the APK against `pypi.flet.dev`. Check for a `cp312-…-android_24_arm64_v8a` wheel there *first*, and pin so the resolver cannot wander off it — `anthropic` only fits because `jiter` and `pydantic-core` happen to publish one.
+21. **Reading `function.arguments` as an object.** OpenRouter sends it as a JSON **string**. Parse it, or every tool runs with no arguments and the coach reports that it cannot find the exercise — which reads like a matching bug, not a parsing one.
+22. **Putting the system prompt in a top-level `system` field.** That is the Anthropic shape. OpenRouter ignores it, and you get a coach with no instructions rather than an error.
+23. **Restricting `target_arch` to two architectures.** serious_python packages `libpythonsitepackages.so` for the **first entry only**, so `["arm64-v8a", "x86_64"]` ships an x86_64 slice with a CPython and no site-packages. The build reports success and the app opens on *"ModuleNotFoundError: No module named 'certifi'"*. All three, or exactly one. See the note in `[tool.flet.android]`.
+24. **Trusting logcat to tell you the app crashed.** Flet renders a Python traceback *into the UI*, so `adb logcat | grep Traceback` comes back empty while the phone shows a purple error page. Screenshot the thing.
+25. **Adding a package to `[project] dependencies` that carries compiled code.** That list is pip-installed into the APK against `pypi.flet.dev`. The list is currently free of third-party binaries and that is worth keeping: it means no upgrade can be blocked by a missing wheel for an ABI almost nobody targets. If you must, check for a `cp312-…-android_24_arm64_v8a` wheel there *first* and pin so the resolver cannot wander off it.
 
 ### Flet version caveat
 

@@ -4,6 +4,50 @@ Todos los cambios notables de IronFlet.
 El formato sigue [Keep a Changelog](https://keepachangelog.com/) y el proyecto
 usa [SemVer](https://semver.org/).
 
+## [0.9.0] — 2026-08-20
+
+**El coach va por OpenRouter y eliges el modelo.** Una sola clave y ~350
+modelos, Claude incluido, con sus precios traídos en vivo.
+
+### Añadido
+
+- **Desplegable de modelos** en Ajustes: una lista corta (Opus 5, Sonnet 5,
+  Haiku 4.5, GPT-4.1 mini, Gemini 2.5 Flash, Llama 3.3 70B) más un botón
+  **"All 350…"** con buscador sobre el catálogo completo, ordenado de más
+  barato a más caro.
+- **Los precios no están escritos en el código.** Se leen del catálogo de
+  OpenRouter, que es público y no necesita clave — así que puedes mirar lo que
+  cuesta cada cosa antes de pagar nada. Debajo de cada respuesta sale lo que
+  OpenRouter dice que **cobró de verdad**, no una estimación nuestra.
+- Solo aparecen los modelos que soportan herramientas (348 de 417). Los otros 69
+  se verían bien en la lista y luego romperían el coach en silencio: sin
+  herramientas no puede leer ni un dato tuyo, y contestaría de memoria.
+
+### La APK adelgaza 11 MB
+
+83,2 → **72,3 MB**, y el motivo importa más que el número: fuera el SDK de
+Anthropic, y con él `pydantic-core` y `jiter`, las **dos únicas extensiones en
+Rust** que quedaban. Llegaban al móvil solo porque pypi.flet.dev publica una
+rueda `cp312-android_24_arm64_v8a` para cada una — una apuesta a que un tercero
+siga compilando para una ABI que casi nadie usa, en una app que se instala a
+mano y no se puede parchear desde el gimnasio. Ahora la lista de dependencias
+de Android no lleva **nada compilado de terceros**: `httpx` y sus 8 paquetes son
+Python puro.
+
+### Lo que no cambió
+
+Las herramientas, la tarjeta de confirmación y la garantía de que **el coach no
+puede escribir en tu historial**. Solo se movió el transporte — 33 líneas de 53
+funciones.
+
+### Arreglado
+
+- Tres pantallas seguían diciendo "Anthropic API key" y sugiriendo `sk-ant-`
+  después del cambio. La app funcionaba perfectamente mientras te pedía el tipo
+  de clave equivocado. Ahora hay un test que lo impide.
+- Cinco tests estaban **duplicados** y el segundo tapaba al primero, así que no
+  se ejecutaban. Los cazó ruff, no la suite en verde.
+
 ## [0.8.0] — 2026-08-20
 
 **Home es tu día entero.** Al abrir la app: qué sesión toca, el botón para

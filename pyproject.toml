@@ -1,6 +1,6 @@
 [project]
 name = "ironflet"
-version = "0.8.0"
+version = "0.9.0"
 description = "English-only weight-training tracker built with Flet — runs on Android, desktop and web from a single Python codebase."
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -57,39 +57,35 @@ classifiers = [
 # resolves to SQLite, so psycopg is never imported. sqlite3 is in the stdlib
 # CPython that serious-python embeds, so the phone needs no driver at all.
 #
-# `anthropic` IS ON THE PHONE ON PURPOSE, and it is the only entry here that
-# pulls compiled code. The in-app coach (agent.py) talks to the Claude API, and
-# it has to work from the gym, so the client has to be inside the APK.
+# `httpx` IS ON THE PHONE, AND IT IS PURE PYTHON — that is the whole point.
 #
-# It survives `flet build apk` because of a coincidence worth writing down:
-# `anthropic` needs exactly two non-pure-Python packages — `jiter` and
-# `pydantic-core` — and pypi.flet.dev publishes
-# `cp312-cp312-android_24_arm64_v8a` wheels for both, which is precisely the
-# CPython that serious-python embeds. Everything else it needs (anyio, distro,
-# docstring-parser, httpx, pydantic, sniffio, typing-extensions) is pure Python
-# and comes from PyPI. The `aiohttp` extra is NOT installed and must not be:
-# that is the one that would drag in aiohttp/yarl/frozenlist.
+# The coach talks to OpenRouter, whose API is plain JSON over HTTPS, so it needs
+# an HTTP client and nothing else. It used to use the `anthropic` SDK, and that
+# SDK pulled in `pydantic` -> `pydantic-core` plus `jiter`: two Rust extensions
+# that only reached the phone because pypi.flet.dev happens to publish a
+# matching `cp312-android_24_arm64_v8a` wheel for each. That was a standing bet
+# on a third party continuing to build wheels for an ABI almost nobody targets,
+# for an app that is sideloaded and cannot be hotfixed from a gym.
 #
-# So `pydantic` is pinned below its floor: pip must land on a version whose
-# pinned `pydantic-core` has an Android wheel. Left unpinned, a pydantic release
-# newer than the flet index would resolve, pip would find no matching
-# `pydantic-core` wheel, fall back to the sdist, and the build would die trying
-# to compile Rust for ARM. Raising this pin means checking
-# https://pypi.flet.dev/pydantic-core/ first.
+# Measured, not assumed:
+#
+#   httpx      8 packages in its tree, ZERO with compiled code
+#   anthropic 18 packages in its tree, two with compiled code
+#
+# So the Android build list now contains no compiled third-party code at all.
+# `sqlalchemy` is pure Python, `flet` ships its own native side through the
+# Flutter half, and `sqlite3` is in the stdlib CPython that serious-python
+# embeds. Adding anything with a `.so` puts the bet back — check
+# https://pypi.flet.dev/ FIRST, and see trap #23 in CLAUDE.md.
 #
 # NO API KEY IS COMPILED IN. An APK is a zip; `unzip` plus `strings` reads any
-# constant out of it in seconds. Alex types the key once into Settings and it is
-# stored in `preferencias`, in the app's private storage — see agent.py.
+# constant out of it in seconds. Alex types his OpenRouter key once into
+# Settings and it is stored in `preferencias`, in the app's private storage —
+# see agent.py and storage.SECRET_PREF_KEYS.
 dependencies = [
     "flet>=0.25,<0.30",
     "sqlalchemy>=2.0",
-    # Floor is the version actually verified inside an APK (0.125.0, alongside
-    # pydantic 2.13.4 / jiter 0.15.0), not the oldest that might work: the
-    # `output_config.effort` parameter agent.py sends is newer than the SDK's
-    # own history, and an older resolve would fail on the phone, at the one
-    # moment there is no console to read the traceback on.
-    "anthropic>=0.125,<1",
-    "pydantic>=2.11,<2.15",
+    "httpx>=0.27,<1",
 ]
 
 [project.optional-dependencies]
@@ -112,9 +108,8 @@ dev = [
     "flet[all]>=0.25,<0.30",
     "psycopg[binary]>=3.2",
     # Repeated from `[project] dependencies` for the same reason the two extras
-    # above are: `uv sync --group dev` installs only what is listed here, and
-    # tests/test_agent.py imports the SDK's exception classes.
-    "anthropic>=0.125,<1",
+    # above are: `uv sync --group dev` installs only what is listed here.
+    "httpx>=0.27,<1",
     "ruff>=0.7",
     "pytest>=8",
     "pytest-asyncio>=0.24",

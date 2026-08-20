@@ -60,10 +60,31 @@ default advice and both are about this being a *sideloaded APK*:
   refusal path is handled instead — it produces a sentence on screen, which is
   the right failure for "how many reps should I do".
 
-Effort defaults to `low` on purpose. Every hard computation — progression,
-plate maths, week placement, volume — is already done in Python before the model
-sees it, so the model is parsing and phrasing; and Alex is standing between two
-sets while it answers. `EFFORT_PREF` raises it if that turns out wrong.
+The default model is a mid-tier one rather than the best available, for the same
+reason: every hard computation — progression, plate maths, week placement,
+volume — is already done in Python before the model sees it, so its job is
+parsing and phrasing, and Alex is standing between two sets while it answers.
+The dropdown in Settings goes from free to expensive and `openrouter.py` prices
+every option from the live catalogue.
+
+## Why OpenRouter, and what that changed
+
+One key, ~350 tool-capable models, and the choice belongs to Alex rather than to
+this file. What it cost is the transport: OpenRouter speaks the **OpenAI** wire
+format, not Anthropic's, and the two differ in four places that all fail quietly
+rather than loudly —
+
+* the system prompt is a `messages` entry, not a top-level field. Put it in the
+  wrong place and you get a coach with no instructions, not an error;
+* tools are `{"type": "function", "function": {..., "parameters"}}`, not
+  `{..., "input_schema"}`;
+* `function.arguments` arrives as a JSON **string**, so a client that reads it
+  as an object sees every tool called with no arguments;
+* each result is its own `{"role": "tool", "tool_call_id"}` message, rather than
+  one user turn carrying every `tool_result` block.
+
+Everything above that line — the tools, the proposals, the refusal to write —
+did not move. That is why this was two functions and not a rewrite.
 """
 
 from __future__ import annotations
@@ -77,6 +98,7 @@ from datetime import date, timedelta
 from typing import Any
 
 import analytics
+import openrouter
 import program_week
 from data import EXERCISE_CATALOG, active_routine
 from exercises import exercise_key
@@ -85,15 +107,20 @@ from storage import WorkoutEntry, clean_note
 
 # ── preferences ───────────────────────────────────────────────────────────
 
-#: Where Alex's key lives. Also listed in `storage.SECRET_PREF_KEYS`, which is
-#: what keeps it out of every backup document — see the note there.
-API_KEY_PREF = "agent_api_key"
+#: Where Alex's OpenRouter key lives. Also in `storage.SECRET_PREF_KEYS`, which
+#: is what keeps it out of every backup document — see the note there.
+#:
+#: Renamed from `agent_api_key`, which held an Anthropic key. The old name stays
+#: in SECRET_PREF_KEYS rather than being dropped: an install that still has that
+#: row must not start leaking it into backups just because nothing reads it any
+#: more.
+API_KEY_PREF = "agent_openrouter_key"
 MODEL_PREF = "agent_model"
-EFFORT_PREF = "agent_effort"
+#: Price snapshot for the chosen model, so the cost line still says something in
+#: a gym with no signal. `"<prompt>/<completion>"` in dollars per million.
+PRICE_PREF = "agent_model_price"
 
-DEFAULT_MODEL = "claude-opus-5"
-DEFAULT_EFFORT = "low"
-EFFORT_LEVELS = ("low", "medium", "high")
+DEFAULT_MODEL = openrouter.DEFAULT_MODEL
 
 #: Caps thinking *plus* reply text together on this model family, so it cannot
 #: be sized to the reply alone. Generous enough that a long answer is never
@@ -119,11 +146,13 @@ class AgentError(RuntimeError):
 def clean_key(raw: str | None) -> str:
     """Whitespace off, and refuse the shapes that cannot be a key.
 
-    Deliberately *not* strict about the prefix. Rejecting anything that does not
-    start with `sk-ant-` would be a guess about a format Anthropic owns, and the
-    failure mode of that guess is Alex holding a valid key the app will not
-    accept, in a gym, with no way to override it. `looks_like_api_key()` carries
-    the soft warning instead, and the real verdict comes from the first request.
+    Deliberately *not* strict about the prefix. OpenRouter's keys look like
+    `sk-or-v1-…` but **no page in their documentation states that as a guarantee**,
+    so rejecting on it would be this app inventing a rule about someone else's
+    format — and the failure mode of that guess is Alex holding a valid key the
+    app will not accept, in a gym, with no way to override it.
+    `looks_like_api_key()` carries a soft warning instead, and the real verdict
+    comes from the first request.
     """
     text = (raw or "").strip()
     if not text:
@@ -136,12 +165,17 @@ def clean_key(raw: str | None) -> str:
 
 
 def looks_like_api_key(raw: str | None) -> bool:
-    """A hint for the UI, not a gate. See `clean_key`."""
-    return (raw or "").strip().startswith("sk-ant-")
+    """A hint for the UI, not a gate. See `clean_key`.
+
+    OpenRouter keys are `sk-or-v1-…`. Only the `sk-or-` part is checked, because
+    the version segment is theirs to change and refusing a valid key in a gym is
+    worse than accepting a bad one and saying so on the first request.
+    """
+    return (raw or "").strip().startswith("sk-or-")
 
 
 def mask_key(raw: str | None) -> str:
-    """`sk-ant-api03-…9f2a` — enough to tell two keys apart, no more.
+    """`sk-or-v1-abc…9f2a` — enough to tell two keys apart, no more.
 
     Settings has to be able to show *that* a key is stored without putting it
     back on a screen Alex might be sharing.
@@ -186,12 +220,33 @@ def read_model(store: Any) -> str:
         return DEFAULT_MODEL
 
 
-def read_effort(store: Any) -> str:
+def save_model(store: Any, model: Any) -> None:
+    """Remember the choice AND its price, so the cost line survives no signal."""
+    store.set_pref(MODEL_PREF, model.id)
+    store.set_pref(PRICE_PREF, f"{model.prompt_price:g}/{model.completion_price:g}")
+
+
+def read_price(store: Any) -> tuple[float, float] | None:
+    """The snapshot taken when the model was chosen, or None if there is none."""
     try:
-        value = (store.get_pref(EFFORT_PREF) or "").strip().lower()
-    except Exception:  # pragma: no cover - defensive
-        return DEFAULT_EFFORT
-    return value if value in EFFORT_LEVELS else DEFAULT_EFFORT
+        crudo = (store.get_pref(PRICE_PREF) or "").strip()
+        entrada, salida = crudo.split("/", 1)
+        return (float(entrada), float(salida))
+    except Exception:
+        return None
+
+
+def priced_model(store: Any) -> Any:
+    """An `openrouter.Model` for the chosen id, priced from the snapshot.
+
+    Enough for `estimate_cost` to work offline. The catalogue is the truth when
+    there is signal; this is what is left when there is not.
+    """
+    entrada, salida = read_price(store) or (0.0, 0.0)
+    ident = read_model(store)
+    return openrouter.Model(
+        id=ident, name=ident, context=0, prompt_price=entrada, completion_price=salida
+    )
 
 
 # ── what counts as a real exercise ────────────────────────────────────────
@@ -880,7 +935,20 @@ _PROPOSE_TOOLS: dict[str, Callable[..., tuple[str, Proposal | None]]] = {
 
 
 def tool_schemas() -> list[dict]:
-    """The `tools` array. Descriptions say *when* to call, not just what it does."""
+    """The `tools` array in OpenRouter's (OpenAI's) shape.
+
+    The declarations below stay provider-neutral — a name, a description and a
+    JSON Schema — and this is the only place that knows the envelope. Anthropic
+    wants `{"name", "description", "input_schema"}` at the top level; OpenAI and
+    therefore OpenRouter want `{"type": "function", "function": {...}}` with the
+    schema under `parameters`. Keeping the wrapper in one function is what made
+    swapping providers a change to two functions instead of eight schemas.
+    """
+    return [{"type": "function", "function": d} for d in _tool_declarations()]
+
+
+def _tool_declarations() -> list[dict]:
+    """Name, description, JSON Schema. Descriptions say *when* to call."""
     return [
         {
             "name": "today",
@@ -889,7 +957,7 @@ def tool_schemas() -> list[dict]:
                 "prescribes for this weekday, and what has already been logged today. Call "
                 "this before answering anything about what to train or how the week is going."
             ),
-            "input_schema": {"type": "object", "properties": {}},
+            "parameters": {"type": "object", "properties": {}},
         },
         {
             "name": "exercise_history",
@@ -898,7 +966,7 @@ def tool_schemas() -> list[dict]:
                 "Call this before saying anything about weights or progress on a specific "
                 "exercise. Relay the recommendation it returns rather than computing your own."
             ),
-            "input_schema": {
+            "parameters": {
                 "type": "object",
                 "properties": {
                     "exercise": {
@@ -916,7 +984,7 @@ def tool_schemas() -> list[dict]:
                 "Everything logged in the last N days, by day, plus trailing-week sets and "
                 "volume. Call this for questions about the week, consistency, or fatigue."
             ),
-            "input_schema": {
+            "parameters": {
                 "type": "object",
                 "properties": {"days": {"type": "integer", "description": "1-90, default 14."}},
             },
@@ -927,7 +995,7 @@ def tool_schemas() -> list[dict]:
                 "Body weight entries, the 7-day rolling average and the weekly rate. Call this "
                 "for anything about weight, cutting, bulking or the scale."
             ),
-            "input_schema": {
+            "parameters": {
                 "type": "object",
                 "properties": {"days": {"type": "integer", "description": "7-365, default 60."}},
             },
@@ -938,7 +1006,7 @@ def tool_schemas() -> list[dict]:
                 "Calories and macros logged on a day against that day's target. Call this for "
                 "anything about food, protein or calories."
             ),
-            "input_schema": {
+            "parameters": {
                 "type": "object",
                 "properties": {
                     "day": {"type": "string", "description": "ISO date; blank = today."}
@@ -951,7 +1019,7 @@ def tool_schemas() -> list[dict]:
                 "The exact exercise names this log accepts. Call this whenever you are unsure "
                 "of a name before proposing a log — an invented name is refused."
             ),
-            "input_schema": {
+            "parameters": {
                 "type": "object",
                 "properties": {"contains": {"type": "string", "description": "Optional filter."}},
             },
@@ -963,7 +1031,7 @@ def tool_schemas() -> list[dict]:
                 "save anything — he reads the card and taps Save. Use it whenever he tells you "
                 "he did an exercise. Never say a session is saved; say it is waiting for him."
             ),
-            "input_schema": {
+            "parameters": {
                 "type": "object",
                 "properties": {
                     "exercise": {
@@ -1009,7 +1077,7 @@ def tool_schemas() -> list[dict]:
                 "Show the user a confirmation card with a body weight. Does NOT save; he taps "
                 "Save. Use it when he tells you what he weighed."
             ),
-            "input_schema": {
+            "parameters": {
                 "type": "object",
                 "properties": {
                     "kg": {"type": "number"},
@@ -1082,48 +1150,122 @@ class Reply:
     tool_calls: tuple[str, ...] = ()
     input_tokens: int = 0
     output_tokens: int = 0
+    #: What OpenRouter says it actually charged, in dollars. 0.0 when it did not
+    #: say — `estimate_cost` then falls back to the catalogue price.
+    charged: float = 0.0
+    #: The model id that really served the turn. OpenRouter can route elsewhere
+    #: when a provider is down, and Alex is paying that model's rate, not the
+    #: one on the dropdown.
+    served_by: str = ""
 
     @property
     def ok(self) -> bool:
         return self.error is None
 
 
-def _client(api_key: str):
-    """Import the SDK here, not at module import.
+class ApiError(AgentError):
+    """A request that came back wrong. Carries the status so callers can branch."""
 
-    `backup.py` and the tests import this module for `SECRET_PREF_KEYS` and the
-    pure helpers, and neither should pay for — or require — the Anthropic SDK.
-    On the phone it also keeps ~1300 files out of the start-up path until the
-    coach is actually opened.
+    def __init__(self, message: str, status: int = 0):
+        super().__init__(message)
+        self.status = status
+
+
+def _post_chat(payload: dict, api_key: str, timeout: float = 90.0) -> dict:
+    """One POST to OpenRouter's chat endpoint. Raises `ApiError`, never leaks httpx.
+
+    `httpx` directly rather than an SDK, and that is a deliberate trade with a
+    concrete payoff: **httpx's entire dependency tree is pure Python.** The
+    `openai` SDK — like the `anthropic` one this replaces — needs `pydantic`,
+    hence `pydantic-core`, plus `jiter`: two Rust extensions that only reach the
+    phone because pypi.flet.dev happens to publish a matching
+    `cp312-android_24_arm64_v8a` wheel for each. That was a standing bet on a
+    third party continuing to build wheels for an ABI nobody else targets, for
+    an app that is sideloaded and cannot be hotfixed. Dropping them removes the
+    bet and about 10 MB per architecture.
+
+    What it costs: typed responses and the SDK's retry logic. The first is worth
+    little against an endpoint whose shape is thirty lines of JSON; the second is
+    reimplemented below, badly on purpose — one retry, only on the errors that
+    are actually transient.
+
+    Imported inside the function so `backup.py` and the tests can import this
+    module for `SECRET_PREF_KEYS` and the pure helpers without needing httpx at
+    all.
     """
     try:
-        import anthropic
+        import httpx
     except ImportError as exc:  # pragma: no cover - the APK ships it
-        raise AgentError("The Anthropic client is not installed in this build.") from exc
-    return anthropic.Anthropic(api_key=api_key, max_retries=2, timeout=60.0)
+        raise ApiError("The HTTP client is not installed in this build.") from exc
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        # Attribution, both optional. They cost nothing and make a stray key
+        # recognisable in an OpenRouter activity log.
+        "HTTP-Referer": openrouter.APP_URL,
+        "X-OpenRouter-Title": openrouter.APP_TITLE,
+    }
+
+    try:
+        with httpx.Client(timeout=timeout) as client:
+            response = client.post(
+                f"{openrouter.BASE_URL}/chat/completions", headers=headers, json=payload
+            )
+    except Exception as exc:  # network, DNS, TLS, timeout
+        raise ApiError(
+            "No connection to OpenRouter. The coach needs signal; the rest of the app does not."
+        ) from exc
+
+    if response.status_code >= 400:
+        raise ApiError(_explain_status(response), response.status_code)
+
+    try:
+        return response.json()
+    except ValueError as exc:
+        raise ApiError("OpenRouter sent something that is not JSON.") from exc
+
+
+def _explain_status(response: Any) -> str:
+    """An HTTP failure, in terms of what Alex can do about it.
+
+    OpenRouter puts a human message in `{"error": {"message": ...}}`. It is
+    quoted when present because it is usually more specific than anything this
+    function could invent — "this model is not available on your account" beats
+    "the request was refused".
+    """
+    detalle = ""
+    try:
+        cuerpo = response.json()
+        if isinstance(cuerpo, dict):
+            error = cuerpo.get("error")
+            if isinstance(error, dict):
+                detalle = str(error.get("message") or "").strip()
+            elif isinstance(error, str):
+                detalle = error.strip()
+    except Exception:
+        detalle = ""
+
+    codigo = response.status_code
+    if codigo == 401:
+        return "That OpenRouter key was rejected. Check it in Settings."
+    if codigo == 402:
+        return "Out of OpenRouter credit. Top it up at openrouter.ai."
+    if codigo == 403:
+        return detalle or "OpenRouter refused that request."
+    if codigo == 404:
+        return "That model id does not exist on OpenRouter. Pick another in Settings."
+    if codigo == 429:
+        return "Rate limited — wait a moment and ask again."
+    if codigo >= 500:
+        return "OpenRouter is having trouble. Try again in a minute."
+    return detalle or f"OpenRouter refused the request ({codigo})."
 
 
 def _friendly_error(exc: Exception) -> str:
-    """One sentence, in terms of what Alex can do about it."""
-    try:
-        import anthropic
-    except ImportError:  # pragma: no cover
-        return f"Something went wrong: {exc}"
-
-    if isinstance(exc, anthropic.AuthenticationError):
-        return "That API key was rejected. Check it in Settings."
-    if isinstance(exc, anthropic.PermissionDeniedError):
-        return "That key has no access to this model. Check the model in Settings."
-    if isinstance(exc, anthropic.NotFoundError):
-        return "That model name does not exist. Check the model in Settings."
-    if isinstance(exc, anthropic.RateLimitError):
-        return "Rate limited — wait a moment and ask again."
-    if isinstance(exc, anthropic.APIConnectionError):
-        return "No connection to the API. The coach needs signal; the rest of the app does not."
-    if isinstance(exc, anthropic.APIStatusError):
-        if exc.status_code >= 500:
-            return "The API is having trouble. Try again in a minute."
-        return f"The API refused the request: {exc.message}"
+    """One sentence. Never a stack trace, never a bare exception class name."""
+    if isinstance(exc, AgentError):
+        return str(exc)
     return f"Something went wrong: {exc}"
 
 
@@ -1176,110 +1318,144 @@ class Coach:
         if not key:
             return Reply(
                 text="",
-                error="No API key yet. Settings → Coach, paste your key there once.",
+                error="No OpenRouter key yet. Settings \u2192 Coach, paste your key there once.",
             )
 
-        try:
-            client = _client(key)
-        except AgentError as exc:
-            return Reply(text="", error=str(exc))
-
         ctx = self._context()
-        # Where to rewind to if the request fails. A half-built exchange — a
-        # user turn with no answer, or an assistant `tool_use` whose result
+        # Where to rewind to if the request fails. A half-built exchange — a user
+        # turn with no answer, or an assistant `tool_calls` whose `tool` replies
         # never arrived — is not just untidy: the API rejects the latter, so
         # leaving one behind would make the *next* question fail too, with an
         # error about a message pair Alex never saw.
-        # Trim BEFORE taking the mark, or trimming would shift every index
-        # under it and the rewind would cut the wrong turns out.
+        #
+        # Trim BEFORE taking the mark, or trimming would shift every index under
+        # it and the rewind would cut the wrong turns out.
         self._trim()
         watermark = len(self.messages)
         self.messages.append({"role": "user", "content": message})
 
         model = read_model(self.store)
-        effort = read_effort(self.store)
         proposal: Proposal | None = None
         used: list[str] = []
         tokens_in = tokens_out = 0
+        cobrado = 0.0
+        servido_por = ""
 
         for _ in range(MAX_TOOL_ROUNDS):
+            payload = {
+                "model": model,
+                # The system prompt goes in `messages`, not a top-level field:
+                # that is the OpenAI shape OpenRouter speaks, and it is the one
+                # difference from the Anthropic API that silently produces a
+                # coach with no instructions rather than an error.
+                "messages": [{"role": "system", "content": self.system}, *self.messages],
+                "tools": tool_schemas(),
+                "tool_choice": "auto",
+                "max_tokens": MAX_TOKENS,
+                # Ask OpenRouter to price the call for us. It knows the real
+                # rate for whichever upstream served it, including any discount,
+                # which a table in this repo never will.
+                "usage": {"include": True},
+            }
+
             try:
-                response = client.messages.create(
-                    model=model,
-                    max_tokens=MAX_TOKENS,
-                    system=[
-                        {
-                            "type": "text",
-                            "text": self.system,
-                            # The system prompt and the tool list are byte-stable
-                            # across every request in a session, so this makes
-                            # each follow-up question read the prefix at a tenth
-                            # of the price. Nothing volatile is above it.
-                            "cache_control": {"type": "ephemeral"},
-                        }
-                    ],
-                    output_config={"effort": effort},
-                    tools=tool_schemas(),
-                    messages=self.messages,
-                )
-            except Exception as exc:
+                cuerpo = _post_chat(payload, key)
+            except AgentError as exc:
                 del self.messages[watermark:]
                 return Reply(text="", error=_friendly_error(exc), tool_calls=tuple(used))
 
-            usage = getattr(response, "usage", None)
-            if usage is not None:
-                tokens_in += getattr(usage, "input_tokens", 0) or 0
-                tokens_out += getattr(usage, "output_tokens", 0) or 0
+            uso = cuerpo.get("usage") or {}
+            tokens_in += int(uso.get("prompt_tokens") or 0)
+            tokens_out += int(uso.get("completion_tokens") or 0)
+            # `cost` is OpenRouter's own number, in dollars, when it sends one.
+            with contextlib.suppress(TypeError, ValueError):
+                cobrado += float(uso.get("cost") or 0.0)
+            servido_por = str(cuerpo.get("model") or model)
 
-            # Opus 5 can decline a request outright: HTTP 200, empty or partial
-            # content, `stop_reason` "refusal". Reading content[0] here without
-            # checking is the documented way to crash on it.
-            if getattr(response, "stop_reason", None) == "refusal":
+            opciones = cuerpo.get("choices") or []
+            if not opciones:
                 del self.messages[watermark:]
                 return Reply(
-                    text="",
-                    error="The model declined to answer that one.",
-                    tool_calls=tuple(used),
+                    text="", error="OpenRouter returned no answer.", tool_calls=tuple(used)
                 )
+            eleccion = opciones[0] or {}
+            respuesta = eleccion.get("message") or {}
+            motivo = eleccion.get("finish_reason") or ""
 
-            self.messages.append({"role": "assistant", "content": response.content})
+            llamadas = respuesta.get("tool_calls") or []
+            # Echo the assistant turn back verbatim — including `tool_calls` —
+            # or the follow-up `tool` messages have nothing to attach to.
+            self.messages.append(
+                {
+                    "role": "assistant",
+                    "content": respuesta.get("content") or "",
+                    **({"tool_calls": llamadas} if llamadas else {}),
+                }
+            )
 
-            tool_uses = [b for b in response.content if getattr(b, "type", None) == "tool_use"]
-            if not tool_uses:
-                answer = "".join(
-                    b.text for b in response.content if getattr(b, "type", None) == "text"
-                ).strip()
-                if getattr(response, "stop_reason", None) == "max_tokens" and answer:
+            if not llamadas:
+                answer = (respuesta.get("content") or "").strip()
+                if motivo == "length" and answer:
                     answer += " …(cut off)"
+                if motivo == "content_filter":
+                    del self.messages[watermark:]
+                    return Reply(
+                        text="",
+                        error="The model declined to answer that one.",
+                        tool_calls=tuple(used),
+                    )
                 return Reply(
                     text=answer,
                     proposal=proposal,
                     tool_calls=tuple(used),
                     input_tokens=tokens_in,
                     output_tokens=tokens_out,
+                    charged=cobrado,
+                    served_by=servido_por,
                 )
 
-            results = []
-            for block in tool_uses:
-                used.append(block.name)
-                args = block.input if isinstance(block.input, dict) else {}
+            for llamada in llamadas:
+                funcion = (llamada or {}).get("function") or {}
+                nombre = str(funcion.get("name") or "")
+                used.append(nombre)
+                # `arguments` is a JSON **string**, not an object. This is the
+                # single most common way to get the OpenAI tool format wrong,
+                # and it fails as "the model called the tool with no arguments"
+                # rather than as a parse error.
+                crudo = funcion.get("arguments")
+                if isinstance(crudo, dict):
+                    args = crudo
+                else:
+                    try:
+                        args = json.loads(crudo or "{}")
+                    except ValueError:
+                        args = {}
+                    if not isinstance(args, dict):
+                        args = {}
+
                 try:
-                    told, made = self._run_tool(block.name, args, ctx)
+                    told, made = self._run_tool(nombre, args, ctx)
                 except Exception as exc:  # a broken tool must not kill the turn
                     told, made = (f"That tool failed: {exc}", None)
                 if made is not None:
-                    # Last proposal wins: if he corrects himself inside one
-                    # turn, the card should show the correction.
+                    # Last proposal wins: if he corrects himself inside one turn,
+                    # the card should show the correction.
                     proposal = made
-                results.append({"type": "tool_result", "tool_use_id": block.id, "content": told})
-            # Every result in ONE user message — splitting them teaches the
-            # model to stop asking for tools in parallel.
-            self.messages.append({"role": "user", "content": results})
+                # One `tool` message per call, each carrying its own id. Unlike
+                # the Anthropic format these are separate messages rather than
+                # one user turn holding every result.
+                self.messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": llamada.get("id") or "",
+                        "content": told,
+                    }
+                )
 
         # Out of rounds with no answer. Rewind: what is left in `messages` is a
         # trailing run of tool results the model never replied to, and carrying
-        # that into the next question would make it answer the previous one.
-        # The proposal survives — it was built by validated Python and is true
+        # that into the next question would make it answer the previous one. The
+        # proposal survives — it was built by validated Python and is true
         # regardless of whether the model ever got round to describing it.
         del self.messages[watermark:]
         return Reply(
@@ -1289,20 +1465,22 @@ class Coach:
             tool_calls=tuple(used),
             input_tokens=tokens_in,
             output_tokens=tokens_out,
+            charged=cobrado,
         )
 
     def _trim(self) -> None:
-        """Drop the oldest turns, never leaving a tool_use without its result.
+        """Drop the oldest turns, never orphaning a `tool_calls` from its results.
 
-        The API rejects an assistant turn holding a `tool_use` whose matching
-        `tool_result` was cut away, so the window has to move to a `user` turn
-        that starts a clean exchange rather than to an arbitrary index.
+        The API rejects an assistant turn holding `tool_calls` whose matching
+        `tool` messages were cut away, so the window has to move to a plain
+        `user` turn that starts a clean exchange rather than to an arbitrary
+        index.
         """
         while len(self.messages) > MAX_HISTORY_TURNS:
             drop = 1
             while drop < len(self.messages):
                 msg = self.messages[drop]
-                if msg["role"] == "user" and not _is_tool_result(msg):
+                if msg.get("role") == "user":
                     break
                 drop += 1
             if drop >= len(self.messages):
@@ -1311,27 +1489,24 @@ class Coach:
             self.messages = self.messages[drop:]
 
 
-def _is_tool_result(message: dict) -> bool:
-    content = message.get("content")
-    if not isinstance(content, list):
-        return False
-    return any(isinstance(b, dict) and b.get("type") == "tool_result" for b in content)
+def estimate_cost(reply: Reply, model: Any = None) -> float:
+    """USD for one reply. **Reads the real number when there is one.**
 
+    OpenRouter returns `usage.cost` — what it actually billed, for whichever
+    upstream really served the turn, including any discount. That beats
+    anything this repo could compute, so it wins whenever it is present.
 
-def estimate_cost(reply: Reply, model: str = DEFAULT_MODEL) -> float:
-    """Rough USD for one reply, so the screen can be honest about the bill.
-
-    Deliberately rough and deliberately visible: this is billed to Alex's own
-    card, separately from any subscription, and an assistant whose price is
-    invisible is one you find out about at the end of the month.
+    The fallback multiplies tokens by the catalogue price, and `model` is an
+    `openrouter.Model` for that — not a string and not a hardcoded table. The
+    previous version kept its own rates next to a second copy in
+    `views/profile.py`, which is two numbers to update every time a provider
+    moves a price and one of them silently not being updated.
     """
-    rates = {
-        "claude-opus-5": (5.0, 25.0),
-        "claude-sonnet-5": (3.0, 15.0),
-        "claude-haiku-4-5": (1.0, 5.0),
-    }
-    inp, out = rates.get(model, rates[DEFAULT_MODEL])
-    return (reply.input_tokens * inp + reply.output_tokens * out) / 1_000_000
+    if reply.charged:
+        return reply.charged
+    if model is None or not hasattr(model, "cost_of"):
+        return 0.0
+    return model.cost_of(reply.input_tokens, reply.output_tokens)
 
 
 def to_json(proposal: Proposal) -> str:

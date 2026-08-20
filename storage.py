@@ -664,7 +664,12 @@ class Preferencia(Base):
 #: A secret is not the same thing as `workout_draft.EPHEMERAL_PREF_KEYS`, which
 #: is about *staleness*, so it gets its own tuple rather than being smuggled
 #: into that one under a name that would stop describing it.
-SECRET_PREF_KEYS: tuple[str, ...] = ("agent_api_key",)
+#: `agent_api_key` held an Anthropic key before the coach moved to OpenRouter.
+#: Nothing reads it any more, and it stays on this list precisely because of
+#: that: an install that still carries the row must not quietly start putting it
+#: in backup files just because the code stopped caring about it. Removing a name
+#: from here is a decision about a credential, never tidying.
+SECRET_PREF_KEYS: tuple[str, ...] = ("agent_openrouter_key", "agent_api_key")
 
 
 class Perfil(Base):

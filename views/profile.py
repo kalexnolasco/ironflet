@@ -9,6 +9,7 @@ import flet as ft
 import agent
 import asset_manager
 import exercise_images
+import openrouter
 from analytics import MEASUREMENT_EVERY_DAYS, waist_summary, weight_trend
 from components.charts import axis_note, bar_chart
 from health import (
@@ -29,20 +30,16 @@ from theme import (
     primary_button,
     section_title,
 )
-from views.shared_ui import db_error_card, db_error_screen, dialog_width, plural
+from views.shared_ui import (
+    db_error_card,
+    db_error_screen,
+    dialog_height,
+    dialog_width,
+    plural,
+)
 
 ACTIVITY_KEYS = list(ACTIVITY_FACTORS.keys())
 SEX_KEYS = ["M", "F", ""]
-
-#: Input/output price per million tokens, shown under the model dropdown rather
-#: than inside its options — see the note in `_coach_section`. Same numbers as
-#: `agent.estimate_cost`, which is what turns them into the per-answer figure on
-#: the Coach screen; if one moves, move the other.
-MODEL_PRICES = {
-    "claude-opus-5": "Opus 5 · $5 / $25 per million tokens · best",
-    "claude-sonnet-5": "Sonnet 5 · $3 / $15 per million tokens",
-    "claude-haiku-4-5": "Haiku 4.5 · $1 / $5 per million tokens · cheapest",
-}
 
 
 class ProfileView:
@@ -528,6 +525,109 @@ class ProfileView:
         )
         self.page.open(dlg)
 
+    def _open_model_picker(self):
+        """All ~350 tool-capable models, searchable, cheapest first.
+
+        Cheapest first is not a default, it is the point: the reason to leave the
+        shortlist is almost always to spend less, and 348 rows sorted by name
+        would bury every cheap option under three pages of `anthropic/*`.
+
+        Only models whose `supported_parameters` include `tools` are here.
+        `openrouter.parse_models` drops the other 69 — they would look fine in
+        this list and then break the coach, which cannot read one fact about
+        Alex's training without tool calls, and would answer from imagination
+        rather than say so.
+        """
+        catalogo, fallo = openrouter.models_or_empty()
+        if fallo or not catalogo:
+            self.page.open(
+                ft.AlertDialog(
+                    bgcolor=C.bg_surface,
+                    title=ft.Text("No signal", size=16, weight=ft.FontWeight.W_900, color=C.text),
+                    content=ft.Text(
+                        "The model list comes from OpenRouter and this device could not reach "
+                        "it. The shortlist in Settings still works.",
+                        size=12,
+                        color=C.text_secondary,
+                    ),
+                )
+            )
+            return
+
+        actual = agent.read_model(self.store)
+        lista = ft.Column(scroll=ft.ScrollMode.AUTO, spacing=4, expand=True)
+        contador = ft.Text("", size=10, color=C.text_muted)
+
+        def pick(modelo):
+            def go(_):
+                agent.save_model(self.store, modelo)
+                self.page.close(dlg)
+                self._reload()
+
+            return go
+
+        def render(query: str = ""):
+            encontrados = openrouter.search(catalogo, query, limit=60)
+            lista.controls = [
+                ft.Container(
+                    content=ft.Column(
+                        [
+                            ft.Text(
+                                m.id,
+                                size=12,
+                                color=C.accent if m.id == actual else C.text,
+                                weight=ft.FontWeight.W_700
+                                if m.id == actual
+                                else ft.FontWeight.W_400,
+                            ),
+                            ft.Text(
+                                f"{m.price_label()}   ·   {m.context:,} ctx",
+                                size=10,
+                                color=C.text_secondary,
+                            ),
+                        ],
+                        spacing=1,
+                        tight=True,
+                    ),
+                    on_click=pick(m),
+                    ink=True,
+                    padding=ft.padding.symmetric(horizontal=10, vertical=7),
+                    bgcolor=C.accent_soft if m.id == actual else None,
+                    border_radius=8,
+                )
+                for m in encontrados
+            ]
+            contador.value = f"{len(encontrados)} of {len(catalogo)} · cheapest first"
+
+        render()
+
+        buscador = ft.TextField(
+            hint_text="Search 348 models…",
+            dense=True,
+            autofocus=True,
+            border_color=C.border,
+            color=C.text,
+            on_change=lambda e: (render(e.control.value), self.page.update()),
+        )
+
+        dlg = ft.AlertDialog(
+            bgcolor=C.bg_surface,
+            title=ft.Text("Choose a model", size=16, weight=ft.FontWeight.W_900, color=C.text),
+            content=ft.Container(
+                content=ft.Column([buscador, contador, lista], spacing=8, tight=False),
+                width=dialog_width(self.page),
+                height=dialog_height(self.page, 420),
+            ),
+            actions=[
+                ft.TextButton(
+                    "Close",
+                    on_click=lambda _: self.page.close(dlg),
+                    style=ft.ButtonStyle(color=C.text_secondary),
+                )
+            ],
+        )
+        self.page.open(dlg)
+
     def _coach_section(self) -> ft.Control:
         """Where Alex types the API key, once.
 
@@ -545,13 +645,20 @@ class ProfileView:
         try:
             stored = agent.read_key(self.store)
             model = agent.read_model(self.store)
-            effort = agent.read_effort(self.store)
         except Exception:
-            stored, model, effort = None, agent.DEFAULT_MODEL, agent.DEFAULT_EFFORT
+            stored, model = None, agent.DEFAULT_MODEL
+
+        # The catalogue is fetched, not hardcoded, and its failure is not fatal:
+        # `models_or_empty` swallows the network error and reports it separately
+        # so a phone with no signal still shows the dropdown, the stored choice
+        # and the last known price instead of an empty screen.
+        catalogo, fallo_catalogo = openrouter.models_or_empty()
+        catalogo_por_id = {m.id: m for m in catalogo}
+        corta = openrouter.curated(catalogo)
 
         field = ft.TextField(
-            label="Anthropic API key" if not stored else "Replace the key",
-            hint_text="sk-ant-…",
+            label="OpenRouter API key" if not stored else "Replace the key",
+            hint_text="sk-or-v1-…",
             password=True,
             can_reveal_password=True,
             dense=True,
@@ -580,7 +687,7 @@ class ProfileView:
                 # A warning, not a rejection: the prefix is Anthropic's to
                 # change, and refusing a valid key in a gym would be worse than
                 # accepting an invalid one and saying so on the first request.
-                message.value = "Stored — though it does not start with sk-ant-, so double-check."
+                message.value = "Stored — though it does not start with sk-or-, so double-check."
                 message.color = C.warning
             else:
                 message.value = "Stored. The coach is ready."
@@ -614,9 +721,9 @@ class ProfileView:
         else:
             rows.append(
                 ft.Text(
-                    "The coach needs your own Anthropic API key. Paste it once — it is kept "
-                    "in this app's private storage, never in the installed file and never in "
-                    "a backup.",
+                    "The coach needs your own OpenRouter key — one key, every model in the "
+                    "list. Paste it once: it is kept in this app's private storage, never in "
+                    "the installed file and never in a backup.",
                     size=11,
                     color=C.text_secondary,
                 )
@@ -625,20 +732,24 @@ class ProfileView:
         rows.append(ft.Row([field, primary_button("Save key", on_click=save)], spacing=8))
 
         def set_model(e):
-            self.store.set_pref(agent.MODEL_PREF, e.control.value)
+            elegido = catalogo_por_id.get(e.control.value)
+            if elegido is None:
+                self.store.set_pref(agent.MODEL_PREF, e.control.value)
+            else:
+                agent.save_model(self.store, elegido)
             self._reload()
 
-        def set_effort(e):
-            self.store.set_pref(agent.EFFORT_PREF, e.control.value)
-            self._reload()
+        # SHORT LABELS, PRICE UNDERNEATH. The first version put the whole thing
+        # in the option text — "Opus 5 — best, $5/$25" — and on the phone it
+        # rendered as **"Opus 5 — be"**. A dropdown does not shorten a label that
+        # does not fit; it cuts it. Same failure as the "Heig" height field, and
+        # invisible from a desktop window. Found on a screenshot.
+        opciones = [ft.dropdown.Option(m.id, m.short) for m in corta]
+        if model not in {m.id for m in corta}:
+            # Whatever he picked from the full list belongs in the dropdown too,
+            # or reopening Settings silently resets him to the default.
+            opciones.insert(0, ft.dropdown.Option(model, model.split("/")[-1]))
 
-        # SHORT LABELS, AND THE PRICE UNDERNEATH. The first version put the
-        # whole thing in the option text — "Opus 5 — best, $5/$25" — and on the
-        # phone it rendered as **"Opus 5 — be"**, with "Low — faste" beside it.
-        # Two dropdowns side by side get about half a phone's width each, which
-        # is roughly ten characters at this size; a label that does not fit is
-        # not shortened by Flet, it is cut. Same failure as the "Heig" height
-        # field. Found on a screenshot from the emulator, not by reading this.
         rows.append(
             ft.Row(
                 [
@@ -651,43 +762,31 @@ class ProfileView:
                         border_color=C.border,
                         color=C.text,
                         label_style=ft.TextStyle(color=C.text_secondary),
-                        options=[
-                            ft.dropdown.Option("claude-opus-5", "Opus 5"),
-                            ft.dropdown.Option("claude-sonnet-5", "Sonnet 5"),
-                            ft.dropdown.Option("claude-haiku-4-5", "Haiku 4.5"),
-                        ],
+                        options=opciones,
                     ),
-                    ft.Dropdown(
-                        label="Thinking",
-                        value=effort,
-                        dense=True,
-                        expand=True,
-                        on_change=set_effort,
-                        border_color=C.border,
-                        color=C.text,
-                        label_style=ft.TextStyle(color=C.text_secondary),
-                        options=[
-                            ft.dropdown.Option("low", "Low"),
-                            ft.dropdown.Option("medium", "Medium"),
-                            ft.dropdown.Option("high", "High"),
-                        ],
-                    ),
+                    ghost_button("All 350…", on_click=lambda _: self._open_model_picker()),
                 ],
                 spacing=8,
             )
         )
-        rows.append(
-            ft.Text(
-                f"{MODEL_PRICES.get(model, '')}  ·  more thinking is slower and dearer",
-                size=10,
-                color=C.text_secondary,
-            )
-        )
+
+        elegido = catalogo_por_id.get(model)
+        precio = agent.read_price(self.store)
+        if elegido is not None:
+            linea = f"{elegido.name} · {elegido.price_label()} · {elegido.context:,} ctx"
+        elif precio is not None:
+            # Offline: the snapshot taken when it was chosen, said to be one.
+            linea = f"{model} · ${precio[0]:g} / ${precio[1]:g} per M (last known)"
+        else:
+            linea = f"{model} · price unknown until there is signal"
+        if fallo_catalogo:
+            linea += "  ·  could not reach OpenRouter"
+        rows.append(ft.Text(linea, size=10, color=C.text_secondary))
         rows.append(message)
         rows.append(
             ft.Text(
-                "Billed by Anthropic to that key, per message — this is separate from any "
-                "Claude subscription. The coach needs signal; nothing else in the app does.",
+                "Billed by OpenRouter to that key, per message. The coach needs signal; "
+                "nothing else in the app does.",
                 size=10,
                 color=C.text_muted,
             )
