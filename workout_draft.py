@@ -32,7 +32,8 @@ The three decisions
 character and that would be one UPDATE per digit. Not on exercise change either:
 by then the data is already gone, which is the bug. So both, at two speeds:
 every *structural* event (add/remove set, change type, move exercise, save,
-select day, app going to background) calls `save(force=True)` and lands
+select day, **pick a logging date**, app going to background) calls
+`save(force=True)` and lands
 immediately, while typing calls plain `save()`, which coalesces to at most one
 write every `MIN_WRITE_INTERVAL_S`. A write is also skipped when the content did
 not actually change, which matters because `refresh_current()` re-renders often.
@@ -65,11 +66,71 @@ the editor between saving a draft and restoring it, so a draft is a set of
 Everything degrades to "there is no draft". Nothing in this module raises at the
 caller: a lost draft is an annoyance, an exception on start-up is a dead app.
 
+One logging date per exercise
+-----------------------------
+Alex: *"hoy es miercoles, pero quiero poner mi entreno del lunes y martes"*. So
+the date stopped being a property of the session and became a property of each
+exercise: the bench press is Monday's, the pull-ups are Tuesday's, both typed on
+Wednesday.
+
+He was told, in as many words, that per-exercise dates are the easiest possible
+way to file a set under the wrong day without noticing, and chose them anyway.
+**That makes the mitigation the feature**, and this module owes the screen above
+it everything it needs to make the day impossible to miss:
+
+* `resolve_date()` returns a date *and where it came from* (`DateSource`), so a
+  row can always say "Monday — this exercise" rather than showing a bare date
+  that the reader has to attribute;
+* `dates_in_use()` / `is_multi_day()` let the screen state, before anything is
+  written, how many different days this session is about to touch.
+
+**Why a map and not a field inside each entry.** A date lives in
+`WorkoutDraft.dates`, keyed by exercise name, next to `pending` rather than
+inside it. `pending` deliberately holds *only* exercises with something typed —
+`with_rows` deletes an all-blank list, and `views/workout.py` never puts a
+suggestion-only exercise in it — so a date carried inside an entry would
+evaporate the instant it mattered most: picking Monday for an exercise *before*
+typing its first set is exactly the order the user works in. A parallel map also
+inherits the invariant that already protects the rows (keyed by name, never by
+position) and is pruned by the same pass in `fit_to_routine`.
+
+**The default is a value, not a `None` each caller re-invents.** An exercise
+without its own date uses `session_date`; a draft without a session date uses
+today. That chain is resolved in exactly one place, `resolve_date()`, which
+never returns `None` and always names the source. Nothing else in the app is
+allowed to reimplement it.
+
+**The calendar-day rule, applied N times.** A date is stored with the day it was
+chosen on (`LogDate.chosen_on`), and a choice is refused on any later calendar
+day — the same rule `views/workout.py::_load_log_date` applies to the session
+date, for the same reason: picking Monday on Wednesday is intent, and that
+intent does not survive to Thursday. The stamp is **per date, not one for the
+whole draft**: a single shared stamp would let today's pick silently revive
+yesterday's forgotten one. Refused dates fall back to the default, which is
+never a surprise, and are reported in `WorkoutDraft.stale_dates` so the screen
+can say so instead of quietly moving a lift.
+
+**No future dates**, same as the session date and for the same arithmetic
+reason: `analytics.training_streak`, `Storage.get_week_stats` and
+`program_week.last_workout_date` all ignore rows dated after today, so a session
+filed forward would be written, reported as saved, and counted by nothing.
+`MAX_BACKDATE_DAYS` bounds the other end.
+
 Format versioning
 -----------------
-The payload carries `"v"`. A draft written by another version is discarded
-whole, never half-read, and the row is wiped so the garbage is not re-parsed on
-every launch. Bump `DRAFT_VERSION` on any change to the payload shape.
+The payload carries `"v"`. A draft written by a version this build does not
+understand is discarded whole, never half-read, and the row is wiped so the
+garbage is not re-parsed on every launch. Bump `DRAFT_VERSION` on any change to
+the payload shape.
+
+`DRAFT_VERSION` is 2 (per-exercise dates). Version 1 is still **read**, which is
+a deliberate exception to "discard whole" and the only one: v2 is v1 plus two
+new keys, so a v1 payload is a v2 payload with no date ever recorded — which is
+precisely what v1 meant. Nothing is invented, no field changed meaning, and the
+worst case is the pre-existing behaviour (everything logs to the session date).
+Discarding instead would throw away a live session for the single deploy that
+lands mid-workout, and buy nothing. Any *other* version is still refused: an
+unknown format is unknown, and guessing is what this rule exists to prevent.
 """
 
 from __future__ import annotations
@@ -79,6 +140,8 @@ import json
 import time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field, replace
+from datetime import date, timedelta
+from enum import Enum
 from typing import Any
 
 from data import Routine, active_routine
@@ -98,10 +161,46 @@ DRAFT_PREF_KEY = "workout_draft"
 # The log-date pick belongs here too: it is a property of the session in
 # progress, not of the history. Restoring a backup must not drop someone
 # else's "I am logging Saturday" onto this device.
-EPHEMERAL_PREF_KEYS: tuple[str, ...] = (DRAFT_PREF_KEY, "workout_log_date")
+#
+# And `workout_notes` (views/workout.py NOTES_PREF), for the same reason and
+# with a sharper edge. It holds notes **still being typed** in the session in
+# progress; a note only becomes user data when the exercise is saved, and then
+# it lives in `entrenos.nota`, which the backup carries properly. Leaving it out
+# of this tuple would put half a sentence about a bench Alex was standing at in
+# August into a restore performed in November — filed against whatever exercise
+# he happened to be on then.
+#
+# Spelled as literals rather than imported from views/workout.py on purpose:
+# this module must not import a view, and `backup.py` reads this tuple by name
+# precisely so it never has to import Flet.
+#
+# The **per-exercise** dates add nothing to this tuple, and that is a property
+# of the design rather than an omission: they ride inside the draft payload,
+# under `DRAFT_PREF_KEY`, which is already the first entry. A fourth preference
+# row would have had to be pruned by hand every time the routine changed, in a
+# module that cannot see the routine — `fit_to_routine` does it for free.
+EPHEMERAL_PREF_KEYS: tuple[str, ...] = (
+    DRAFT_PREF_KEY,
+    "workout_log_date",
+    "workout_notes",
+)
 
-#: Payload format. Bump on any shape change; older drafts are then discarded.
-DRAFT_VERSION = 1
+#: Payload format. Bump on any shape change; unknown versions are discarded.
+DRAFT_VERSION = 2
+
+#: Older payloads this build can still read, and what they are missing. Version
+#: 1 predates per-exercise dates and is upgraded by reading no dates at all —
+#: see "Format versioning" in the module docstring for why that is not a
+#: violation of "never half-read". Nothing else is ever accepted here.
+READABLE_VERSIONS: frozenset[int] = frozenset({1, DRAFT_VERSION})
+
+#: How far back a logging date may reach, in days. The same number lives in
+#: `views/workout.py` as `MAX_BACKDATE_DAYS`, where the picker validates and
+#: explains before ever calling in here; this copy is the backstop that keeps a
+#: hand-edited or half-migrated preference row from filing a session a year ago
+#: (which would drag the inferred program start with it). Change one, change the
+#: other — better still, have the view import this one.
+MAX_BACKDATE_DAYS = 30
 
 #: See the module docstring: longer than a session, shorter than a night.
 DRAFT_TTL_S = 6 * 60 * 60
@@ -120,12 +219,152 @@ MAX_PAYLOAD_CHARS = 256_000
 MAX_ROWS_PER_EXERCISE = 50
 MAX_PENDING_EXERCISES = 40
 MAX_COMPLETED = 60
+#: One date per exercise of the day, so the same ceiling as `pending`.
+MAX_DATED_EXERCISES = MAX_PENDING_EXERCISES
 
 #: A weight field holds "127.5", not an essay.
 MAX_FIELD_CHARS = 12
 
 #: The text fields of one draft row, in `views/workout.py` order.
 ROW_FIELDS: tuple[str, ...] = ("weight", "reps", "rir")
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# dates — which day each exercise is being filed under
+# ─────────────────────────────────────────────────────────────────────────
+
+
+class DateSource(str, Enum):
+    """Where the date shown against an exercise actually came from.
+
+    The whole risk of per-exercise dates is a date the user reads without
+    attributing, so `resolve_date` never hands back a bare date: it says whether
+    this exercise was dated on its own (`EXERCISE`), inherited the session's
+    choice (`SESSION`), or is simply today because nobody chose anything
+    (`TODAY`). A screen that renders the source cannot show "17 Aug" in a place
+    where the reader assumes it means something else.
+
+    A `str` enum so `.value` drops straight into a control key or a test
+    parameter without a conversion nobody would remember to write.
+    """
+
+    EXERCISE = "exercise"
+    SESSION = "session"
+    TODAY = "today"
+
+
+@dataclass(frozen=True)
+class LogDate:
+    """A chosen logging date, plus the calendar day the choice was made on.
+
+    Both halves are load-bearing. `day` is what gets written to `entrenos`;
+    `chosen_on` is what makes the choice expire by itself, because "I am logging
+    Monday" is a statement about the day it was said on and cannot be adopted
+    the following morning. Same two-part value the session date has carried in
+    `views/workout.py::LOG_DATE_PREF` since back-dating shipped — one date, one
+    stamp, no shared stamps (see the module docstring).
+    """
+
+    day: date
+    chosen_on: date
+
+    def is_current(self, today: date) -> bool:
+        """Was this chosen on the calendar day that is still running?"""
+        return self.chosen_on == today
+
+    def in_window(self, today: date, max_back_days: int = MAX_BACKDATE_DAYS) -> bool:
+        """Is `day` inside the range a session may legally be filed under?"""
+        return today - timedelta(days=max_back_days) <= self.day <= today
+
+    def to_payload(self) -> dict[str, str]:
+        return {"date": self.day.isoformat(), "chosen_on": self.chosen_on.isoformat()}
+
+    @classmethod
+    def from_payload(cls, raw: Any) -> LogDate | None:
+        """One stored date → a `LogDate`, or `None` for anything malformed.
+
+        Validation of *meaning* (stale, future, too far back) is not done here:
+        it needs to know what day it is, and it belongs where the answer can be
+        reported to the user. See `decode_draft`.
+        """
+        if not isinstance(raw, dict):
+            return None
+        day = _as_date(raw.get("date"))
+        chosen_on = _as_date(raw.get("chosen_on"))
+        if day is None or chosen_on is None:
+            return None
+        return cls(day, chosen_on)
+
+
+@dataclass(frozen=True)
+class ResolvedDate:
+    """The answer to "which day does this exercise go to, and why".
+
+    Deliberately not a bare `date`: see `DateSource`.
+    """
+
+    day: date
+    source: DateSource
+
+    @property
+    def is_explicit(self) -> bool:
+        """Did somebody actually choose this, or is it just today?"""
+        return self.source is not DateSource.TODAY
+
+    def is_backdated(self, today: date | None = None) -> bool:
+        """Is this exercise being written under a day that is not today?
+
+        The one question the warning strip is built on, and the reason it is a
+        method here rather than a `!=` retyped at each call site.
+        """
+        return self.day != (date.today() if today is None else today)
+
+
+def _as_date(value: Any) -> date | None:
+    """An ISO `YYYY-MM-DD` string → a `date`, or `None`. Never raises.
+
+    Strings only. A JSON number is not a date, and interpreting one as an
+    ordinal or an epoch would be a guess about a field whose whole point is not
+    to be guessed at.
+    """
+    if not isinstance(value, str):
+        return None
+    try:
+        return date.fromisoformat(value.strip())
+    except ValueError:
+        return None
+
+
+def clamp_log_date(
+    day: date,
+    chosen_on: date,
+    *,
+    max_back_days: int = MAX_BACKDATE_DAYS,
+) -> date:
+    """The date actually adoptable for `day`, clamped into the legal window.
+
+    Mirrors `views/workout.py::_set_log_date`: the picker validates and explains
+    first, so this is the backstop for programmatic callers and for the
+    day-rollover corner where "today" moved under a value already held. Clamping
+    rather than raising, because the caller is a tap during a workout and the
+    honest fallback (the nearest legal day) is always visible on screen.
+    """
+    return min(max(day, chosen_on - timedelta(days=max_back_days)), chosen_on)
+
+
+def _today_from(now: float | None) -> date:
+    """The calendar day of an epoch timestamp, in local time.
+
+    One clock for the whole module: `DraftStore` injects it, so a test can cross
+    midnight without touching the system date. Anything unusable falls back to
+    the real today — a broken clock must not make every date look stale.
+    """
+    if now is None:
+        return date.today()
+    try:
+        return date.fromtimestamp(now)
+    except (OverflowError, OSError, ValueError):
+        return date.today()
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -235,6 +474,13 @@ def _clean_completed(raw: Any) -> list[dict]:
     right, drop the rest. Set values stay exactly as the database holds them
     (floats and ints, not strings): the finished screen renders them with
     `set_types`/`analytics`, which expect the stored shape.
+
+    An optional `"date"` is carried through when it parses, and only then. Once
+    an exercise is written its day is a fact in the database, not a choice that
+    can still expire, so none of the freshness rules apply to it — but the
+    summary has to be able to say "Bench Press → Monday, Pull-up → Tuesday",
+    and with per-exercise dates a summary that cannot is a summary that hides
+    the one thing worth checking before walking out of the gym.
     """
     if not isinstance(raw, list):
         return []
@@ -249,7 +495,11 @@ def _clean_completed(raw: Any) -> list[dict]:
         if not isinstance(sets, list):
             continue
         clean = [s for s in sets[:MAX_ROWS_PER_EXERCISE] if isinstance(s, dict)]
-        out.append({"exercise": name, "sets": clean})
+        entry: dict = {"exercise": name, "sets": clean}
+        when = _as_date(item.get("date"))
+        if when is not None:
+            entry["date"] = when.isoformat()
+        out.append(entry)
     return out
 
 
@@ -276,8 +526,17 @@ class WorkoutDraft:
     #: exercise key → its half-written rows. Keyed by name, never by position,
     #: so deleting exercise 2 does not shift exercise 3's weights onto it.
     pending: dict[str, list[dict[str, str]]] = field(default_factory=dict)
-    #: `[{"exercise": key, "sets": [...]}]` — already written to `entrenos`.
+    #: `[{"exercise": key, "sets": [...], "date": "<iso>"?}]` — already in
+    #: `entrenos`. `"date"` is optional and only ever informational here.
     completed: list[dict] = field(default_factory=list)
+    #: The day the session as a whole is filed under, when one was chosen.
+    #: `None` means today — the default state, which leaves nothing behind to go
+    #: stale, exactly as `views/workout.py::_log_date_chosen_on` records it.
+    session_date: LogDate | None = None
+    #: exercise key → the day *that exercise* is filed under. Only exercises the
+    #: user dated on their own are in here; everything else inherits, and the
+    #: inheritance is resolved once, in `resolve_date`.
+    dates: dict[str, LogDate] = field(default_factory=dict)
     #: Epoch seconds when the session chronometer started, so it survives a
     #: reload instead of restarting at 00:00 mid-workout.
     started_at: float | None = None
@@ -285,6 +544,137 @@ class WorkoutDraft:
     #: Exercises whose rows were dropped because they are no longer in the day.
     #: Set by `fit_to_routine`, never persisted — the caller may want to say so.
     dropped: tuple[str, ...] = field(default=(), compare=False)
+    #: Exercises whose stored date was **not** adopted: chosen on an earlier
+    #: calendar day, outside the legal window, or unreadable. They fall back to
+    #: the session date (or today), which is safe but is a change the user did
+    #: not make, so it is reported rather than performed in silence. Set by
+    #: `decode_draft`, never persisted.
+    stale_dates: tuple[str, ...] = field(default=(), compare=False)
+    #: Same, for the session date itself.
+    session_date_stale: bool = field(default=False, compare=False)
+
+    # ── dates ─────────────────────────────────────────────────
+    def resolve_date(self, exercise: str, today: date | None = None) -> ResolvedDate:
+        """Which day `exercise` is filed under, and where that came from.
+
+        The only implementation of the default chain — exercise, then session,
+        then today — and it never returns `None`. Every caller asking "what date
+        is this set going to be written with" asks here, so there is exactly one
+        answer and one place to be wrong.
+        """
+        own = self.dates.get(exercise)
+        if own is not None:
+            return ResolvedDate(own.day, DateSource.EXERCISE)
+        if self.session_date is not None:
+            return ResolvedDate(self.session_date.day, DateSource.SESSION)
+        return ResolvedDate(date.today() if today is None else today, DateSource.TODAY)
+
+    def date_for(self, exercise: str, today: date | None = None) -> date:
+        """`resolve_date(...).day`, for the call sites that only write the row."""
+        return self.resolve_date(exercise, today).day
+
+    def is_backdated(self, exercise: str, today: date | None = None) -> bool:
+        """Is `exercise` going to a day that is not today?"""
+        return self.resolve_date(exercise, today).is_backdated(today)
+
+    def with_date(self, exercise: str, day: date, *, chosen_on: date) -> WorkoutDraft:
+        """Copy of this draft filing `exercise` under `day`.
+
+        `chosen_on` is the calendar day the user is making the choice on — i.e.
+        today at the moment of the tap. It is stored so the choice can expire on
+        its own, and it doubles as the ceiling: `day` is clamped into
+        `[chosen_on - MAX_BACKDATE_DAYS, chosen_on]`, so no future date can be
+        recorded through this path any more than through the picker.
+
+        A date equal to what the exercise would inherit anyway is *removed*
+        rather than stored — but the comparison is against the **effective
+        default** (the session date, or today), never against today alone.
+        Storing "today" for one exercise of a session filed under Monday is a
+        real, and dangerous, override: dropping it because it happens to equal
+        today would silently move that lift back to Monday.
+        """
+        if not exercise:
+            return self
+        adopted = clamp_log_date(day, chosen_on)
+        default = self.session_date.day if self.session_date is not None else chosen_on
+        dates = dict(self.dates)
+        if adopted == default:
+            dates.pop(exercise, None)
+        elif exercise in dates or len(dates) < MAX_DATED_EXERCISES:
+            dates[exercise] = LogDate(adopted, chosen_on)
+        else:
+            # Beyond any real day's exercise count; keeping the payload bounded
+            # matters more than the 41st date. The exercise still resolves to
+            # the session default, which is on screen.
+            return self
+        return replace(self, dates=dates)
+
+    def without_date(self, exercise: str) -> WorkoutDraft:
+        """Copy with `exercise` back on the session default."""
+        if exercise not in self.dates:
+            return self
+        dates = dict(self.dates)
+        dates.pop(exercise, None)
+        return replace(self, dates=dates)
+
+    def with_session_date(self, day: date, *, chosen_on: date) -> WorkoutDraft:
+        """Copy of this draft with the session default set to `day`.
+
+        Same clamping and the same "choosing today is not a choice" rule as
+        `with_date`. Per-exercise dates are deliberately left alone: they were
+        each chosen against the exercise, not against the session, and wiping
+        them here would undo work the user can no longer see.
+        """
+        adopted = clamp_log_date(day, chosen_on)
+        session = None if adopted == chosen_on else LogDate(adopted, chosen_on)
+        return replace(self, session_date=session)
+
+    def without_dates(self) -> WorkoutDraft:
+        """Copy with every date forgotten — everything logs to today again.
+
+        What "the session ended" means for dates. `views/workout.py::_reset`
+        already clears the draft outright; this is for the softer paths (the
+        picker's "reset to today") that keep the session alive.
+        """
+        if self.session_date is None and not self.dates:
+            return self
+        return replace(self, session_date=None, dates={})
+
+    def dated_exercises(self) -> tuple[str, ...]:
+        """Exercises carrying a date of their own, sorted. Never `pending`'s."""
+        return tuple(sorted(self.dates))
+
+    def dates_in_use(
+        self,
+        exercises: Iterable[str] | None = None,
+        today: date | None = None,
+    ) -> tuple[date, ...]:
+        """Every distinct day this session would write to, oldest first.
+
+        Pass the day's exercise keys to get the honest answer for the whole
+        workout — including the ones still on the default, which is the half a
+        per-exercise picker makes easy to forget. With no argument it answers
+        for what the draft actually holds.
+
+        This is what lets the screen say "writing to 2 days" *before* the save,
+        which is the cheapest place to catch a set filed under the wrong day.
+        """
+        if exercises is None:
+            keys = set(self.dates) | set(self.pending)
+        else:
+            keys = {k for k in exercises if k}
+        if not keys:
+            # No exercises at all still writes somewhere: the session default.
+            return (self.resolve_date("", today).day,)
+        return tuple(sorted({self.resolve_date(k, today).day for k in keys}))
+
+    def is_multi_day(
+        self,
+        exercises: Iterable[str] | None = None,
+        today: date | None = None,
+    ) -> bool:
+        """Is this one session about to be written across more than one day?"""
+        return len(self.dates_in_use(exercises, today)) > 1
 
     # ── content ───────────────────────────────────────────────
     def rows_for(self, exercise: str) -> list[dict[str, str]]:
@@ -319,8 +709,18 @@ class WorkoutDraft:
         that is the "moverlo por casualidad" case. But a day just opened, with
         no input and nothing logged, must not resurface hours later as a
         "workout in progress" that never happened.
+
+        A chosen date counts, for the same reason and more sharply. Picking
+        Monday and *then* typing is the order the feature is used in, so a draft
+        that holds only a date is a draft holding the one piece of state that,
+        if lost, is lost silently: the sets would come back and be filed under
+        today. Dates only ever exist here when they were explicitly chosen —
+        picking today stores nothing — so this cannot resurrect an untouched
+        day either.
         """
         if self.completed or self.ex_idx > 0:
+            return False
+        if self.session_date is not None or self.dates:
             return False
         return not any(any(not is_blank_row(r) for r in rows) for rows in self.pending.values())
 
@@ -342,6 +742,8 @@ class WorkoutDraft:
             "pending": {k: [dict(r) for r in v] for k, v in self.pending.items()},
             "completed": self.completed,
             "started_at": None if self.started_at is None else float(self.started_at),
+            "session_date": None if self.session_date is None else self.session_date.to_payload(),
+            "dates": {k: v.to_payload() for k, v in self.dates.items()},
         }
 
 
@@ -367,23 +769,65 @@ def encode_draft(draft: WorkoutDraft) -> str:
     return json.dumps(draft.to_payload(), ensure_ascii=True, separators=(",", ":"))
 
 
+def _decode_dates(
+    raw: Any,
+    *,
+    today: date,
+    limit: int = MAX_DATED_EXERCISES,
+) -> tuple[dict[str, LogDate], tuple[str, ...]]:
+    """Stored date map → adopted dates, plus the exercises that lost theirs.
+
+    Three ways a recorded date is refused, all of them ending in the same safe
+    place (the exercise inherits the session default) and all of them reported:
+
+    * chosen on an earlier calendar day — the rule this whole feature turns on;
+    * outside `[today - MAX_BACKDATE_DAYS, today]`, which includes any future
+      date, because a row that no metric counts is worse than a visible error;
+    * unreadable, which only a hand-edited or truncated row can produce.
+
+    Reported, not silent, because "your Monday pick expired" is a sentence the
+    user can act on and a lift that quietly moved to today is not.
+    """
+    if not isinstance(raw, dict):
+        return {}, ()
+    out: dict[str, LogDate] = {}
+    stale: list[str] = []
+    for key, value in list(raw.items())[:limit]:
+        if not isinstance(key, str) or not key:
+            continue
+        stamped = LogDate.from_payload(value)
+        if stamped is None or not stamped.is_current(today) or not stamped.in_window(today):
+            stale.append(key)
+            continue
+        out[key] = stamped
+    return out, tuple(sorted(set(stale)))
+
+
 def decode_draft(
     raw: Any,
     *,
     now: float | None = None,
     ttl_s: float = DRAFT_TTL_S,
+    today: date | None = None,
 ) -> WorkoutDraft | None:
     """Stored string → draft, or `None` for anything that is not a live one.
 
     Returns `None` — never raises — for: an empty row, a blob too large to be
     ours, invalid or truncated JSON, a payload that is not an object, a version
-    this build does not write, missing or wrongly typed fields, and a draft
-    older than `ttl_s` (or stamped implausibly far in the future).
+    this build cannot read, missing or wrongly typed fields, and a draft older
+    than `ttl_s` (or stamped implausibly far in the future).
 
     Structural damage discards the whole draft; damage to an individual row only
     drops that row. The line is deliberate: a payload whose `phase` is a string
     cannot be trusted at all, whereas one bad row among twelve is worth losing
-    on its own.
+    on its own. **Dates sit on the row side of that line by choice**: a date
+    that cannot be adopted falls back to a default the screen is already
+    showing, so discarding a whole session over one of them would cost far more
+    than it protects.
+
+    `today` defaults to the calendar day of `now`, so one injected clock decides
+    both expiry and the day-rollover rule and a test can cross midnight without
+    touching the system date.
     """
     if not isinstance(raw, str) or not raw.strip():
         return None
@@ -397,8 +841,12 @@ def decode_draft(
         return None
 
     # Version first: a draft from another format must never be half-read, and
-    # its other fields mean nothing until this matches.
-    if _as_int(obj.get("v")) != DRAFT_VERSION:
+    # its other fields mean nothing until this matches. Version 1 is the single
+    # documented exception (see the module docstring) — it is read as a v2 with
+    # no dates recorded, and its date keys, if a foreign writer put any there,
+    # are not looked at.
+    version = _as_int(obj.get("v"))
+    if version not in READABLE_VERSIONS:
         return None
 
     routine_id = obj.get("routine")
@@ -427,6 +875,23 @@ def decode_draft(
     if age > ttl_s or age < -FUTURE_SKEW_S:
         return None
 
+    day_now = _today_from(now) if today is None else today
+    if version == DRAFT_VERSION:
+        session_date = LogDate.from_payload(obj.get("session_date"))
+        session_stale = obj.get("session_date") is not None and (
+            session_date is None
+            or not session_date.is_current(day_now)
+            or not session_date.in_window(day_now)
+        )
+        if session_stale:
+            session_date = None
+        dates, stale_dates = _decode_dates(obj.get("dates"), today=day_now)
+    else:
+        # Version 1: no dates were ever recorded, so nothing was lost and there
+        # is nothing to report. Everything falls back to today, which is what
+        # that build did.
+        session_date, session_stale, dates, stale_dates = None, False, {}, ()
+
     pending: dict[str, list[dict[str, str]]] = {}
     for key, rows in list(raw_pending.items())[:MAX_PENDING_EXERCISES]:
         if not isinstance(key, str) or not key:
@@ -444,8 +909,12 @@ def decode_draft(
         exercise=exercise,
         pending=pending,
         completed=_clean_completed(obj.get("completed")),
+        session_date=session_date,
+        dates=dates,
         started_at=started_at,
         saved_at=saved_at,
+        stale_dates=stale_dates,
+        session_date_stale=session_stale,
     )
 
 
@@ -466,7 +935,10 @@ def fit_to_routine(draft: WorkoutDraft, routine: Routine | None = None) -> Worko
     * the current exercise likewise; if it is gone, the stored index is clamped
       into range so the user lands somewhere valid rather than nowhere.
     * rows for exercises no longer in the day are dropped and listed in
-      `dropped`, so nobody's bench press weights show up under a squat.
+      `dropped`, so nobody's bench press weights show up under a squat. Their
+      dates go with them, in the same pass and by the same key: a date left
+      behind would be a Monday attached to nothing, waiting to be inherited by
+      whatever exercise is next given that name.
 
     Returns a new draft; the input is not mutated.
     """
@@ -501,13 +973,15 @@ def fit_to_routine(draft: WorkoutDraft, routine: Routine | None = None) -> Worko
 
     known = set(keys)
     pending = {k: v for k, v in draft.pending.items() if k in known}
-    dropped = tuple(sorted(set(draft.pending) - known))
+    dates = {k: v for k, v in draft.dates.items() if k in known}
+    dropped = tuple(sorted((set(draft.pending) | set(draft.dates)) - known))
     return replace(
         draft,
         day_idx=day_idx,
         ex_idx=ex_idx,
         exercise=keys[ex_idx],
         pending=pending,
+        dates=dates,
         dropped=dropped,
     )
 
@@ -553,8 +1027,10 @@ class DraftStore:
 
         Call it on every change — it is cheap to call and decides for itself.
         `force=True` for anything the user perceives as an action (a set added,
-        an exercise changed, the app going to background); leave it off for
-        keystrokes.
+        an exercise changed, **a logging date picked**, the app going to
+        background); leave it off for keystrokes. A date is never a keystroke:
+        coalescing one means a window in which the screen says Monday and the
+        stored draft says today.
         """
         now = self._clock()
         if draft.is_empty():
@@ -619,6 +1095,10 @@ class DraftStore:
         Never raises. A draft that is expired, corrupt, of an unknown version,
         or that no longer fits the routine is not merely ignored — the row is
         wiped, so a bad blob is not re-parsed on every single launch.
+
+        A draft that *is* restored may still have lost individual dates to the
+        day-rollover rule: check `stale_dates` and `session_date_stale` and tell
+        the user, because those exercises are now going to today.
 
         Call it from `on_show()` rather than from `__init__`: user routines are
         spliced into `data.ROUTINES` by `sync_user_routines()` at start-up, and

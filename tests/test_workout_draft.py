@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import date, timedelta
 
 import pytest
 
@@ -26,10 +27,15 @@ from workout_draft import (
     DRAFT_PREF_KEY,
     DRAFT_TTL_S,
     DRAFT_VERSION,
+    MAX_BACKDATE_DAYS,
+    MAX_DATED_EXERCISES,
     MIN_WRITE_INTERVAL_S,
+    DateSource,
     DraftStore,
+    LogDate,
     WorkoutDraft,
     blank_row,
+    clamp_log_date,
     decode_draft,
     encode_draft,
     fit_to_routine,
@@ -399,9 +405,14 @@ def test_structurally_wrong_fields_discard_the_whole_draft(drafts, store, clock,
     assert drafts.load(a_routine()) is None
 
 
-@pytest.mark.parametrize("version", [0, 2, 99, "1", None, True])
+@pytest.mark.parametrize("version", [0, 3, 99, "1", None, True])
 def test_unknown_version_is_discarded_whole(drafts, store, clock, version):
-    """A draft from another build is never read field by field."""
+    """A draft from another build is never read field by field.
+
+    Version 1 is the one documented exception and has its own tests below; a
+    format from the future is still refused, because guessing at a shape nobody
+    here has seen is exactly what this rule exists to prevent.
+    """
     drafts.save(a_draft(saved_at=clock.t), force=True)
     rewrite(store, v=version)
     assert drafts.load(a_routine()) is None
@@ -690,6 +701,546 @@ def test_decode_of_a_freshly_encoded_draft_is_identity(clock):
 def test_decode_never_raises_on_anything(clock):
     for raw in (None, 3, [], {}, b"bytes", "\x00\x01", '{"v":1}'):
         assert decode_draft(raw, now=clock.t) is None
+
+
+# ── one logging date per exercise ────────────────────────────────────────
+#
+# Alex asked for a date per exercise after being told, plainly, that it is the
+# easiest way there is to file a set under the wrong day without noticing. So
+# these tests are not about dates being stored: they are about a date never
+# being *silently* different from what he last saw. Every one of them asserts
+# either that a choice is kept, or that losing it is reported and falls back to
+# something the screen is already showing.
+
+
+def today_of(clock: Clock) -> date:
+    """The calendar day the module will read from that clock."""
+    return date.fromtimestamp(clock.t)
+
+
+def dated_draft(clock: Clock, **overrides) -> WorkoutDraft:
+    """A draft with nothing in it but the dates a test cares about."""
+    base = {
+        "pending": {},
+        "completed": [],
+        "ex_idx": 0,
+        "exercise": "Bench Press",
+        "saved_at": clock.t,
+    }
+    base.update(overrides)
+    return a_draft(**base)
+
+
+# ── the default chain, and the fact that it is a value ───────────────────
+
+
+def test_an_exercise_with_no_date_of_its_own_uses_the_session_date(clock):
+    """The default is resolved here, once, not re-invented per caller."""
+    today = today_of(clock)
+    monday = today - timedelta(days=2)
+    draft = dated_draft(clock, session_date=LogDate(monday, today))
+
+    resolved = draft.resolve_date("Overhead Press", today)
+    assert resolved.day == monday
+    assert resolved.source is DateSource.SESSION
+    assert draft.date_for("Overhead Press", today) == monday
+
+
+def test_with_nothing_chosen_at_all_everything_logs_to_today(clock):
+    today = today_of(clock)
+    draft = dated_draft(clock)
+    resolved = draft.resolve_date("Bench Press", today)
+    assert resolved.day == today
+    assert resolved.source is DateSource.TODAY
+    assert resolved.is_explicit is False
+    assert resolved.is_backdated(today) is False
+
+
+def test_an_exercise_date_beats_the_session_date(clock):
+    today = today_of(clock)
+    monday, tuesday = today - timedelta(days=2), today - timedelta(days=1)
+    draft = dated_draft(
+        clock,
+        session_date=LogDate(monday, today),
+        dates={"Overhead Press": LogDate(tuesday, today)},
+    )
+    assert draft.date_for("Bench Press", today) == monday
+    assert draft.date_for("Overhead Press", today) == tuesday
+    assert draft.resolve_date("Overhead Press", today).source is DateSource.EXERCISE
+    assert draft.is_backdated("Overhead Press", today) is True
+
+
+def test_choosing_today_for_one_lift_of_a_backdated_session_is_recorded(clock):
+    """The trap this API is shaped around.
+
+    Session filed under Monday, and today's warm-up mobility work belongs to
+    today. Dropping that pick because it "equals today" — the obvious
+    optimisation — would move the lift back to Monday behind his back. The
+    comparison is against the *effective default*, never against today.
+    """
+    today = today_of(clock)
+    monday = today - timedelta(days=2)
+    draft = dated_draft(clock, session_date=LogDate(monday, today))
+
+    draft = draft.with_date("Overhead Press", today, chosen_on=today)
+    assert draft.dates["Overhead Press"].day == today
+    assert draft.date_for("Overhead Press", today) == today
+    assert draft.resolve_date("Overhead Press", today).source is DateSource.EXERCISE
+    # And the rest of the session is untouched by that override.
+    assert draft.date_for("Bench Press", today) == monday
+
+
+def test_choosing_the_default_again_stores_nothing(clock):
+    """Picking today on a session that is already today is not a choice.
+
+    Same rule `views/workout.py::_set_log_date` applies: the default state
+    leaves nothing behind, so there is nothing to go stale tomorrow.
+    """
+    today = today_of(clock)
+    draft = dated_draft(clock).with_date("Bench Press", today, chosen_on=today)
+    assert draft.dates == {}
+    assert draft.is_empty() is True
+
+    monday = today - timedelta(days=2)
+    backdated = dated_draft(clock, session_date=LogDate(monday, today))
+    assert backdated.with_date("Bench Press", monday, chosen_on=today).dates == {}
+
+
+# ── no future dates, and no ancient ones ─────────────────────────────────
+
+
+def test_a_future_date_is_clamped_to_today(clock):
+    """Not taste: `analytics` and `program_week` ignore rows dated forward."""
+    today = today_of(clock)
+    draft = dated_draft(clock).with_date("Bench Press", today + timedelta(days=3), chosen_on=today)
+    # Clamped to today, which is the default, so nothing is recorded at all.
+    assert draft.dates == {}
+    assert draft.date_for("Bench Press", today) == today
+
+    session = dated_draft(clock).with_session_date(today + timedelta(days=9), chosen_on=today)
+    assert session.session_date is None
+
+
+def test_a_date_older_than_the_window_is_clamped_to_the_window(clock):
+    today = today_of(clock)
+    floor = today - timedelta(days=MAX_BACKDATE_DAYS)
+    draft = dated_draft(clock).with_date(
+        "Bench Press", today - timedelta(days=400), chosen_on=today
+    )
+    assert draft.dates["Bench Press"].day == floor
+
+
+@pytest.mark.parametrize("offset, expected_offset", [(-400, -MAX_BACKDATE_DAYS), (5, 0), (-3, -3)])
+def test_clamp_log_date_is_the_one_rule(offset, expected_offset):
+    today = date(2026, 8, 19)
+    assert clamp_log_date(today + timedelta(days=offset), today) == today + timedelta(
+        days=expected_offset
+    )
+
+
+# ── the calendar-day rule, N times over ──────────────────────────────────
+
+
+def test_a_date_chosen_today_comes_back_on_a_restore(drafts, store, clock):
+    today = today_of(clock)
+    monday = today - timedelta(days=2)
+    drafts.save(dated_draft(clock, dates={"Bench Press": LogDate(monday, today)}), force=True)
+
+    back = drafts.load(a_routine())
+    assert back is not None
+    assert back.dates["Bench Press"] == LogDate(monday, today)
+    assert back.stale_dates == ()
+
+
+def test_a_date_chosen_yesterday_is_not_adopted_today(drafts, store, clock):
+    """The rule the whole feature turns on.
+
+    "I am logging Monday" is a statement about the day it was made on. Carried
+    into the next morning it would file a fresh session two days back, with
+    nothing on screen having changed to say so.
+    """
+    today = today_of(clock)
+    yesterday = today - timedelta(days=1)
+    monday = today - timedelta(days=2)
+    drafts.save(
+        dated_draft(
+            clock,
+            dates={"Bench Press": LogDate(monday, yesterday)},
+            pending=a_draft().pending,
+        ),
+        force=True,
+    )
+
+    back = drafts.load(a_routine())
+    assert back is not None
+    assert back.dates == {}
+    # Falls back to something the screen already shows — never to a third date.
+    assert back.date_for("Bench Press", today) == today
+    # The session it belonged to is not thrown away over it.
+    assert back.pending["Bench Press"][0]["weight"] == "60"
+    # And it is reported, because a lift that moved on its own is worth a word.
+    assert back.stale_dates == ("Bench Press",)
+
+
+def test_the_session_date_expires_the_same_way(drafts, store, clock):
+    today = today_of(clock)
+    yesterday = today - timedelta(days=1)
+    drafts.save(
+        dated_draft(
+            clock,
+            session_date=LogDate(yesterday, yesterday),
+            pending=a_draft().pending,
+        ),
+        force=True,
+    )
+
+    back = drafts.load(a_routine())
+    assert back is not None
+    assert back.session_date is None
+    assert back.session_date_stale is True
+    assert back.date_for("Bench Press", today) == today
+
+
+def test_a_fresh_pick_never_revives_a_forgotten_one(drafts, store, clock):
+    """Why the stamp is per date and not one for the whole draft.
+
+    A single shared stamp would be refreshed by today's pick and would carry
+    yesterday's abandoned Monday along with it — one tap silently re-dating a
+    lift nobody looked at.
+    """
+    today = today_of(clock)
+    yesterday = today - timedelta(days=1)
+    monday, tuesday = today - timedelta(days=2), today - timedelta(days=1)
+    drafts.save(
+        dated_draft(
+            clock,
+            dates={
+                "Bench Press": LogDate(monday, yesterday),
+                "Overhead Press": LogDate(tuesday, today),
+            },
+        ),
+        force=True,
+    )
+
+    back = drafts.load(a_routine())
+    assert back is not None
+    assert back.stale_dates == ("Bench Press",)
+    assert back.dates == {"Overhead Press": LogDate(tuesday, today)}
+    assert back.date_for("Bench Press", today) == today
+
+
+def test_a_hand_edited_future_date_is_refused_on_read(drafts, store, clock):
+    today = today_of(clock)
+    drafts.save(
+        dated_draft(
+            clock,
+            dates={"Bench Press": LogDate(today, today)},
+            pending=a_draft().pending,
+        ),
+        force=True,
+    )
+    rewrite(
+        store,
+        dates={
+            "Bench Press": {
+                "date": (today + timedelta(days=4)).isoformat(),
+                "chosen_on": today.isoformat(),
+            }
+        },
+    )
+    back = drafts.load(a_routine())
+    assert back is not None
+    assert back.dates == {}
+    assert back.stale_dates == ("Bench Press",)
+
+
+def test_a_date_beyond_the_backdate_window_is_refused_on_read(drafts, store, clock):
+    """`2025-08-16` for `2026-08-16` is one keystroke and a year of history."""
+    today = today_of(clock)
+    drafts.save(
+        dated_draft(
+            clock,
+            dates={"Bench Press": LogDate(today, today)},
+            pending=a_draft().pending,
+        ),
+        force=True,
+    )
+    rewrite(
+        store,
+        dates={
+            "Bench Press": {
+                "date": (today - timedelta(days=365)).isoformat(),
+                "chosen_on": today.isoformat(),
+            }
+        },
+    )
+    back = drafts.load(a_routine())
+    assert back is not None
+    assert back.dates == {}
+    assert back.stale_dates == ("Bench Press",)
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "2026-08-17",
+        {"date": "2026-08-17"},
+        {"chosen_on": "2026-08-17"},
+        {"date": "17/08/2026", "chosen_on": "17/08/2026"},
+        {"date": 20260817, "chosen_on": 20260817},
+        {"date": None, "chosen_on": None},
+        [],
+        None,
+    ],
+)
+def test_a_malformed_date_costs_that_date_and_nothing_else(drafts, store, clock, value):
+    """Dates degrade one entry at a time, like rows — not like `phase`.
+
+    A date that cannot be read falls back to a default already on screen, so
+    discarding the whole session over it would cost far more than it protects.
+    """
+    drafts.save(a_draft(saved_at=clock.t), force=True)
+    rewrite(store, dates={"Bench Press": value})
+    back = drafts.load(a_routine())
+    assert back is not None
+    assert back.dates == {}
+    assert back.stale_dates == ("Bench Press",)
+    # The half-written rows — the thing this module exists for — are untouched.
+    assert back.pending["Bench Press"][0]["weight"] == "60"
+
+
+def test_a_wholly_junk_date_map_is_ignored_without_taking_the_draft(drafts, store, clock):
+    drafts.save(a_draft(saved_at=clock.t), force=True)
+    rewrite(store, dates="not a map")
+    back = drafts.load(a_routine())
+    assert back is not None
+    assert back.dates == {}
+    assert back.stale_dates == ()
+
+
+# ── keyed by name, pruned with the rows ──────────────────────────────────
+
+
+def test_a_date_for_a_deleted_exercise_is_dropped_and_reported(clock):
+    """A date left behind would wait to be inherited by the next lift renamed
+    into that slot — a Monday attached to nothing."""
+    today = today_of(clock)
+    draft = dated_draft(
+        clock,
+        dates={"Lateral Raise": LogDate(today - timedelta(days=1), today)},
+    )
+    fitted = fit_to_routine(draft, a_routine())
+    assert fitted is not None
+    assert fitted.dates == {}
+    assert "Lateral Raise" in fitted.dropped
+
+
+def test_reordering_the_day_does_not_move_a_date_onto_another_lift(clock):
+    today = today_of(clock)
+    monday = today - timedelta(days=2)
+    draft = dated_draft(clock, dates={"Overhead Press": LogDate(monday, today)})
+    reordered = TrainingDay("Push", ["Triceps Pushdown*", "Overhead Press", "Bench Press [4×8-10]"])
+    fitted = fit_to_routine(draft, a_routine(days=[reordered, PULL]))
+    assert fitted is not None
+    assert fitted.dates == {"Overhead Press": LogDate(monday, today)}
+    assert fitted.date_for("Bench Press", today) == today
+
+
+def test_the_date_map_is_capped(clock):
+    today = today_of(clock)
+    day = today - timedelta(days=1)
+    draft = dated_draft(clock)
+    for i in range(MAX_DATED_EXERCISES + 5):
+        draft = draft.with_date(f"Exercise {i}", day, chosen_on=today)
+    assert len(draft.dates) == MAX_DATED_EXERCISES
+
+
+# ── a date is state worth saving on its own ──────────────────────────────
+
+
+def test_a_draft_holding_only_a_date_is_still_worth_restoring(drafts, store, clock):
+    """Picking the day before typing the first set is the normal order.
+
+    If that draft were treated as empty, the pick would be dropped on the floor
+    and the sets typed a minute later would land on today — the exact silent
+    failure per-exercise dates were warned about.
+    """
+    today = today_of(clock)
+    monday = today - timedelta(days=2)
+    draft = dated_draft(clock, dates={"Bench Press": LogDate(monday, today)})
+    assert draft.is_empty() is False
+    assert drafts.save(draft, force=True) is True
+
+    back = drafts.load(a_routine())
+    assert back is not None
+    assert back.date_for("Bench Press", today) == monday
+
+
+def test_picking_a_date_is_a_change_the_store_writes(drafts, store, clock):
+    """A coalesced date is a window where the screen and the row disagree."""
+    today = today_of(clock)
+    draft = dated_draft(clock, pending=a_draft().pending)
+    assert drafts.save(draft, force=True) is True
+    dated = draft.with_date("Bench Press", today - timedelta(days=1), chosen_on=today)
+    assert drafts.save(dated, force=True) is True
+    assert stored(store)["dates"]["Bench Press"]["chosen_on"] == today.isoformat()
+
+
+def test_dates_survive_the_encode_decode_round_trip(clock):
+    today = today_of(clock)
+    draft = a_draft(
+        saved_at=clock.t,
+        session_date=LogDate(today - timedelta(days=2), today),
+        dates={"Overhead Press": LogDate(today - timedelta(days=1), today)},
+    )
+    assert decode_draft(encode_draft(draft), now=clock.t) == draft
+
+
+def test_clearing_the_dates_puts_everything_back_on_today(clock):
+    today = today_of(clock)
+    draft = dated_draft(
+        clock,
+        session_date=LogDate(today - timedelta(days=2), today),
+        dates={"Overhead Press": LogDate(today - timedelta(days=1), today)},
+    ).without_dates()
+    assert draft.session_date is None and draft.dates == {}
+    assert draft.date_for("Overhead Press", today) == today
+
+
+def test_without_date_falls_back_to_the_session_not_to_today(clock):
+    today = today_of(clock)
+    monday = today - timedelta(days=2)
+    draft = dated_draft(
+        clock,
+        session_date=LogDate(monday, today),
+        dates={"Overhead Press": LogDate(today, today)},
+    ).without_date("Overhead Press")
+    assert draft.date_for("Overhead Press", today) == monday
+
+
+# ── telling the user, before anything is written ─────────────────────────
+
+
+def test_dates_in_use_counts_the_days_this_session_touches(clock):
+    """Includes the exercises still on the default, which is the half a
+    per-exercise picker makes easy to forget."""
+    today = today_of(clock)
+    monday, tuesday = today - timedelta(days=2), today - timedelta(days=1)
+    draft = dated_draft(
+        clock,
+        session_date=LogDate(monday, today),
+        dates={"Overhead Press": LogDate(tuesday, today)},
+    )
+    keys = ["Bench Press", "Overhead Press", "Triceps Pushdown"]
+    assert draft.dates_in_use(keys, today) == (monday, tuesday)
+    assert draft.is_multi_day(keys, today) is True
+
+    same_day = dated_draft(clock, session_date=LogDate(monday, today))
+    assert same_day.dates_in_use(keys, today) == (monday,)
+    assert same_day.is_multi_day(keys, today) is False
+
+
+def test_dates_in_use_answers_even_with_nothing_selected(clock):
+    today = today_of(clock)
+    assert dated_draft(clock).dates_in_use([], today) == (today,)
+    assert dated_draft(clock).dates_in_use(None, today) == (today,)
+
+
+def test_dated_exercises_lists_only_explicit_picks(clock):
+    today = today_of(clock)
+    draft = dated_draft(
+        clock,
+        session_date=LogDate(today - timedelta(days=2), today),
+        dates={"Overhead Press": LogDate(today - timedelta(days=1), today)},
+    )
+    assert draft.dated_exercises() == ("Overhead Press",)
+
+
+def test_a_completed_exercise_keeps_the_day_it_was_written_under(drafts, store, clock):
+    """The summary has to be able to say which lift went to which day."""
+    today = today_of(clock)
+    monday = today - timedelta(days=2)
+    draft = a_draft(
+        saved_at=clock.t,
+        completed=[
+            {
+                "exercise": "Bench Press",
+                "sets": [{"weight": 60.0, "reps": 10}],
+                "date": monday.isoformat(),
+            },
+        ],
+    )
+    drafts.save(draft, force=True)
+    back = drafts.load(a_routine())
+    assert back is not None
+    assert back.completed[0]["date"] == monday.isoformat()
+
+
+def test_an_unreadable_date_on_a_completed_exercise_is_simply_absent(drafts, store, clock):
+    drafts.save(a_draft(saved_at=clock.t), force=True)
+    rewrite(
+        store,
+        completed=[{"exercise": "Bench Press", "sets": [], "date": "the day before"}],
+    )
+    back = drafts.load(a_routine())
+    assert back is not None
+    assert "date" not in back.completed[0]
+
+
+# ── reading a draft written before dates existed ─────────────────────────
+
+
+def test_a_version_one_draft_is_read_as_having_no_dates(drafts, store, clock):
+    """v2 is v1 plus two keys, so a v1 payload means "nothing was ever dated".
+
+    The single deploy that lands mid-workout keeps its session instead of
+    losing it, and the worst it can do is the behaviour that build already had:
+    everything logs to the session default.
+    """
+    today = today_of(clock)
+    drafts.save(a_draft(saved_at=clock.t), force=True)
+    payload = stored(store)
+    payload.pop("dates", None)
+    payload.pop("session_date", None)
+    payload["v"] = 1
+    store.prefs[DRAFT_PREF_KEY] = json.dumps(payload)
+
+    back = drafts.load(a_routine())
+    assert back is not None
+    assert back.pending["Bench Press"][0]["weight"] == "60"
+    assert back.dates == {} and back.session_date is None
+    assert back.stale_dates == () and back.session_date_stale is False
+    assert back.date_for("Bench Press", today) == today
+
+
+def test_a_version_one_draft_carrying_date_keys_is_not_believed(drafts, store, clock):
+    """v1 never wrote dates, so anything under those keys is not from v1.
+
+    Read strictly by version rather than "read whatever is there": adopting a
+    field a format never had is the half-read this rule exists to forbid.
+    """
+    today = today_of(clock)
+    drafts.save(a_draft(saved_at=clock.t), force=True)
+    rewrite(
+        store,
+        v=1,
+        dates={
+            "Bench Press": {
+                "date": (today - timedelta(days=2)).isoformat(),
+                "chosen_on": today.isoformat(),
+            }
+        },
+    )
+    back = drafts.load(a_routine())
+    assert back is not None
+    assert back.dates == {}
+    assert back.date_for("Bench Press", today) == today
+
+
+def test_the_version_written_today_is_two(drafts, store, clock):
+    drafts.save(a_draft(saved_at=clock.t), force=True)
+    assert DRAFT_VERSION == 2
+    assert stored(store)["v"] == 2
 
 
 # ── through a real Storage: the restart claim ────────────────────────────
