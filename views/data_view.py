@@ -990,10 +990,21 @@ class DataView:
             size=10,
             color=C.text_secondary,
         )
+        # Three states, not two. "Installed / Not installed" cannot express the
+        # one that actually happened: 68 of 70 present, so `is_installed()` says
+        # no and the label said "Not installed · ~9 MB" — indistinguishable from
+        # having none, and it hides that a single re-download fixes two files
+        # rather than fetching the whole bundle again.
+        #
+        # `asset_manager.missing_summary()` was written to say exactly this and
+        # had no caller anywhere.
+        faltan = asset_manager.missing_summary()
         if installed:
             state, tone = "Installed", C.success
         elif self._dl_running:
             state, tone = "Downloading…", C.accent
+        elif faltan and asset_manager.status().present:
+            state, tone = faltan, C.warning
         else:
             state, tone = f"Not installed · {IMAGE_BUNDLE_LABEL}", C.text_secondary
 

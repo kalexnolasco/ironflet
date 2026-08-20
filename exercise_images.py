@@ -2,7 +2,34 @@
 
 Images live in assets/exercises/<slug>/0.jpg.
 Source: github.com/yuhonas/free-exercise-db (Unlicense / public domain).
+
+## Why there are two delivery paths — read this before touching `image_props`
+
+An assets-relative URL (`/exercises/<slug>/0.jpg`) only renders if the file
+sits inside the directory Flet is *serving*. That is true in web mode (Flet
+serves `assets/` over HTTP) and on desktop (the client resolves the path
+locally). **On Android it is false**, and the failure is silent and total:
+
+    the frames download to  FLET_APP_STORAGE_DATA/assets/exercises/<slug>/
+    the APK's asset bundle is a different place entirely
+    -> the Image control finds nothing and paints an empty grey box
+
+That is the whole of "the images don't download on my phone". They downloaded
+perfectly — 140 files, verified on the device — and then nothing could ever
+show them. Re-downloading, clearing the cache and reinstalling all leave it
+exactly as broken, which is why it read as a download bug.
+
+So `image_props()` picks the delivery by asking the one question that actually
+decides it: **is the file inside the directory being served?** If yes, hand
+over the URL, which is cheap and streams. If no, read the bytes and send them
+inline as base64. No platform sniffing — the rule is the mechanism.
 """
+
+from __future__ import annotations
+
+import base64
+from functools import lru_cache
+from pathlib import Path
 
 EXERCISE_IMAGE: dict[str, str] = {
     "Barbell Bench Press": "Barbell_Bench_Press_-_Medium_Grip",
@@ -141,3 +168,104 @@ def image_frames(key: str) -> tuple[str, str] | None:
     # shows a still instead of a hole.
     segundo = 1 if image_path(slug, 1) else 0
     return f"/exercises/{slug}/0.jpg", f"/exercises/{slug}/{segundo}.jpg"
+
+
+# ── delivery: URL where it works, inline bytes where it does not ──────────
+
+
+def url_is_served() -> bool:
+    """True when an `/exercises/...` URL can actually resolve to the frames.
+
+    It can when the download directory lives under the `assets/` folder Flet
+    was handed (`ft.app(assets_dir="assets")`), which is the case whenever the
+    process runs from the project directory: web mode and desktop. A packaged
+    APK sets `FLET_APP_STORAGE_DATA` to private app storage, far away from the
+    bundle, and then the URL resolves to nothing at all.
+
+    Deliberately derived from the paths rather than from `page.platform`: the
+    thing that breaks is the path relationship, so that is what gets asked.
+    """
+    from asset_manager import _data_dir
+
+    try:
+        return _data_dir().resolve().is_relative_to((Path.cwd() / "assets").resolve())
+    except (OSError, ValueError):  # pragma: no cover - unresolvable path
+        return False
+
+
+#: Bounded on purpose. Browse paints a grid of ~100 thumbnails, and holding
+#: every frame's base64 would be ~9 MB of strings pinned for the life of the
+#: process on the device with the least memory to spare. 48 entries covers the
+#: longest training day several times over and costs about 2 MB.
+@lru_cache(maxsize=48)
+def _inline(path_text: str) -> str | None:
+    """A frame as base64, or None if it cannot be read.
+
+    Cached by path text rather than `Path` so equal paths hit the same entry.
+    Returns None instead of raising: a corrupt or half-written frame must cost
+    one blank photo, never the whole training screen.
+    """
+    try:
+        return base64.b64encode(Path(path_text).read_bytes()).decode("ascii")
+    except OSError:
+        return None
+
+
+def image_props(key: str, frame: int = 0) -> dict:
+    """Kwargs for `ft.Image` that render `key` on every platform.
+
+    Returns `{}` when there is no image, so callers branch on truthiness:
+
+        props = image_props(name)
+        if props:
+            ft.Image(**props, fit=ft.ImageFit.COVER, ...)
+
+    Never returns a `src` the platform cannot load — that was the old bug, and
+    it was invisible because `ft.Image` renders an empty box rather than
+    complaining.
+    """
+    slug = EXERCISE_IMAGE.get(key)
+    if not slug:
+        return {}
+    from asset_manager import image_path
+
+    path = image_path(slug, frame) or image_path(slug, 0)
+    if path is None:
+        return {}
+    if url_is_served():
+        return {"src": f"/exercises/{slug}/{path.stem}.jpg"}
+    data = _inline(str(path))
+    return {"src_base64": data} if data else {}
+
+
+def image_frames_props(key: str) -> tuple[dict, dict] | None:
+    """`(frame0, frame1)` as `ft.Image` kwargs, or None when there is no image.
+
+    The animated counterpart of `image_props`. Frame 1 is optional — a slug
+    repaired from upstream can arrive with only frame 0 — and then both entries
+    are the same frame, so the caller animates a still instead of blinking to a
+    hole every 700 ms.
+    """
+    first = image_props(key, 0)
+    if not first:
+        return None
+    return first, (image_props(key, 1) or first)
+
+
+def apply_image_props(image, props: dict) -> None:
+    """Point an existing `ft.Image` at a different frame.
+
+    Both delivery keys are written every time, one of them to None. The
+    alternative — setting only the key in use — leaves the previous frame's
+    `src_base64` sitting on the control underneath the new `src`, and Flet then
+    renders whichever it happens to prefer. That would look like an animation
+    that plays once and freezes, which is a far harder bug to read than a
+    missing photo.
+    """
+    image.src = props.get("src")
+    image.src_base64 = props.get("src_base64")
+
+
+def clear_inline_cache() -> None:
+    """Drop the base64 cache — call after a download replaces frames on disk."""
+    _inline.cache_clear()
