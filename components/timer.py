@@ -182,6 +182,22 @@ class RestTimer:
             tooltip="Rest alert sound",
             on_click=lambda _: self.toggle_sound(),
         )
+        # The vibration toggle. `HAPTICS_PREF` was written, read on every
+        # `start()` and honoured in `_alert()` — and nothing anywhere could
+        # change it, so it was permanently on and the preference was decoration.
+        # It goes here, beside the speaker, rather than on the Profile screen a
+        # docstring in this file used to promise: the moment you want the buzz
+        # off is the moment it buzzes, and that moment is mid-rest, with this
+        # row already on screen.
+        self.haptics_btn = ft.Container(
+            content=ft.Icon(ft.Icons.VIBRATION_ROUNDED, size=16, color=C.text_secondary),
+            bgcolor=C.bg_sunken,
+            border=ft.border.all(1, C.border),
+            border_radius=Radius.sm,
+            padding=ft.padding.symmetric(horizontal=8, vertical=5),
+            tooltip="Rest alert vibration",
+            on_click=lambda _: self.toggle_haptics(),
+        )
 
     # ── preferences ───────────────────────────────────────────
     @property
@@ -229,6 +245,34 @@ class RestTimer:
         self._style_sound_btn()
         with contextlib.suppress(Exception):
             self.page.update()
+
+    def toggle_haptics(self) -> None:
+        """Flip the buzz on/off and persist it. Wired to the vibration button.
+
+        Independent of the sound on purpose. The two answer different problems:
+        the beep is for a phone in a pocket across the room, the buzz is for a
+        gym loud enough that the beep is not heard. Turning one off is not a
+        statement about the other, and in a silent gym the buzz is the one that
+        has to go.
+        """
+        self._haptics_on = not self._haptics_on
+        set_haptics_enabled(self._store_ref(), self._haptics_on)
+        self._prefs_loaded = True
+        self._style_haptics_btn()
+        with contextlib.suppress(Exception):
+            self.page.update()
+
+    def _style_haptics_btn(self) -> None:
+        icon = self.haptics_btn.content
+        if isinstance(icon, ft.Icon):
+            icon.name = (
+                ft.Icons.VIBRATION_ROUNDED if self._haptics_on else ft.Icons.SMARTPHONE_ROUNDED
+            )
+            icon.color = C.accent if self._haptics_on else C.text_muted
+        self.haptics_btn.bgcolor = C.accent_soft if self._haptics_on else C.bg_sunken
+        self.haptics_btn.tooltip = (
+            "Rest alert vibration: on" if self._haptics_on else "Rest alert vibration: off"
+        )
 
     def _style_sound_btn(self) -> None:
         icon = self.sound_btn.content
@@ -357,6 +401,7 @@ class RestTimer:
         # Once per rest, not once per tick.
         self._load_prefs(force=True)
         self._style_sound_btn()
+        self._style_haptics_btn()
         self._mount_players()
         self.page.update()
         self.page.run_task(self._tick_loop, tick_id)
@@ -432,6 +477,7 @@ class RestTimer:
         # trusted and only `start()` goes back to the database.
         self._load_prefs()
         self._style_sound_btn()
+        self._style_haptics_btn()
 
     def _dial(self, px: int) -> ft.Control:
         """The ring with the remaining time centred in it."""
@@ -458,6 +504,7 @@ class RestTimer:
                 self._preset("2m", 120),
                 self._preset("3m", 180),
                 self.sound_btn,
+                self.haptics_btn,
                 self.stop_btn,
             ],
             spacing=4,

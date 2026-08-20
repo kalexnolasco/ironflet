@@ -507,3 +507,72 @@ def test_el_navegador_si_tiene_sonido():
 
     tipos = _timer_en(ft.PagePlatform.LINUX, True)
     assert len([x for x in tipos if "Audio" in x]) == 2
+
+
+# ── the vibration toggle (the preference nothing could change) ────────────
+
+
+def test_el_boton_de_vibracion_esta_en_la_fila_de_controles():
+    """THE REGRESSION. `HAPTICS_PREF` was stored, read and honoured — and no
+    control in the whole app could flip it, so it was permanently on."""
+    store = FakeStore()
+    page = FakePage(store)
+    t = RestTimer(page, store)
+    fila = t.build()
+
+    def aplanar(c):
+        yield c
+        for hijo in getattr(c, "controls", None) or []:
+            yield from aplanar(hijo)
+        contenido = getattr(c, "content", None)
+        if contenido is not None:
+            yield from aplanar(contenido)
+
+    assert t.haptics_btn in list(aplanar(fila)), (
+        "the vibration button is built but never rendered — the same "
+        "'built and not wired' failure this project has had three times"
+    )
+
+
+def test_alternar_la_vibracion_la_persiste():
+    store = FakeStore()
+    page = FakePage(store)
+    t = RestTimer(page, store)
+    t.build()
+    assert t.haptics_on is True
+
+    t.toggle_haptics()
+    assert t.haptics_on is False
+    assert haptics_enabled(store) is False
+
+    t.toggle_haptics()
+    assert t.haptics_on is True
+    assert haptics_enabled(store) is True
+
+
+def test_sonido_y_vibracion_son_independientes():
+    """Muting the beep must not also kill the buzz: they solve different rooms."""
+    store = FakeStore()
+    page = FakePage(store)
+    t = RestTimer(page, store)
+    t.build()
+
+    t.toggle_sound()
+    assert t.sound_on is False
+    assert t.haptics_on is True, "muting the sound silently disabled the vibration too"
+
+
+def test_la_vibracion_apagada_no_vibra():
+    store = FakeStore()
+    page = FakePage(store)
+    t = RestTimer(page, store)
+    t.build()
+    t.toggle_haptics()
+    t._mount_players()
+
+    disparos = []
+    if t._haptics is not None:
+        t._haptics.heavy_impact = lambda: disparos.append("heavy")
+        t._haptics.light_impact = lambda: disparos.append("light")
+    t._alert(DONE_SOUND)
+    assert disparos == []
