@@ -174,7 +174,7 @@ class Scheme:
         if self.kind is SchemeKind.PYRAMID:
             return ",".join(str(v) for v in self.per_set) + " reps"
         if self.kind is SchemeKind.AMRAP:
-            return "max reps"
+            return "reps máx"
         if self.kind is SchemeKind.CLUSTER:
             return "+".join(self.segments) + " reps"
         return ""
@@ -317,10 +317,10 @@ class RirTarget:
         """`"RIR 2-3"`, `"RIR 1+"`, `"to failure"`, or `""` when unknown."""
         if self.low is None:
             if self.last_set is not None:
-                return "last set to failure" if self.last_set == (0, 0) else ""
+                return "última al fallo" if self.last_set == (0, 0) else ""
             return ""
         if self.low == 0 and (self.high in (0, None)):
-            return "to failure"
+            return "al fallo"
         if self.open_ended:
             return f"RIR {self.low}+"
         if self.high is None or self.high == self.low:
@@ -331,22 +331,36 @@ class RirTarget:
         """`label()` plus the last-set clause when the phase adds one."""
         base = self.label()
         if self.last_set is not None and self.low is not None:
-            tail = "last set to failure" if self.last_set == (0, 0) else f"RIR {self.last_set[0]}"
+            tail = "última al fallo" if self.last_set == (0, 0) else f"RIR {self.last_set[0]}"
             return f"{base} · {tail}" if base else tail
         return base
 
 
 # "RIR 2-3", "RIR 2"
+# Bilingües a propósito, como `_DELOAD_MARKS`: las notas de las fases de serie
+# están en español desde que la interfaz entera lo está, las de una rutina
+# vieja del usuario pueden seguir en inglés, y este parser es la única pieza
+# que las lee. Perder el idioma equivocado aquí no lanza nada — simplemente
+# desaparece el objetivo de RIR de cada fila de la sesión.
 _RIR_RE = re.compile(r"\brir\s*(\d)(?:\s*-\s*(\d))?", re.IGNORECASE)
-# "leaves 2-3 reps in reserve"
-_RESERVE_RE = re.compile(r"(\d)(?:\s*-\s*(\d))?\s*reps?\s+in\s+reserve", re.IGNORECASE)
-# "No absolute failure", "no failure", "not to failure"
-_NO_FAILURE_RE = re.compile(r"\bno(?:t)?\s+(?:\w+\s+){0,2}failure", re.IGNORECASE)
+# "leaves 2-3 reps in reserve" / "deja 2-3 repeticiones en reserva"
+_RESERVE_RE = re.compile(
+    r"(\d)(?:\s*-\s*(\d))?\s*(?:reps?\s+in\s+reserve|rep(?:eticione)?s?\s+en\s+reserva)",
+    re.IGNORECASE,
+)
+# "No absolute failure", "not to failure" / "sin fallo", "sin llegar al fallo"
+_NO_FAILURE_RE = re.compile(
+    r"(\bno(?:t)?\s+(?:\w+\s+){0,2}failure|\bsin\s+(?:\w+\s+){0,2}fallo)", re.IGNORECASE
+)
 _LAST_SET_FAILURE_RE = re.compile(
-    r"(last set[^.]{0,40}failure|failure[^.]{0,40}last set)", re.IGNORECASE
+    r"(last set[^.]{0,40}failure|failure[^.]{0,40}last set"
+    r"|últim[oa]s? serie[^.]{0,40}fallo|fallo[^.]{0,40}últim[oa]s? serie)",
+    re.IGNORECASE,
 )
 _ALL_SETS_FAILURE_RE = re.compile(
-    r"(failure[^.]{0,40}(all|every) sets?|(all|every) sets?[^.]{0,40}failure)", re.IGNORECASE
+    r"(failure[^.]{0,40}(all|every) sets?|(all|every) sets?[^.]{0,40}failure"
+    r"|fallo[^.]{0,40}todas? las series|todas? las series[^.]{0,40}fallo)",
+    re.IGNORECASE,
 )
 
 
@@ -625,11 +639,15 @@ _BARBELL_LOWER_STEP = 5.0
 #: rep range (12-20) is what absorbs it, and the lifter deserves the warning.
 _BIG_JUMP_FRACTION = 0.10
 
-# "add 2.5 kg upper / 5 kg lower" — the increment stated in RECOMP phase 2.
+# "add 2.5 kg upper / 5 kg lower" / "suma 2,5 kg en superior / 5 kg en
+# inferior" — el incremento que enuncia la fase 2 de RECOMP. Bilingüe como el
+# resto de parsers de prosa de fases: la nota de serie está en español y la de
+# una rutina vieja del usuario puede seguir en inglés.
 _PRESCRIBED_STEP_RE = re.compile(
-    r"(\d+(?:[.,]\d+)?)\s*kg\s*(upper|lower)",
+    r"(\d+(?:[.,]\d+)?)\s*kg\s*(?:en\s+)?(upper|lower|superior|inferior)",
     re.IGNORECASE,
 )
+_STEP_HALVES = {"upper": "upper", "superior": "upper", "lower": "lower", "inferior": "lower"}
 
 
 def _matches(name: str, groups: Iterable[tuple[str, ...]]) -> bool:
@@ -660,7 +678,7 @@ def parse_prescribed_step(text: str | None) -> dict[str, float]:
     """
     out: dict[str, float] = {}
     for value, half in _PRESCRIBED_STEP_RE.findall(text or ""):
-        out[half.lower()] = float(value.replace(",", "."))
+        out[_STEP_HALVES[half.lower()]] = float(value.replace(",", "."))
     return out
 
 
@@ -698,24 +716,24 @@ def weight_step(exercise: str, current_weight: float | None = None, phase: Any =
     key = "lower" if lower else "upper"
     if key in prescribed and equipment in (Equipment.BARBELL, Equipment.MACHINE):
         kg = prescribed[key]
-        why = f"phase prescribes {_fmt(kg)} kg {key}"
+        why = f"la fase prescribe {_fmt(kg)} kg en {'inferior' if key == 'lower' else 'superior'}"
     elif equipment is Equipment.BARBELL and lower:
         kg = _BARBELL_LOWER_STEP
-        why = "barbell lower body: 2×2.5 kg, the plan's 5 kg lower step"
+        why = "barra en inferior: 2×2,5 kg, el salto de 5 kg del plan"
     else:
         kg = _DEFAULT_STEP[equipment]
         why = {
-            Equipment.BARBELL: "barbell upper body: the smallest real plate pair (2×1.25 kg)",
-            Equipment.DUMBBELL: "next dumbbell on the rack, per hand",
-            Equipment.MACHINE: "one plate on the stack",
-            Equipment.CABLE: "one step on a cable stack",
-            Equipment.BODYWEIGHT: "one plate on the dipping belt",
-            Equipment.UNKNOWN: "unrecognised equipment, so the conservative step",
+            Equipment.BARBELL: "barra en superior: el par de discos real más pequeño (2×1,25 kg)",
+            Equipment.DUMBBELL: "la siguiente mancuerna del rack, por mano",
+            Equipment.MACHINE: "una placa más en la torre",
+            Equipment.CABLE: "un paso más en la torre de polea",
+            Equipment.BODYWEIGHT: "un disco más en el cinturón de lastre",
+            Equipment.UNKNOWN: "equipo sin reconocer, así que el salto conservador",
         }[equipment]
 
     if current_weight and current_weight > 0 and kg / current_weight > _BIG_JUMP_FRACTION:
         pct = round(100 * kg / current_weight)
-        why += f" — {pct}% of {_fmt(current_weight)} kg, expect to land at the bottom of the range"
+        why += f" — {pct}% de {_fmt(current_weight)} kg: cuenta con caer a la parte baja del rango"
 
     return Increment(kg=kg, equipment=equipment, reason=why)
 
@@ -874,7 +892,7 @@ class Recommendation:
     def headline(self) -> str:
         """One line for the top of the exercise card."""
         if self.weight is None:
-            return self.scheme.reps_label() or "No recommendation"
+            return self.scheme.reps_label() or "Sin recomendación"
         reps = ""
         if self.reps_low is not None and self.reps_high is not None:
             reps = (
@@ -1036,7 +1054,7 @@ def _reps_text(reps: Iterable[int]) -> str:
 
 
 def _load_text(load: float) -> str:
-    return "bodyweight" if load <= 0 else f"{_fmt(load)} kg"
+    return "peso corporal" if load <= 0 else f"{_fmt(load)} kg"
 
 
 def recommend(
@@ -1113,11 +1131,11 @@ def recommend(
             reps_low=scheme.reps_low,
             reps_high=scheme.reps_high,
             reason=(
-                f"Last logged {days_since} days ago{when}, at {_load_text(load)}. "
-                f"That is long enough to have lost some of it, so this is a re-entry, "
-                f"not a continuation: {_load_text(target)} "
-                f"({int(RE_ENTRY_FACTOR * 100)}% of the old load). "
-                f"If it moves easily, the next session goes straight back up."
+                f"Último registro hace {days_since} días{when}, a {_load_text(load)}. "
+                f"Es tiempo de sobra para perder parte, así que esto es una vuelta, "
+                f"no una continuación: {_load_text(target)} "
+                f"({int(RE_ENTRY_FACTOR * 100)}% de la carga vieja). "
+                f"Si se mueve fácil, la próxima sesión vuelve directa arriba."
             ),
             confidence=Confidence.LOW,
             per_set=_flat_targets(scheme, target or None),
@@ -1144,10 +1162,10 @@ def recommend(
             reps_low=scheme.reps_low,
             reps_high=scheme.reps_high,
             reason=(
-                f"Deload week: same load, fewer sets. {_load_text(load)}, as last time"
-                f"{when}. Reaching the top of the range today is what a deload is "
-                f"supposed to feel like, not a signal to go up — the jump waits for "
-                f"the next block."
+                f"Semana de descarga: misma carga, menos series. {_load_text(load)}, "
+                f"como la última vez{when}. Llegar hoy al tope del rango es justo lo "
+                f"que una descarga debe parecer, no una señal de subir — el salto "
+                f"espera al siguiente bloque."
             ),
             confidence=Confidence.HIGH,
             per_set=_flat_targets(scheme, load or None),
@@ -1168,25 +1186,29 @@ def recommend(
                 reps_low=scheme.reps_low,
                 reps_high=scheme.reps_high,
                 reason=(
-                    f"Every set met its target last time{when} "
-                    f"({_reps_text(scheme.per_set)}). Add {_fmt(increment.kg)} kg to each step of "
-                    f"the pyramid — {increment.reason}."
+                    f"Todas las series cumplieron su objetivo la última vez{when} "
+                    f"({_reps_text(scheme.per_set)}). Suma {_fmt(increment.kg)} kg a cada "
+                    f"peldaño de la pirámide — {increment.reason}."
                 ),
                 confidence=Confidence.MEDIUM,
                 per_set=targets,
                 **base,
             )
         targets = _pyramid_targets(last, scheme, 0.0, exercise, round_fn)
-        why = f"{days_since} days since the last session{when}, so no jump today. " if stale else ""
+        why = (
+            f"Han pasado {days_since} días desde la última sesión{when}: hoy sin salto. "
+            if stale
+            else ""
+        )
         return Recommendation(
             action=Action.HOLD_STALE if stale else Action.REPEAT,
             weight=(targets[-1].weight if targets else None),
             reps_low=scheme.reps_low,
             reps_high=scheme.reps_high,
             reason=(
-                f"{why}Pyramid: same ladder as last time, and hit "
-                f"{_reps_text(scheme.per_set)} on the way up. The weight moves only when "
-                f"every step meets its number."
+                f"{why}Pirámide: la misma escalera que la última vez, buscando "
+                f"{_reps_text(scheme.per_set)} en la subida. El peso solo se mueve cuando "
+                f"cada peldaño cumple su número."
             ),
             confidence=Confidence.MEDIUM,
             per_set=targets,
@@ -1202,12 +1224,12 @@ def recommend(
                 reps_low=scheme.reps_low,
                 reps_high=scheme.reps_high,
                 reason=(
-                    f"You earned the jump last time — {_reps_text(last.reps)} at "
-                    f"{_load_text(load)}, top of {scheme.reps_low}-{scheme.reps_high} on every "
-                    f"set — but that was {days_since} days ago{when}. Repeat "
-                    f"{_load_text(load)} and take the jump next session; adding weight on top "
-                    f"of a three-week gap is how a rule that is right on paper fails the "
-                    f"first set."
+                    f"Te ganaste el salto la última vez — {_reps_text(last.reps)} a "
+                    f"{_load_text(load)}, tope de {scheme.reps_low}-{scheme.reps_high} en "
+                    f"todas las series — pero eso fue hace {days_since} días{when}. Repite "
+                    f"{_load_text(load)} y da el salto la próxima sesión; añadir peso encima "
+                    f"de tres semanas de parón es como una regla correcta sobre el papel "
+                    f"falla en la primera serie."
                 ),
                 confidence=Confidence.MEDIUM,
                 per_set=_flat_targets(scheme, load or None),
@@ -1216,9 +1238,9 @@ def recommend(
         target = loadable_weight(load + increment.kg, exercise, round_fn=round_fn)
         bodyweight = load <= 0
         extra = (
-            f"Add {_fmt(increment.kg)} kg on a belt — {increment.reason}."
+            f"Añade {_fmt(increment.kg)} kg al cinturón — {increment.reason}."
             if bodyweight
-            else f"Go to {_fmt(target)} kg — {increment.reason}."
+            else f"Pasa a {_fmt(target)} kg — {increment.reason}."
         )
         return Recommendation(
             action=Action.ADD_WEIGHT,
@@ -1226,9 +1248,9 @@ def recommend(
             reps_low=scheme.reps_low,
             reps_high=scheme.reps_high,
             reason=(
-                f"Last session{when}: {_reps_text(last.reps)} at {_load_text(load)} — "
-                f"{scheme.reps_high} reps, the top of the range, on all "
-                f"{len(last.reps)} sets. {extra} Rebuild from {scheme.reps_low} reps."
+                f"Última sesión{when}: {_reps_text(last.reps)} a {_load_text(load)} — "
+                f"{scheme.reps_high} reps, el tope del rango, en las "
+                f"{len(last.reps)} series. {extra} Reconstruye desde {scheme.reps_low} reps."
             ),
             confidence=Confidence.HIGH,
             per_set=_flat_targets(scheme, (increment.kg if bodyweight else target) or None),
@@ -1248,11 +1270,11 @@ def recommend(
                 reps_low=scheme.reps_low,
                 reps_high=scheme.reps_high,
                 reason=(
-                    f"Two sessions in a row under {scheme.reps_low} reps at "
-                    f"{_load_text(load)} ({_reps_text(previous.reps)} then "
-                    f"{_reps_text(last.reps)}). That is not a bad day, it is too much "
-                    f"weight: drop to {_load_text(target)} "
-                    f"({int(BACK_OFF_FACTOR * 100)}%), own the range again, and climb back."
+                    f"Dos sesiones seguidas por debajo de {scheme.reps_low} reps a "
+                    f"{_load_text(load)} ({_reps_text(previous.reps)} y luego "
+                    f"{_reps_text(last.reps)}). Eso no es un mal día, es demasiado "
+                    f"peso: baja a {_load_text(target)} "
+                    f"({int(BACK_OFF_FACTOR * 100)}%), domina el rango otra vez y vuelve a subir."
                 ),
                 confidence=Confidence.MEDIUM,
                 per_set=_flat_targets(scheme, target or None),
@@ -1264,10 +1286,10 @@ def recommend(
             reps_low=scheme.reps_low,
             reps_high=scheme.reps_high,
             reason=(
-                f"Last session{when}: {_reps_text(last.reps)} at {_load_text(load)} — under "
-                f"{scheme.reps_low}, the bottom of the range. One short session is a bad day, "
-                f"not a verdict: same weight, get every set back to {scheme.reps_low}. "
-                f"If it happens again the weight comes down."
+                f"Última sesión{when}: {_reps_text(last.reps)} a {_load_text(load)} — por "
+                f"debajo de {scheme.reps_low}, el suelo del rango. Una sesión corta es un mal "
+                f"día, no un veredicto: mismo peso, y devuelve cada serie a {scheme.reps_low}. "
+                f"Si se repite, el peso baja."
             ),
             confidence=Confidence.HIGH,
             per_set=_flat_targets(scheme, load or None),
@@ -1278,13 +1300,13 @@ def recommend(
     chase = min(worst + 1, scheme.reps_high) if scheme.reps_high else worst
     short = (scheme.sets or len(last.reps)) - len(last.reps)
     missing = (
-        f" Only {len(last.reps)} of {scheme.sets} sets were logged at that load, so the jump "
-        f"is not earned yet."
+        f" Solo {len(last.reps)} de {scheme.sets} series quedaron registradas a esa carga, "
+        f"así que el salto aún no está ganado."
         if short > 0
         else ""
     )
     stale_note = (
-        f" ({days_since} days since that session — treat it as a re-entry.)" if stale else ""
+        f" (Han pasado {days_since} días de esa sesión — tómala como una vuelta.)" if stale else ""
     )
     return Recommendation(
         action=Action.REPEAT,
@@ -1292,10 +1314,10 @@ def recommend(
         reps_low=chase,
         reps_high=scheme.reps_high,
         reason=(
-            f"Last session{when}: {_reps_text(last.reps)} at {_load_text(load)}. Still inside "
-            f"{scheme.reps_low}-{scheme.reps_high}, so the weight stays: same "
-            f"{_load_text(load)}, and beat {worst} on your worst set. The load moves the day "
-            f"every set reaches {scheme.reps_high}.{missing}{stale_note}"
+            f"Última sesión{when}: {_reps_text(last.reps)} a {_load_text(load)}. Aún dentro "
+            f"de {scheme.reps_low}-{scheme.reps_high}, así que el peso se queda: mismo "
+            f"{_load_text(load)}, y supera {worst} en tu peor serie. La carga se mueve el día "
+            f"que todas las series lleguen a {scheme.reps_high}.{missing}{stale_note}"
         ),
         confidence=Confidence.HIGH,
         per_set=_repeat_targets(last, scheme, load),
@@ -1313,13 +1335,13 @@ def _baseline_reason(key: str, scheme: Scheme) -> str:
     top = scheme.reps_high
     if top:
         return (
-            f"No history for {key}. Nothing to base a weight on, so there is no recommendation: "
-            f"pick a load you can take to {top} reps with 2-3 left in the tank, log it, and that "
-            f"becomes the baseline everything after today is measured against."
+            f"Sin historial de {key}. No hay en qué basar un peso, así que no hay "
+            f"recomendación: elige una carga que puedas llevar a {top} reps con 2-3 en la "
+            f"recámara, apúntala, y esa es la línea base contra la que se mide todo lo demás."
         )
     return (
-        f"No history for {key}, and no readable rep prescription either. Log whatever you do "
-        f"today — one session is all this needs to start making recommendations."
+        f"Sin historial de {key} y sin prescripción de repeticiones legible. Apunta lo que "
+        f"hagas hoy — con una sesión basta para empezar a recomendar."
     )
 
 
@@ -1342,24 +1364,25 @@ def _repeat_only(last: _Session, scheme: Scheme, load: float, base: dict) -> Rec
 
     if scheme.kind is SchemeKind.AMRAP:
         reason = (
-            f"AMRAP: the prescription has no rep ceiling, so there is no top of the range to "
-            f"reach and the weight cannot be earned that way. Last session{when}: "
-            f"{_reps_text(r for r in (_set_reps(s) for s in last.sets) if r)} at "
-            f"{_load_text(load)}, {total} reps total. Same load, beat {total}."
+            f"AMRAP: la prescripción no tiene techo de repeticiones, así que no hay tope de "
+            f"rango que alcanzar ni forma de ganarse el peso así. Última sesión{when}: "
+            f"{_reps_text(r for r in (_set_reps(s) for s in last.sets) if r)} a "
+            f"{_load_text(load)}, {total} reps en total. Misma carga, supera {total}."
         )
     elif scheme.kind is SchemeKind.CLUSTER:
         reason = (
-            f"{scheme.reps_label()} is a cluster — drop set, bi-set or triset. The log keeps "
-            f"one flat list of sets per exercise, so nothing here can tell which segment a set "
-            f"belongs to, and a rule applied to the wrong segment is worse than no rule. "
-            f"Same {_load_text(load)} as last time{when}; add reps where you can."
+            f"{scheme.reps_label()} es un clúster — drop set, bi-serie o triserie. El registro "
+            f"guarda una lista plana de series por ejercicio, así que nada aquí sabe a qué "
+            f"segmento pertenece cada serie, y una regla aplicada al segmento equivocado es "
+            f"peor que ninguna. Mismo {_load_text(load)} que la última vez{when}; añade "
+            f"repeticiones donde puedas."
         )
     else:
         reason = (
-            f"No readable rep prescription"
-            f"{f' in “{scheme.raw}”' if scheme.raw else ''}, so nothing can be inferred about "
-            f"the range. Repeating last session's {_load_text(load)}{when} is the only claim "
-            f"that is certainly true."
+            f"Sin prescripción de repeticiones legible"
+            f"{f' en “{scheme.raw}”' if scheme.raw else ''}, así que nada se puede inferir del "
+            f"rango. Repetir el {_load_text(load)} de la última sesión{when} es la única "
+            f"afirmación con certeza verdadera."
         )
 
     return Recommendation(

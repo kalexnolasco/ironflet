@@ -59,16 +59,16 @@ def _textos(control) -> str:
 def test_la_base_caida_no_deja_la_pantalla_en_blanco():
     texto = _textos(_vista(BaseCaida()).build())
     assert texto.strip(), "Settings rendered nothing at all"
-    assert "could not load" in texto.lower() or "went wrong" in texto.lower()
+    assert "no pudo cargar" in texto.lower() or "algo falló" in texto.lower()
 
 
 def test_conserva_el_titulo_de_la_pantalla():
     """Otherwise it reads as "the app replaced itself", not "no data here"."""
-    assert "Settings" in _textos(_vista(BaseCaida()).build())
+    assert "Ajustes" in _textos(_vista(BaseCaida()).build())
 
 
 def test_ofrece_reintentar():
-    assert "try again" in _textos(_vista(BaseCaida()).build()).lower()
+    assert "reintentar" in _textos(_vista(BaseCaida()).build()).lower()
 
 
 def test_on_show_no_revienta_antes_del_primer_render():
@@ -86,4 +86,4 @@ def test_el_fallo_tardio_de_la_seccion_de_peso_tambien_esta_cubierto():
     store = BaseCaida(falla_en="get_weights")
     texto = _textos(_vista(store).build())
     assert texto.strip()
-    assert "Settings" in texto
+    assert "Ajustes" in texto

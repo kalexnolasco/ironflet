@@ -306,7 +306,7 @@ def test_the_summary_shows_the_measured_time(view, store):
 
     block = view._duration_block()
     assert _said(block, "1h 12m")
-    assert _said(block, "measured by the timer")
+    assert _said(block, "edido por el cronómetro")
 
 
 def test_the_summary_asks_when_the_clock_could_not_be_trusted(view, store):
@@ -320,8 +320,8 @@ def test_the_summary_asks_when_the_clock_could_not_be_trusted(view, store):
     view._finish_session()
 
     block = view._duration_block()
-    assert _said(block, "not timed")
-    assert _said(block, "while you typed")
+    assert _said(block, "in cronometrar")
+    assert _said(block, "mientras tecleabas")
 
 
 def test_the_summary_offers_a_row_for_every_day_it_wrote_to(view, store):
@@ -343,7 +343,7 @@ def test_the_duration_reaches_the_built_summary_screen(view, store):
     _ran_for(view, 4320)
     view._finish_session()
 
-    assert _said(view.build(), "session time")
+    assert _said(view.build(), "Tiempo de sesión")
 
 
 def test_the_finish_dialog_says_what_the_clock_will_be_allowed_to_claim(view, page):
@@ -351,11 +351,11 @@ def test_the_finish_dialog_says_what_the_clock_will_be_allowed_to_claim(view, pa
     _log_one(view)
     _ran_for(view, 4320)
     view._ask_finish(None)
-    assert _said(_last_dialog(page), "will be saved")
+    assert _said(_last_dialog(page), "Se guardará")
 
     view._set_exercise_date(2, MONDAY)
     view._ask_finish(None)
-    assert _said(_last_dialog(page), "not saved as your session time")
+    assert _said(_last_dialog(page), "no se guarda como tu tiempo de sesión")
 
 
 # ── typing one in ────────────────────────────────────────────────────────
@@ -398,7 +398,7 @@ def test_an_impossible_time_is_refused_in_the_storage_layers_own_words(view, sto
     _field(dlg).value = "840"
     dlg.actions[-1].on_click(None)
 
-    assert _said(dlg, "the longest accepted is")
+    assert _said(dlg, "más largo aceptado")
     assert MONDAY.isoformat() not in store.durations
 
 
@@ -418,7 +418,7 @@ def test_something_that_is_not_a_number_is_refused(view, store, page):
     _field(dlg).value = "an hour"
     dlg.actions[-1].on_click(None)
 
-    assert _said(dlg, "minutes, as a number")
+    assert _said(dlg, "Minutos, en número")
     assert store.writes == []
 
 
@@ -431,15 +431,15 @@ def test_the_clock_shortcut_is_offered_only_when_it_measured_this_session(view, 
     _log_one(view)
     _ran_for(view, 4320)
     view._open_duration_dialog(date.today())
-    assert _said(_last_dialog(page), "use the clock")
+    assert _said(_last_dialog(page), "sar el reloj")
 
     view._set_exercise_date(1, MONDAY)
     view.completed = []
     _log_one(view, idx=1, on=MONDAY)
     view._open_duration_dialog(MONDAY)
     dlg = _last_dialog(page)
-    assert not _said(dlg, "use the clock")
-    assert _said(dlg, "not offered here")
+    assert not _said(dlg, "sar el reloj")
+    assert _said(dlg, "no se ofrece el reloj")
 
 
 def test_the_clock_shortcut_fills_the_field(view, store, page):
@@ -447,7 +447,7 @@ def test_the_clock_shortcut_fills_the_field(view, store, page):
     _ran_for(view, 4320)
     view._open_duration_dialog(date.today())
     dlg = _last_dialog(page)
-    _button(dlg, "use the clock").on_click(None)
+    _button(dlg, "sar el reloj").on_click(None)
 
     assert _field(dlg).value == "72"
 
@@ -512,7 +512,7 @@ def test_history_lists_recent_session_times_without_drilling_in(history_page):
     view = HistoryView(history_page, store)
 
     built = view.build()
-    assert _said(built, "session times")
+    assert _said(built, "Tiempos de sesión")
     assert _said(built, "1h 12m")
 
 
@@ -526,7 +526,7 @@ def test_history_says_nothing_when_nothing_was_timed(history_page):
     store = HistoryStore({}, [_entry("2026-08-17")])
     view = HistoryView(history_page, store)
 
-    assert not _said(view.build(), "session times")
+    assert not _said(view.build(), "Tiempos de sesión")
     view.selected = "Squat"
     assert not _said(view.build(), "0m")
 

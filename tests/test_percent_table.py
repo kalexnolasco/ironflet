@@ -83,14 +83,14 @@ def test_la_tabla_llega_a_pantalla():
     bloque = _vista()._percent_table(UN_RM)
     assert bloque, "computed and then never rendered — the failure this file exists for"
     textos = " ".join(_textos(bloque))
-    assert "Plan from this 1RM" in textos
+    assert "Planificar desde este 1RM" in textos
     assert "80%" in textos
 
 
 def test_dice_que_las_reps_son_una_estimacion():
     """The reps come off an Epley estimate of a rep he has never performed."""
     textos = " ".join(_textos(_vista()._percent_table(UN_RM))).lower()
-    assert "estimate" in textos
+    assert "estimación" in textos
 
 
 def test_las_reps_concuerdan_en_singular():

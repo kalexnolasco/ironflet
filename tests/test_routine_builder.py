@@ -481,7 +481,7 @@ def test_editor_view_full_flow(store, page_mock):
     assert len(stored) == 1
     assert len(stored[0].phases) == 2
     day_names = [d.name for d in stored[0].days_for_phase(1)]
-    assert day_names == ["Day 2", "Day 1"]  # the reorder stuck
+    assert day_names == ["Día 2", "Day 1"]  # the reorder stuck
     first_day = stored[0].days_for_phase(1)[1].exercises
     assert [exercise_key(e) for e in first_day] == ["Leg Press", "Squat"]
 
@@ -493,14 +493,14 @@ def test_editor_refuses_to_save_an_empty_routine(store, page_mock):
     view._open_new()
     view._save()
     assert view.mode == "edit"
-    assert "exercise" in view.error
+    assert "ejercicio" in view.error
     assert list_user_routines(store) == []
 
     view._add_exercise(0, "Squat")
     view.draft.name = "   "
     view._save()
     assert view.mode == "edit"
-    assert "name" in view.error
+    assert "nombre" in view.error
     assert list_user_routines(store) == []
 
 
@@ -533,4 +533,4 @@ def test_picker_dialog_opens_and_filters(store, page_mock):
     view._open_picker(0)
     page_mock.open.assert_called_once()
     dialog = page_mock.open.call_args[0][0]
-    assert dialog.title.value == "Add exercise"
+    assert dialog.title.value == "Añadir ejercicio"

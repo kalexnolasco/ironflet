@@ -63,11 +63,11 @@ _SEARCH_SHEET_H = 420
 # nutrition.MEALS ever grow a sixth — degrade to a title-cased label instead of
 # raising.
 MEAL_LABELS = {
-    "breakfast": "Breakfast",
-    "snack1": "Mid-morning",
-    "lunch": "Lunch",
-    "snack2": "Afternoon",
-    "dinner": "Dinner",
+    "breakfast": "Desayuno",
+    "snack1": "Media mañana",
+    "lunch": "Comida",
+    "snack2": "Merienda",
+    "dinner": "Cena",
 }
 MEAL_ICONS = {
     "breakfast": "🥣",
@@ -89,7 +89,7 @@ MEAL_LOOKAHEAD_H = 1.0
 # guaranteed-distinct set is `phase`, whose hues the theme tests keep both
 # mutually different and dark enough to carry white text — that is exactly the
 # property a chart palette needs, and no hex may be written here.
-MACROS = (("protein", "Protein", 0), ("fat", "Fat", 3), ("carbs", "Carbs", 2))
+MACROS = (("protein", "Proteína", 0), ("fat", "Grasa", 3), ("carbs", "Carbos", 2))
 
 QUICK_ADD_MAX = 6
 SEARCH_RESULTS_MAX = 25
@@ -258,7 +258,7 @@ class NutritionView:
         else:
             blocks += [self._quick_add(), ft.Container(height=Space.x4)]
 
-        blocks.append(section_title("Meals"))
+        blocks.append(section_title("Comidas"))
         blocks.append(ft.Container(height=Space.x2))
         blocks += [self._meal_card(m, totals, entries_by_meal[m]) for m in MEALS]
         blocks.append(ft.Container(height=Space.x4))
@@ -377,11 +377,11 @@ class NutritionView:
             kw["portion"] = portion
         if qty != 1.0 and _accepts(log_food, "qty"):
             kw["qty"] = qty
-        name = (food or {}).get("name") or "Food"
+        name = (food or {}).get("name") or "Alimento"
         try:
             saved = log_food(self.store, self._day_arg(), meal, food, **kw)
         except Exception:
-            self._toast(f"Could not save {name} — the database did not answer")
+            self._toast(f"No se pudo guardar {name} — la base de datos no responde")
             return
         self._toast(f"{name} → {meal_label(meal)}", undo_id=_entry_id(saved))
         self._portions_open = None
@@ -391,7 +391,7 @@ class NutritionView:
         try:
             delete_entry(self.store, entry_id)
         except Exception:
-            self._toast("Could not remove that — the database did not answer")
+            self._toast("No se pudo quitar — la base de datos no responde")
             return
         self._refresh()
 
@@ -400,15 +400,15 @@ class NutritionView:
         try:
             copied = copy_previous_day(self.store, self._day_arg())
         except Exception:
-            self._toast("Could not copy — the database did not answer")
+            self._toast("No se pudo copiar — la base de datos no responde")
             return
         count = copied if isinstance(copied, int) else len(copied or [])
         self._toast(
             # Was "Copied 1 items from yesterday". `plural` exists so this
             # cannot be retyped wrong again.
-            f"Copied {plural(count, 'item')} from {source}"
+            f"{plural(count, 'alimento copiado', 'alimentos copiados')} de {source}"
             if count
-            else f"Nothing to copy — {source} is empty too"
+            else f"Nada que copiar — {source} también está vacío"
         )
         self._refresh()
 
@@ -426,7 +426,7 @@ class NutritionView:
             bgcolor=C.bg_surface,
         )
         if undo_id is not None:
-            bar.action = "Undo"
+            bar.action = "Deshacer"
             bar.action_color = C.accent
             bar.on_action = lambda _, i=undo_id: self._delete(i)
         self.page.open(bar)
@@ -448,9 +448,9 @@ class NutritionView:
     def _day_title(self) -> str:
         today = date.today()
         if self.day == today:
-            return "Today"
+            return "Hoy"
         if self.day == today - timedelta(days=1):
-            return "Yesterday"
+            return "Ayer"
         return self._full_date()
 
     def _full_date(self) -> str:
@@ -461,7 +461,7 @@ class NutritionView:
         # `gap <= 1` took the other branch, so this is always 2 or more and
         # "1 days ago" cannot happen — `plural` anyway, so a change to that
         # threshold cannot reintroduce it.
-        return self._full_date() if gap <= 1 else f"{plural(gap, 'day')} ago"
+        return self._full_date() if gap <= 1 else f"hace {plural(gap, 'día')}"
 
     def _previous_day(self) -> date:
         return self.day - timedelta(days=1)
@@ -473,7 +473,7 @@ class NutritionView:
         days back it copies from four days back, and a button that names a day
         it is not reading from is worse than one with a vaguer label.
         """
-        return "yesterday" if self.day == date.today() else "the day before"
+        return "ayer" if self.day == date.today() else "el día anterior"
 
     def _arrow(self, icon: str, days: int, enabled: bool) -> ft.Control:
         return ft.Container(
@@ -540,10 +540,10 @@ class NutritionView:
         target = float(targets.get(key) or 0)
         left = target - current
         if left >= 0:
-            remaining = ft.Text(f"{_n(left)} left", size=10, color=C.text_muted)
+            remaining = ft.Text(f"quedan {_n(left)}", size=10, color=C.text_muted)
         else:
             remaining = ft.Text(
-                f"{_n(-left)} over", size=10, color=C.danger, weight=ft.FontWeight.W_700
+                f"{_n(-left)} de más", size=10, color=C.danger, weight=ft.FontWeight.W_700
             )
         return ft.Column(
             [
@@ -586,7 +586,7 @@ class NutritionView:
                     text_align=ft.TextAlign.CENTER,
                 ),
                 ft.Text(
-                    "over" if over else "left",
+                    "de más" if over else "quedan",
                     size=9,
                     color=C.text_muted,
                     text_align=ft.TextAlign.CENTER,
@@ -667,9 +667,9 @@ class NutritionView:
         can_copy = self._day_has_food(self._previous_day())
 
         def search_button(factory):
-            """ "Search food", as either the primary or the secondary button."""
+            """ "Buscar alimento", as either the primary or the secondary button."""
             return factory(
-                "Search food",
+                "Buscar alimento",
                 on_click=lambda _: self._open_search(meal_for_hour(self._now_hour())),
                 expand=True,
             )
@@ -680,14 +680,14 @@ class NutritionView:
                 f"{_n(targets.get('protein'))}P / {_n(targets.get('fat'))}F / "
                 f"{_n(targets.get('carbs'))}C"
             )
-            whose = "Today's plan" if self.day == date.today() else "That day's plan"
+            whose = "Plan de hoy" if self.day == date.today() else "Plan de ese día"
             note = ft.Text(
                 f"{whose}: {plan}", size=11, color=C.text_muted, text_align=ft.TextAlign.CENTER
             )
         else:
             note = ft.Text(
-                "No daily targets are set yet, so nothing is being measured against a "
-                "plan — the totals still add up.",
+                "Aún no hay objetivos diarios, así que nada se mide contra un plan — "
+                "los totales igualmente suman.",
                 size=11,
                 color=C.text_muted,
                 text_align=ft.TextAlign.CENTER,
@@ -697,7 +697,7 @@ class NutritionView:
         if can_copy:
             actions += [
                 primary_button(
-                    f"Copy {source}",
+                    f"Copiar {source}",
                     icon=ft.Icons.CONTENT_COPY,
                     on_click=self._copy_yesterday,
                     expand=True,
@@ -713,7 +713,7 @@ class NutritionView:
                 search_button(primary_button),
                 ft.Container(height=Space.x1),
                 ft.Text(
-                    f"Nothing was logged {source} either, so there is nothing to copy.",
+                    f"Tampoco se registró nada {source}, así que no hay nada que copiar.",
                     size=10,
                     color=C.text_muted,
                     text_align=ft.TextAlign.CENTER,
@@ -723,7 +723,7 @@ class NutritionView:
         return card(
             ft.Text("🍽", size=26, text_align=ft.TextAlign.CENTER),
             ft.Text(
-                "Nothing logged yet",
+                "Nada registrado todavía",
                 size=13,
                 weight=ft.FontWeight.W_700,
                 color=C.text,
@@ -741,7 +741,7 @@ class NutritionView:
         favourites = self._favourites(target_meal)
         header = ft.Row(
             [
-                section_title(f"Quick add · {meal_label(target_meal)}"),
+                section_title(f"Añadir rápido · {meal_label(target_meal)}"),
                 ft.Container(
                     content=ft.Row(
                         [
@@ -750,7 +750,7 @@ class NutritionView:
                             # header is on screen while browsing back through
                             # the week, where "yesterday" is not the source.
                             ft.Text(
-                                f"Copy {self._previous_day_label()}",
+                                f"Copiar {self._previous_day_label()}",
                                 size=11,
                                 weight=ft.FontWeight.W_700,
                                 color=C.text_secondary,
@@ -770,7 +770,9 @@ class NutritionView:
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
         )
         if not favourites:
-            body: ft.Control = muted_text("Log a few foods and your regulars show up here.")
+            body: ft.Control = muted_text(
+                "Registra unos cuantos alimentos y tus habituales saldrán aquí."
+            )
         else:
             body = ft.Row(
                 [self._favourite_chip(f, target_meal) for f in favourites],
@@ -859,7 +861,7 @@ class NutritionView:
                 children += [self._entry_row(e) for e in entries]
                 children.append(self._meal_macros(block, entries))
             else:
-                children.append(muted_text("Nothing here yet"))
+                children.append(muted_text("Aquí no hay nada aún"))
             favourites = self._favourites(meal, limit=4)
             if favourites:
                 children.append(ft.Container(height=Space.x2))
@@ -874,7 +876,7 @@ class NutritionView:
             children.append(ft.Container(height=Space.x2))
             children.append(
                 ghost_button(
-                    "Add food",
+                    "Añadir alimento",
                     on_click=lambda _, m=meal: self._open_search(m),
                     expand=True,
                 )
@@ -944,7 +946,7 @@ class NutritionView:
                         border_radius=Radius.sm,
                         on_click=lambda _, i=entry_id: self._delete(i),
                         ink=True,
-                        tooltip="Remove",
+                        tooltip="Quitar",
                     ),
                 ],
                 spacing=Space.x2,
@@ -960,7 +962,7 @@ class NutritionView:
         self._portions_open = None
 
         field = ft.TextField(
-            hint_text="Search food",
+            hint_text="Buscar alimento",
             autofocus=True,
             dense=True,
             bgcolor=C.bg_sunken,
@@ -978,7 +980,7 @@ class NutritionView:
             modal=False,
             bgcolor=C.bg_surface,
             title=ft.Text(
-                f"Add to {meal_label(meal)}",
+                f"Añadir a {meal_label(meal)}",
                 size=16,
                 weight=ft.FontWeight.W_900,
                 color=C.text,
@@ -994,7 +996,7 @@ class NutritionView:
             ),
             actions=[
                 ft.TextButton(
-                    "Done",
+                    "Listo",
                     on_click=lambda _: self._close_dialog(),
                     style=ft.ButtonStyle(color=C.accent),
                 )
@@ -1037,7 +1039,7 @@ class NutritionView:
         # which would send Alex hunting for a food that is in there.
         self._error = None
         foods = self._search(query) if query else self._favourites(self._search_meal, limit=12)
-        header = "Results" if query else "Favourites"
+        header = "Resultados" if query else "Favoritos"
 
         rows: list[ft.Control] = [
             ft.Text(
@@ -1051,7 +1053,7 @@ class NutritionView:
         if self._error is not None:
             rows.append(
                 ft.Text(
-                    "Could not search — the database did not answer. Try again in a moment.",
+                    "No se pudo buscar — la base de datos no responde. Prueba en un momento.",
                     size=12,
                     color=C.danger,
                 )
@@ -1059,7 +1061,7 @@ class NutritionView:
         elif not foods:
             rows.append(
                 ft.Text(
-                    f'No match for "{query}"' if query else "No favourites yet",
+                    f'Nada que encaje con "{query}"' if query else "Aún no hay favoritos",
                     size=12,
                     color=C.text_muted,
                 )
@@ -1128,7 +1130,7 @@ class NutritionView:
                         border_radius=Radius.sm,
                         on_click=toggle_portions,
                         ink=True,
-                        tooltip="Other portions",
+                        tooltip="Otras raciones",
                     )
                     if portions
                     else ft.Container(width=28),

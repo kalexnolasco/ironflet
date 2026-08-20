@@ -134,16 +134,16 @@ class Bar:
 
 
 #: 20 kg men's Olympic bar — what "the bar" means unless stated otherwise.
-OLYMPIC_BAR = Bar("Olympic bar", 20.0)
+OLYMPIC_BAR = Bar("Barra olímpica", 20.0)
 #: 15 kg women's Olympic bar. Common as a second bar on a Spanish gym rack.
-WOMENS_BAR = Bar("Women's bar", 15.0)
+WOMENS_BAR = Bar("Barra de 15", 15.0)
 #: 10 kg technique/training bar.
-TRAINING_BAR = Bar("Training bar", 10.0)
+TRAINING_BAR = Bar("Barra de entreno", 10.0)
 #: EZ curl bars are the vague ones: anywhere from 6.5 to 10 kg depending on
 #: make, and almost never stamped. 7.5 kg is the middle of that range and the
 #: figure most Spanish gym EZ bars weigh; override it once the real one is on a
 #: scale, because a 2.5 kg error on a curl is a whole plate pair.
-EZ_BAR = Bar("EZ curl bar", 7.5)
+EZ_BAR = Bar("Barra EZ", 7.5)
 
 BARS: tuple[Bar, ...] = (OLYMPIC_BAR, WOMENS_BAR, TRAINING_BAR, EZ_BAR)
 
@@ -401,14 +401,14 @@ class PlateSolution:
     def label(self) -> str:
         """`"20 + 10 + 2.5"` per side, or `"bar only"`. For a one-line hint."""
         if self.bar_only:
-            return "bar only"
+            return "solo barra"
         return " + ".join(_trim(p) for p in self.per_side)
 
     def describe(self) -> str:
         """`"82.5 kg — 20 bar + 20 + 10 + 1.25 per side"`. For a wider surface."""
         if self.bar_only:
-            return f"{_trim(self.total)} kg — {_trim(self.bar)} kg bar, no plates"
-        return f"{_trim(self.total)} kg — {_trim(self.bar)} kg bar + {self.label()} per side"
+            return f"{_trim(self.total)} kg — barra de {_trim(self.bar)} kg, sin discos"
+        return f"{_trim(self.total)} kg — barra de {_trim(self.bar)} kg + {self.label()} por lado"
 
 
 @dataclass(frozen=True)
@@ -462,7 +462,7 @@ class LoadOptions:
         if self.exact is not None:
             return self.exact.describe()
         if self.under_bar and self.above is not None:
-            return f"below the bar — {_trim(self.above.total)} kg is the lightest possible"
+            return f"por debajo de la barra — {_trim(self.above.total)} kg es lo más ligero posible"
         parts = []
         if self.below is not None:
             parts.append(f"{_trim(self.below.total)} kg ({self.below.label()})")

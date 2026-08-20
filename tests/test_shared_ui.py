@@ -174,14 +174,14 @@ def test_a_plain_bug_is_not_blamed_on_the_database():
 def test_the_database_message_says_nothing_is_lost():
     """The one fact that matters when the screen is empty in a gym."""
     _headline, body = describe_db_error(_FakeDriverError("connection refused"))
-    assert "is lost" not in body.lower().replace("nothing you logged is lost", "")
-    assert "nothing you logged is lost" in body.lower()
+    assert "se ha perdido" not in body.lower().replace("nada de lo que apuntaste se ha perdido", "")
+    assert "nada de lo que apuntaste se ha perdido" in body.lower()
 
 
 def test_error_card_shows_the_reason_and_the_technical_detail():
     card = db_error_card(_FakeDriverError("could not connect to server"))
     blob = " | ".join(texts(card))
-    assert "Can't reach the database" in blob
+    assert "No se llega a la base de datos" in blob
     assert "could not connect to server" in blob  # searchable, not swallowed
     assert "_FakeDriverError" in blob
 

@@ -119,11 +119,11 @@ def test_help_texts_are_all_different():
 
 def test_only_the_warmup_says_it_does_not_count():
     """The one fact the UI hides. If this wording drifts, the help is wrong."""
-    assert "not counted" in HELP[SetType.WARMUP].consequence.lower()
+    assert "no cuenta" in HELP[SetType.WARMUP].consequence.lower()
     for set_type in (SetType.NORMAL, SetType.DROPSET, SetType.FAILURE):
         consequence = HELP[set_type].consequence.lower()
-        assert "counts" in consequence
-        assert "not counted" not in consequence
+        assert "cuenta" in consequence
+        assert "no cuenta" not in consequence
 
 
 def test_help_for_is_as_forgiving_as_parse_set_type():
@@ -141,8 +141,8 @@ def test_help_for_is_as_forgiving_as_parse_set_type():
 def test_rir_lead_corrects_the_usual_inversion():
     """RIR 2 means two reps left, not two reps done — say so explicitly."""
     lead = RIR_LEAD.lower()
-    assert "could have done" in lead
-    assert "not how many you did" in lead
+    assert "podrías haber hecho" in lead
+    assert "no cuántas hiciste" in lead
 
 
 def test_rir_scale_is_complete_and_ordered():
@@ -269,7 +269,7 @@ def test_the_estimated_1rm_entry_says_it_was_never_lifted():
     """The one misreading that matters: it is a calculation, not a lift."""
     entry = METRIC_HELP[TOPIC_E1RM]
     text = f"{entry.lead} {entry.detail}".lower()
-    assert "not lifted" in text or "have not lifted" in text
+    assert "no lo has levantado" in text
     assert "kilo" in text or " kg" in text  # and it says its unit
 
 
@@ -278,7 +278,7 @@ def test_the_volume_entry_explains_the_k_and_names_the_unit():
     entry = METRIC_HELP[TOPIC_VOLUME]
     text = f"{entry.heading} {entry.lead} {entry.detail}".lower()
     assert "kg" in text or "kilo" in text
-    assert "12.3k" in text and "12,300" in text
+    assert "12,3k" in text and "12.300" in text
 
 
 def test_the_records_entry_spells_out_all_three_trophies():
@@ -292,7 +292,7 @@ def test_the_records_entry_spells_out_all_three_trophies():
 def test_the_muscle_entry_explains_the_sets_that_count_for_nothing():
     """The line that used to read "12 sets unmapped in 4w"."""
     text = METRIC_HELP[TOPIC_MUSCLE].detail.lower()
-    assert "no muscle data" in text
+    assert "no tienen datos musculares" in text
     assert "unmapped" not in text and "unattributed" not in text
 
 

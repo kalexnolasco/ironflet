@@ -188,4 +188,4 @@ def test_a_store_that_cannot_answer_still_renders_the_history():
     view = make_view(entries, store=OldStore(entries))
     assert "Squat" in texts(view.build())
     view.selected = "Squat"
-    assert "Session detail" in texts(view.build())
+    assert "Detalle de la sesión" in texts(view.build())

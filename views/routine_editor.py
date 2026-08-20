@@ -193,7 +193,7 @@ class RoutineEditorView:
         dlg = ft.AlertDialog(
             modal=False,
             bgcolor=C.bg_surface,
-            title=ft.Text("Delete routine", size=16, weight=ft.FontWeight.W_900, color=C.text),
+            title=ft.Text("Borrar rutina", size=16, weight=ft.FontWeight.W_900, color=C.text),
             content=ft.Text(
                 f'"{name}" and all its days will be removed. Logged workouts are not affected.',
                 size=12,
@@ -201,11 +201,11 @@ class RoutineEditorView:
             ),
             actions=[
                 ft.TextButton(
-                    "Cancel",
+                    "Cancelar",
                     on_click=lambda _: self.page.close(dlg),
                     style=ft.ButtonStyle(color=C.text_secondary),
                 ),
-                ft.TextButton("Delete", on_click=do_delete, style=ft.ButtonStyle(color=C.danger)),
+                ft.TextButton("Borrar", on_click=do_delete, style=ft.ButtonStyle(color=C.danger)),
             ],
             actions_alignment=ft.MainAxisAlignment.END,
         )
@@ -228,7 +228,7 @@ class RoutineEditorView:
                     max_lines=1,
                     overflow=ft.TextOverflow.ELLIPSIS,
                 ),
-                chip("Active", color=C.on_accent, bg=C.accent) if is_active else ft.Container(),
+                chip("Activa", color=C.on_accent, bg=C.accent) if is_active else ft.Container(),
             ],
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
             spacing=6,
@@ -245,7 +245,7 @@ class RoutineEditorView:
             [
                 ft.Container(
                     content=ft.Text(
-                        "Use" if not is_active else "In use",
+                        "Usar" if not is_active else "En uso",
                         size=11,
                         weight=ft.FontWeight.W_800,
                         color=C.text_muted if is_active else C.accent,
@@ -259,18 +259,18 @@ class RoutineEditorView:
                 ft.Container(expand=True),
                 self._icon_btn(
                     ft.Icons.EDIT_OUTLINED,
-                    "Edit",
+                    "Editar",
                     lambda _, pk=draft.pk: self._open_existing(pk),
                     C.accent,
                 ),
                 self._icon_btn(
                     ft.Icons.COPY_ALL_OUTLINED,
-                    "Duplicate",
+                    "Duplicar",
                     lambda _, r=rid: self._duplicate(r),
                 ),
                 self._icon_btn(
                     ft.Icons.DELETE_OUTLINE,
-                    "Delete",
+                    "Borrar",
                     lambda _, pk=draft.pk, n=draft.name: self._confirm_delete(pk, n),
                     C.danger,
                 ),
@@ -304,7 +304,7 @@ class RoutineEditorView:
                     ),
                     self._icon_btn(
                         ft.Icons.CONTENT_COPY,
-                        "Duplicate and edit",
+                        "Duplicar y editar",
                         lambda _, r=routine.id: self._duplicate(r),
                         C.accent,
                     ),
@@ -326,14 +326,14 @@ class RoutineEditorView:
             mine = [
                 card(
                     ft.Text(
-                        "No routines of your own yet.",
+                        "Aún no tienes rutinas propias.",
                         size=13,
                         weight=ft.FontWeight.W_700,
                         color=C.text,
                     ),
                     muted_text(
-                        "Duplicate the one you already follow and change what you "
-                        "disagree with — it is faster than starting from nothing."
+                        "Duplica la que ya sigues y cambia lo que "
+                        "no te convenza — es más rápido que empezar de cero."
                     ),
                     padding=Space.x4,
                     margin=ft.margin.only(bottom=Space.x2),
@@ -342,19 +342,19 @@ class RoutineEditorView:
 
         return ft.Column(
             [
-                ft.Text("Routines", size=22, weight=ft.FontWeight.W_900, color=C.text),
-                muted_text("Your own routines sit next to the built-in ones."),
+                ft.Text("Rutinas", size=22, weight=ft.FontWeight.W_900, color=C.text),
+                muted_text("Tus rutinas propias van junto a las de serie."),
                 ft.Container(height=Space.x3),
                 primary_button(
                     "New routine", on_click=self._open_new, icon=ft.Icons.ADD, expand=True
                 ),
                 ft.Container(height=Space.x4),
-                section_title("Yours"),
+                section_title("Tuyas"),
                 ft.Container(height=Space.x2),
                 *mine,
                 ft.Container(height=Space.x3),
-                section_title("Start from a template"),
-                muted_text("Makes an editable copy. The original stays untouched."),
+                section_title("Empezar de una plantilla"),
+                muted_text("Crea una copia editable. La original queda intacta."),
                 ft.Container(height=Space.x2),
                 *[self._builtin_row(r) for r in builtin_routines()],
             ],
@@ -374,14 +374,14 @@ class RoutineEditorView:
     def _add_phase(self, _=None):
         assert self.draft is not None
         n = len(self.draft.phases) + 1
-        self.draft.phases.append(DraftPhase(name=f"Phase {n}", days=[DraftDay(name="Day 1")]))
+        self.draft.phases.append(DraftPhase(name=f"Fase {n}", days=[DraftDay(name="Día 1")]))
         self.phase_idx = n - 1
         self._refresh()
 
     def _remove_phase(self, _=None):
         assert self.draft is not None
         if len(self.draft.phases) <= 1:
-            self.error = "A routine needs at least one phase."
+            self.error = "Una rutina necesita al menos una fase."
             self._refresh()
             return
         self.draft.phases.pop(self.phase_idx)
@@ -400,7 +400,7 @@ class RoutineEditorView:
             tabs.append(
                 ft.Container(
                     content=ft.Text(
-                        p.name or f"Phase {i + 1}",
+                        p.name or f"Fase {i + 1}",
                         size=11,
                         weight=ft.FontWeight.W_800,
                         color=C.accent if on else C.text_secondary,
@@ -420,7 +420,7 @@ class RoutineEditorView:
                 border_radius=Radius.sm,
                 padding=ft.padding.symmetric(horizontal=10, vertical=6),
                 on_click=self._add_phase,
-                tooltip="Add phase",
+                tooltip="Añadir fase",
                 ink=True,
             )
         )
@@ -429,7 +429,7 @@ class RoutineEditorView:
     # ── editor: days ─────────────────────────────────────────
     def _add_day(self, _=None):
         phase = self._phase()
-        phase.days.append(DraftDay(name=f"Day {len(phase.days) + 1}"))
+        phase.days.append(DraftDay(name=f"Día {len(phase.days) + 1}"))
         self._refresh()
 
     def _remove_day(self, idx: int):
@@ -494,17 +494,17 @@ class RoutineEditorView:
                     ),
                     self._icon_btn(
                         ft.Icons.KEYBOARD_ARROW_UP,
-                        "Move up",
+                        "Subir",
                         lambda _, d=day_idx, i=ex_idx: self._move_exercise(d, i, -1),
                     ),
                     self._icon_btn(
                         ft.Icons.KEYBOARD_ARROW_DOWN,
-                        "Move down",
+                        "Bajar",
                         lambda _, d=day_idx, i=ex_idx: self._move_exercise(d, i, 1),
                     ),
                     self._icon_btn(
                         ft.Icons.CLOSE,
-                        "Remove",
+                        "Quitar",
                         lambda _, d=day_idx, i=ex_idx: self._remove_exercise(d, i),
                         C.danger,
                     ),
@@ -521,20 +521,20 @@ class RoutineEditorView:
 
         header = ft.Row(
             [
-                self._field(day.name, set_name, hint="Day name", expand=True),
+                self._field(day.name, set_name, hint="Nombre del día", expand=True),
                 self._icon_btn(
                     ft.Icons.KEYBOARD_ARROW_UP,
-                    "Move up",
+                    "Subir",
                     lambda _, i=day_idx: self._move_day(i, -1),
                 ),
                 self._icon_btn(
                     ft.Icons.KEYBOARD_ARROW_DOWN,
-                    "Move down",
+                    "Bajar",
                     lambda _, i=day_idx: self._move_day(i, 1),
                 ),
                 self._icon_btn(
                     ft.Icons.DELETE_OUTLINE,
-                    "Delete day",
+                    "Borrar día",
                     lambda _, i=day_idx: self._remove_day(i),
                     C.danger,
                 ),
@@ -549,7 +549,7 @@ class RoutineEditorView:
         if not rows:
             rows = [
                 ft.Container(
-                    content=muted_text("No exercises yet."),
+                    content=muted_text("Aún no hay ejercicios."),
                     padding=ft.padding.symmetric(horizontal=Space.x2, vertical=Space.x2),
                 )
             ]
@@ -564,7 +564,7 @@ class RoutineEditorView:
                     [
                         ft.Icon(ft.Icons.ADD, size=14, color=C.accent),
                         ft.Text(
-                            "Add exercise", size=12, weight=ft.FontWeight.W_700, color=C.accent
+                            "Añadir ejercicio", size=12, weight=ft.FontWeight.W_700, color=C.accent
                         ),
                     ],
                     spacing=4,
@@ -628,7 +628,7 @@ class RoutineEditorView:
                     ink=True,
                 )
                 for n in matches()
-            ] or [ft.Container(content=muted_text("Nothing matches that."), padding=Space.x3)]
+            ] or [ft.Container(content=muted_text("Nada encaja con eso."), padding=Space.x3)]
 
         def render_groups():
             def pick(g: str):
@@ -662,14 +662,14 @@ class RoutineEditorView:
             render_results()
             self.page.update()
 
-        search = self._field("", on_search, hint="Search exercises", expand=True)
+        search = self._field("", on_search, hint="Buscar ejercicios", expand=True)
         render_groups()
         render_results()
 
         dlg = ft.AlertDialog(
             modal=False,
             bgcolor=C.bg_surface,
-            title=ft.Text("Add exercise", size=16, weight=ft.FontWeight.W_900, color=C.text),
+            title=ft.Text("Añadir ejercicio", size=16, weight=ft.FontWeight.W_900, color=C.text),
             content=ft.Container(
                 content=ft.Column(
                     [search, group_row, ft.Container(height=Space.x1), results],
@@ -686,7 +686,7 @@ class RoutineEditorView:
             ),
             actions=[
                 ft.TextButton(
-                    "Close",
+                    "Cerrar",
                     on_click=lambda _: self.page.close(dlg),
                     style=ft.ButtonStyle(color=C.text_secondary),
                 ),
@@ -700,11 +700,11 @@ class RoutineEditorView:
         assert self.draft is not None
         draft = self.draft
         if not (draft.name or "").strip():
-            self.error = "Give the routine a name."
+            self.error = "Ponle un nombre a la rutina."
             self._refresh()
             return
         if draft.exercise_count() == 0:
-            self.error = "Add at least one exercise before saving."
+            self.error = "Añade al menos un ejercicio antes de guardar."
             self._refresh()
             return
 
@@ -745,30 +745,32 @@ class RoutineEditorView:
             phase.name = e.control.value or ""
 
         header = [
-            self._back_row("Routines", lambda _: self._close_editor()),
+            self._back_row("Rutinas", lambda _: self._close_editor()),
             ft.Text(
-                "Edit routine" if draft.pk else "New routine",
+                "Editar rutina" if draft.pk else "Nueva rutina",
                 size=22,
                 weight=ft.FontWeight.W_900,
                 color=C.text,
             ),
             ft.Container(height=Space.x2),
-            self._field(draft.name, set_name, hint="Routine name"),
+            self._field(draft.name, set_name, hint="Nombre de la rutina"),
             ft.Container(height=Space.x2),
-            self._field(draft.description, set_desc, hint="Description (optional)"),
+            self._field(draft.description, set_desc, hint="Descripción (opcional)"),
             ft.Container(height=Space.x4),
-            section_title("Phases"),
-            muted_text("Blocks of weeks. One is fine if you do not periodize."),
+            section_title("Fases"),
+            muted_text("Bloques de semanas. Con una basta si no periodizas."),
             ft.Container(height=Space.x2),
             self._phase_tabs(),
             ft.Container(height=Space.x3),
             card(
                 ft.Row(
                     [
-                        self._field(phase.name, set_phase_name, hint="Phase name", expand=True),
+                        self._field(
+                            phase.name, set_phase_name, hint="Nombre de la fase", expand=True
+                        ),
                         self._icon_btn(
                             ft.Icons.DELETE_OUTLINE,
-                            "Delete phase",
+                            "Borrar fase",
                             self._remove_phase,
                             C.danger,
                         ),
@@ -779,24 +781,28 @@ class RoutineEditorView:
                 ft.Container(height=Space.x1),
                 ft.Row(
                     [
-                        self._field(phase.weeks, set_weeks, hint="Weeks", expand=True),
-                        self._field(phase.scheme, set_scheme, hint="Sets scheme", expand=True),
-                        self._field(phase.rest, set_rest, hint="Rest", expand=True),
+                        self._field(phase.weeks, set_weeks, hint="Semanas", expand=True),
+                        self._field(
+                            phase.scheme, set_scheme, hint="Esquema de series", expand=True
+                        ),
+                        self._field(phase.rest, set_rest, hint="Descanso", expand=True),
                     ],
                     spacing=Space.x2,
                 ),
-                muted_text("Scheme and rest are shown in the Plan tab, e.g. 4×8-10 · 90s."),
+                muted_text(
+                    "El esquema y el descanso salen en la pestaña Plan, p. ej. 4×8-10 · 90s."
+                ),
                 padding=Space.x3,
                 margin=ft.margin.only(bottom=Space.x3),
             ),
-            section_title("Days"),
+            section_title("Días"),
             ft.Container(height=Space.x2),
         ]
 
         days = [self._day_card(i, d) for i, d in enumerate(phase.days)]
 
         footer: list[ft.Control] = [
-            ghost_button("Add day", on_click=self._add_day, expand=True),
+            ghost_button("Añadir día", on_click=self._add_day, expand=True),
             ft.Container(height=Space.x4),
         ]
         if self.error:
@@ -805,8 +811,8 @@ class RoutineEditorView:
         footer.append(
             ft.Row(
                 [
-                    ghost_button("Cancel", on_click=lambda _: self._close_editor(), expand=True),
-                    primary_button("Save routine", on_click=self._save, expand=True),
+                    ghost_button("Cancelar", on_click=lambda _: self._close_editor(), expand=True),
+                    primary_button("Guardar rutina", on_click=self._save, expand=True),
                 ],
                 spacing=Space.x2,
             )

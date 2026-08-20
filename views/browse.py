@@ -152,7 +152,7 @@ class BrowseView:
         return EXERCISE_CATALOG.get(self.selected_group, [])
 
     def build(self) -> ft.Control:
-        chips = [self._group_chip(None, "All")]
+        chips = [self._group_chip(None, "Todos")]
         chips += [self._group_chip(g, g) for g in MUSCLE_GROUPS]
 
         exercises = self._exercises_for_selected()
@@ -164,7 +164,7 @@ class BrowseView:
                     content=ft.Row(
                         [
                             ft.Icon(ft.Icons.ARROW_BACK, color=C.accent, size=16),
-                            ft.Text("Home", color=C.accent, size=12, weight=ft.FontWeight.W_700),
+                            ft.Text("Inicio", color=C.accent, size=12, weight=ft.FontWeight.W_700),
                         ],
                         spacing=4,
                         tight=True,
@@ -173,8 +173,8 @@ class BrowseView:
                     padding=ft.padding.symmetric(vertical=6),
                     ink=True,
                 ),
-                ft.Text("Exercises", size=22, weight=ft.FontWeight.W_900, color=C.text),
-                ft.Text("Tap an exercise for details", size=11, color=C.text_secondary),
+                ft.Text("Ejercicios", size=22, weight=ft.FontWeight.W_900, color=C.text),
+                ft.Text("Toca un ejercicio para ver el detalle", size=11, color=C.text_secondary),
                 ft.Container(height=8),
                 ft.Row(chips, spacing=6, wrap=True, run_spacing=6),
                 ft.Container(height=10),

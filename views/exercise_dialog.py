@@ -26,6 +26,41 @@ _PREFERRED_H = 560
 _IMAGE_H = 180
 
 
+# Presentación en español de los metadatos del Free Exercise DB. Solo capa de
+# pantalla: las claves de los datos siguen en inglés (vienen del catálogo), y
+# un valor que no esté aquí se muestra tal cual en vez de romper nada.
+_ES_MUSCULO = {
+    "abdominals": "abdominales",
+    "biceps": "bíceps",
+    "calves": "gemelos",
+    "chest": "pecho",
+    "forearms": "antebrazos",
+    "glutes": "glúteos",
+    "hamstrings": "femorales",
+    "lats": "dorsales",
+    "lower back": "lumbar",
+    "middle back": "espalda media",
+    "quadriceps": "cuádriceps",
+    "shoulders": "hombros",
+    "traps": "trapecios",
+    "triceps": "tríceps",
+}
+_ES_META = {
+    "barbell": "barra",
+    "body only": "peso corporal",
+    "cable": "polea",
+    "dumbbell": "mancuerna",
+    "e-z curl bar": "barra EZ",
+    "machine": "máquina",
+    "other": "otro",
+    "beginner": "principiante",
+    "intermediate": "intermedio",
+    "expert": "avanzado",
+    "compound": "compuesto",
+    "isolation": "aislamiento",
+}
+
+
 def build_exercise_detail(page, key: str) -> ft.AlertDialog | None:
     """The dialog for `key`, or None when there is nothing to show.
 
@@ -56,21 +91,21 @@ def build_exercise_detail(page, key: str) -> ft.AlertDialog | None:
             padding=ft.padding.symmetric(horizontal=10, vertical=6),
         )
 
-    muscles_primary = ", ".join(m for m in det["primary"]) or "—"
-    muscles_secondary = ", ".join(m for m in det["secondary"]) or "—"
+    muscles_primary = ", ".join(_ES_MUSCULO.get(m, m) for m in det["primary"]) or "—"
+    muscles_secondary = ", ".join(_ES_MUSCULO.get(m, m) for m in det["secondary"]) or "—"
 
     chips_row = ft.Row(
         [
-            chip_item("Equipment", det["equipment"] or "—"),
-            chip_item("Level", det["level"] or "—"),
-            chip_item("Type", det["mechanic"] or "—"),
+            chip_item("Equipo", _ES_META.get(det["equipment"], det["equipment"]) or "—"),
+            chip_item("Nivel", _ES_META.get(det["level"], det["level"]) or "—"),
+            chip_item("Tipo", _ES_META.get(det["mechanic"], det["mechanic"]) or "—"),
         ],
         spacing=6,
         wrap=True,
         run_spacing=6,
     )
 
-    instructions_header = "How to do it"
+    instructions_header = "Cómo se hace"
     instructions_list = det.get("instructions") or []
 
     body = ft.Column(
@@ -99,7 +134,7 @@ def build_exercise_detail(page, key: str) -> ft.AlertDialog | None:
             chips_row,
             ft.Container(height=10),
             ft.Text(
-                "Primary: ",
+                "Principal: ",
                 size=11,
                 color=C.accent,
                 weight=ft.FontWeight.W_700,
@@ -110,7 +145,7 @@ def build_exercise_detail(page, key: str) -> ft.AlertDialog | None:
                 ],
             ),
             ft.Text(
-                "Secondary: ",
+                "Secundario: ",
                 size=11,
                 color=C.text_secondary,
                 weight=ft.FontWeight.W_700,
@@ -150,7 +185,7 @@ def build_exercise_detail(page, key: str) -> ft.AlertDialog | None:
         ),
         actions=[
             ft.TextButton(
-                "Close",
+                "Cerrar",
                 on_click=lambda _: page.close(dialog),
                 style=ft.ButtonStyle(color=C.accent),
             ),

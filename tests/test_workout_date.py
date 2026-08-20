@@ -182,9 +182,9 @@ def _field(dialog) -> ft.TextField:
 def test_the_label_names_the_near_days_and_dates_the_rest():
     """A date the user has to decode is a date nobody reads."""
     today = date(2026, 8, 18)
-    assert _date_label(today, today) == "Today"
-    assert _date_label(today - timedelta(days=1), today) == "Yesterday"
-    assert _date_label(today - timedelta(days=3), today) == "Sat 15 Aug · 3 days ago"
+    assert _date_label(today, today) == "Hoy"
+    assert _date_label(today - timedelta(days=1), today) == "Ayer"
+    assert _date_label(today - timedelta(days=3), today) == "sáb 15 ago · hace 3 días"
 
 
 # ── what actually gets written ───────────────────────────────────────────
@@ -241,9 +241,9 @@ def test_the_dialog_refuses_the_future_rather_than_moving_it(view, page):
     view._open_date_dialog()
     dlg = _last_dialog(page)
     _field(dlg).value = (date.today() + timedelta(days=1)).isoformat()
-    _button(dlg, "Use this date").on_click(None)
+    _button(dlg, "Usar esta fecha").on_click(None)
     assert view.log_date == date.today()
-    assert _said(dlg, "not the future")
+    assert _said(dlg, "futuro no")
 
 
 def test_the_dialog_refuses_a_date_past_the_limit(view, page):
@@ -252,25 +252,25 @@ def test_the_dialog_refuses_a_date_past_the_limit(view, page):
     view._open_date_dialog()
     dlg = _last_dialog(page)
     _field(dlg).value = (date.today() - timedelta(days=MAX_BACKDATE_DAYS + 1)).isoformat()
-    _button(dlg, "Use this date").on_click(None)
+    _button(dlg, "Usar esta fecha").on_click(None)
     assert view.is_backdated() is False
-    assert _said(dlg, "too far back")
+    assert _said(dlg, "emasiado atrás")
 
 
 def test_the_dialog_refuses_something_that_is_not_a_date(view, page):
     view._open_date_dialog()
     dlg = _last_dialog(page)
     _field(dlg).value = "last tuesday"
-    _button(dlg, "Use this date").on_click(None)
+    _button(dlg, "Usar esta fecha").on_click(None)
     assert view.is_backdated() is False
-    assert _said(dlg, "yyyy-mm-dd")
+    assert _said(dlg, "aaaa-mm-dd")
 
 
 def test_yesterday_is_one_tap(view, page):
     view._open_date_dialog()
     dlg = _last_dialog(page)
-    _button(dlg, "Yesterday").on_click(None)
-    _button(dlg, "Use this date").on_click(None)
+    _button(dlg, "Ayer").on_click(None)
+    _button(dlg, "Usar esta fecha").on_click(None)
     assert view.log_date == date.today() - timedelta(days=1)
 
 
@@ -280,33 +280,33 @@ def test_yesterday_is_one_tap(view, page):
 def test_the_exercise_screen_shouts_when_the_date_is_not_today(view):
     view._set_log_date(date.today() - timedelta(days=2))
     screen = view.build()
-    assert _said(screen, "NOT TODAY")
-    assert _said(screen, "Saving to")
+    assert _said(screen, "NO ES HOY")
+    assert _said(screen, "Guardando en")
 
 
 def test_zen_mode_does_not_get_to_hide_it(view):
     """Zen strips reference material. This is not reference material."""
     view._set_log_date(date.today() - timedelta(days=2))
     assert view.zen is True
-    assert _said(view.build(), "NOT TODAY")
+    assert _said(view.build(), "NO ES HOY")
 
 
 def test_an_ordinary_workout_is_not_taxed_for_the_feature(view):
     """The 95 % case pays nothing: no strip, and in zen not even the pill."""
     screen = view.build()
-    assert not _said(screen, "NOT TODAY")
-    assert not _said(screen, "Saving to")
+    assert not _said(screen, "NO ES HOY")
+    assert not _said(screen, "Guardando en")
 
 
 def test_the_setting_is_reachable_from_inside_a_session(view):
     """Out of zen, the small pill is the way in without leaving the exercise."""
     view._set_zen(False)
-    assert _said(view.build(), "Today")
+    assert _said(view.build(), "Hoy")
 
 
 def test_the_day_list_always_says_where_the_session_will_go(view):
     view.show_day_list = True
-    assert _said(view.build(), "LOGGING TO")
+    assert _said(view.build(), "REGISTRANDO EN")
 
 
 def test_the_finish_dialog_names_a_date_that_is_not_today(view, page):
@@ -314,7 +314,7 @@ def test_the_finish_dialog_names_a_date_that_is_not_today(view, page):
     view._set_log_date(date.today() - timedelta(days=2))
     log_one_set(view)
     view._ask_finish(None)
-    assert _said(_last_dialog(page), "not today")
+    assert _said(_last_dialog(page), "hoy no")
 
 
 def test_the_summary_names_it_too(view, store):
@@ -322,14 +322,14 @@ def test_the_summary_names_it_too(view, store):
     log_one_set(view)
     view._save_exercise(0)
     view.finished = True
-    assert _said(view.build(), "Logged to")
+    assert _said(view.build(), "Registrado en")
 
 
 def test_saving_confirms_where_it_went(view, page):
     view._set_log_date(date.today() - timedelta(days=2))
     log_one_set(view)
     view._save(None)
-    assert any(_said(call[0][0], "Saved to") for call in page.open.call_args_list)
+    assert any(_said(call[0][0], "Guardado en") for call in page.open.call_args_list)
 
 
 # ── it goes back to today by itself ──────────────────────────────────────
@@ -387,7 +387,7 @@ def test_a_live_session_keeps_its_date_across_midnight(view, monkeypatch):
     freeze_today(monkeypatch, date.today() + timedelta(days=1))
     view.build()
     assert view.log_date == chosen
-    assert _said(view.build(), "NOT TODAY")
+    assert _said(view.build(), "NO ES HOY")
 
 
 # ── the draft carries it ─────────────────────────────────────────────────
@@ -543,8 +543,8 @@ def test_an_unreachable_database_still_lets_him_pick(page):
 
     v._open_date_dialog()
     dlg = _last_dialog(page)
-    _button(dlg, "Yesterday").on_click(None)
-    _button(dlg, "Use this date").on_click(None)
+    _button(dlg, "Ayer").on_click(None)
+    _button(dlg, "Usar esta fecha").on_click(None)
     assert v.log_date == date.today() - timedelta(days=1)
 
 

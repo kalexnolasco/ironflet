@@ -95,7 +95,7 @@ class Model:
         return self.id.split("/", 1)[-1]
 
     def price_label(self) -> str:
-        return f"${self.prompt_price:g} / ${self.completion_price:g} per M"
+        return f"${self.prompt_price:g} / ${self.completion_price:g} por M"
 
     def cost_of(self, prompt_tokens: int, completion_tokens: int) -> float:
         return (

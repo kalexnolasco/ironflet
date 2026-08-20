@@ -371,20 +371,20 @@ def detect_new_records(history: Iterable[Any], entry: Any) -> list[Record]:
 #: `forearms` folds into Biceps because the display vocabulary has no arm
 #: bucket of its own.
 COARSE_MUSCLE: dict[str, str] = {
-    "abdominals": "Abs",
-    "biceps": "Biceps",
-    "forearms": "Biceps",
-    "calves": "Leg",
-    "quadriceps": "Leg",
-    "hamstrings": "Leg",
-    "glutes": "Leg",
-    "chest": "Chest",
-    "lats": "Back",
-    "middle back": "Back",
-    "lower back": "Back",
-    "traps": "Back",
-    "shoulders": "Shoulder",
-    "triceps": "Triceps",
+    "abdominals": "Abdomen",
+    "biceps": "Bíceps",
+    "forearms": "Bíceps",
+    "calves": "Pierna",
+    "quadriceps": "Pierna",
+    "hamstrings": "Pierna",
+    "glutes": "Pierna",
+    "chest": "Pecho",
+    "lats": "Espalda",
+    "middle back": "Espalda",
+    "lower back": "Espalda",
+    "traps": "Espalda",
+    "shoulders": "Hombro",
+    "triceps": "Tríceps",
 }
 
 # "Bi-set: A + B", "SS: A + B", "Triset: A + B + C" — the routine's own

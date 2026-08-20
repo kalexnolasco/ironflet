@@ -276,9 +276,9 @@ def test_a_dead_database_costs_the_note_and_not_the_session(page):
 def test_the_session_note_is_on_the_screen_the_session_ends_on(page):
     """Not on the exercise screen: it is written once, at the end, about the day."""
     view = make_view(page, FakeStore())
-    assert "Session note" not in _texts(view.build())
+    assert "Nota de la sesión" not in _texts(view.build())
     view.finished = True
-    assert "Session note" in _texts(view.build())
+    assert "Nota de la sesión" in _texts(view.build())
 
 
 def test_the_session_note_is_written_straight_to_its_own_table(page):
@@ -331,9 +331,9 @@ def test_the_screen_says_which_exercise_is_being_done_instead(page):
     view = make_view(page, FakeStore())
     view._apply_substitution(SWAP_TO, Scope.TODAY)
     shown = _texts(view.build())
-    assert f"SUBSTITUTE · {SWAP_TO}" in shown
-    assert any(SMITH in t and "Instead of" in t for t in shown)
-    assert any(f"logged to your history as {SWAP_TO}".lower() in t.lower() for t in shown)
+    assert f"SUSTITUTO · {SWAP_TO}" in shown
+    assert any(SMITH in t and "En lugar de" in t for t in shown)
+    assert any(f"va a tu historial como {SWAP_TO}".lower() in t.lower() for t in shown)
 
 
 def test_the_banner_is_there_in_zen_mode_too(page):
@@ -341,7 +341,7 @@ def test_the_banner_is_there_in_zen_mode_too(page):
     view = make_view(page, FakeStore())
     view._apply_substitution(SWAP_TO, Scope.TODAY)
     view.zen = True
-    assert f"SUBSTITUTE · {SWAP_TO}" in _texts(view.build())
+    assert f"SUSTITUTO · {SWAP_TO}" in _texts(view.build())
 
 
 def test_the_substitute_carries_the_slot_prescription(page):

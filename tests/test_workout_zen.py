@@ -240,9 +240,9 @@ def test_zen_keeps_every_control_that_does_the_work(view):
     """
     screen = view.build()
     labels = _texts(screen)
-    assert "Save" in labels
-    assert any(label.startswith("Finish session") for label in labels)
-    assert "Back" in labels
+    assert "Guardar" in labels
+    assert any(label.startswith("Terminar sesión") for label in labels)
+    assert "Atrás" in labels
     assert any(isinstance(c, ft.TextField) for c in _walk(screen))
 
 
@@ -250,7 +250,7 @@ def test_the_way_out_of_zen_is_always_on_screen(view):
     """One tap, labelled, at 40 px — not a long-press or a settings screen."""
     for _ in range(2):
         screen = view.build()
-        assert any("Zen mode" in t for t in _tooltips(screen))
+        assert any("Modo zen" in t for t in _tooltips(screen))
         view._toggle_zen()
 
 
@@ -285,12 +285,12 @@ def test_next_set_hint_points_at_the_first_unclaimed_row(view):
     `3×12` here, last session logged two sets), and pinning the number in this
     file would be this test asserting something it is not about.
     """
-    assert view._next_set_hint() == f"SET 1 OF {len(view.sets)} · 60 kg × 10"
+    assert view._next_set_hint() == f"SERIE 1 DE {len(view.sets)} · 60 kg × 10"
 
 
 def test_next_set_hint_advances_as_sets_are_confirmed(view):
     view._confirm_set(0)
-    assert view._next_set_hint().startswith(f"SET 2 OF {len(view.sets)}")
+    assert view._next_set_hint().startswith(f"SERIE 2 DE {len(view.sets)}")
 
 
 def test_next_set_hint_stops_guessing_when_the_work_is_done(view):
@@ -306,7 +306,7 @@ def test_next_set_hint_says_nothing_it_does_not_know(view):
     """A first-ever exercise has no numbers to suggest, so it offers none
     rather than inventing a weight."""
     view._sets_by_ex[view.ex_idx] = [view._blank_set()]
-    assert view._next_set_hint() == "SET 1 OF 1"
+    assert view._next_set_hint() == "SERIE 1 DE 1"
 
 
 def test_next_set_hint_reports_an_exercise_already_written(view):

@@ -1,92 +1,95 @@
-"""In-app reference tips for training and nutrition.
+"""Consejos de referencia dentro de la app: entreno y nutrición.
 
-Short, original tips based on general strength-training / nutrition principles.
-Not derived from any specific third-party publication.
+Consejos cortos y propios, basados en principios generales de fuerza y
+nutrición. No derivan de ninguna publicación concreta de terceros.
 """
 
 from __future__ import annotations
 
 GUIDES: dict[str, dict] = {
     "training": {
-        "title_key": "Training",
+        "title_key": "Entreno",
         "icon": "🏋️",
         "tips": [
             (
-                "Warm up first",
-                "5–10 min of light cardio plus dynamic mobility for the "
-                "joints you will train. Skip static stretching before heavy sets.",
+                "Calienta primero",
+                "5–10 min de cardio suave más movilidad dinámica para las "
+                "articulaciones que vas a entrenar. Nada de estiramientos "
+                "estáticos antes de las series pesadas.",
             ),
             (
-                "Progressive overload",
-                "Aim to add a rep or a small weight jump each week when you "
-                "hit the top of the rep range with clean form.",
+                "Sobrecarga progresiva",
+                "Busca añadir una repetición o un salto pequeño de peso cada "
+                "semana cuando llegues al tope del rango con técnica limpia.",
             ),
             (
-                "Rest between sets",
-                "60–90 s for hypertrophy (8–12 reps), 2–3 min for strength "
-                "(4–6 reps). Your breath tells you when to start the next set.",
+                "Descansa entre series",
+                "60–90 s para hipertrofia (8–12 reps), 2–3 min para fuerza "
+                "(4–6 reps). La respiración te dice cuándo empezar la siguiente.",
             ),
             (
-                "Form over ego",
-                "Lower the weight rather than lose technique. Tempo and range of "
-                "motion drive growth more than chasing a number.",
+                "Técnica antes que ego",
+                "Baja el peso antes que perder la técnica. El tempo y el rango "
+                "de recorrido construyen más músculo que perseguir un número.",
             ),
             (
-                "Track every session",
-                "Log weight, reps and RPE. Patterns tell you when to push, "
-                "deload or change an exercise.",
+                "Apunta cada sesión",
+                "Registra peso, repeticiones y sensaciones. Los patrones te "
+                "dicen cuándo apretar, descargar o cambiar un ejercicio.",
             ),
             (
-                "Deload every 4–8 weeks",
-                "Drop volume by 30–50 % for one week. Fatigue accumulates silently "
-                "— deloads often unlock a new PR the week after.",
+                "Descarga cada 4–8 semanas",
+                "Baja el volumen un 30–50 % durante una semana. La fatiga se "
+                "acumula en silencio — una descarga suele desbloquear un récord "
+                "la semana siguiente.",
             ),
             (
-                "Sleep is the supplement",
-                "7–9 h of sleep does more for recovery than any legal supplement. "
-                "Prioritise it before pre-workouts.",
+                "El sueño es el suplemento",
+                "7–9 h de sueño hacen más por la recuperación que cualquier "
+                "suplemento legal. Priorízalo antes que los pre-entrenos.",
             ),
         ],
     },
     "nutrition": {
-        "title_key": "Nutrition",
+        "title_key": "Nutrición",
         "icon": "🥗",
         "tips": [
             (
-                "Protein target",
-                "1.6–2.2 g/kg of bodyweight if you lift seriously. Spread it across "
-                "3–5 meals — 0.3 g/kg per meal is plenty.",
+                "Objetivo de proteína",
+                "1,6–2,2 g/kg de peso corporal si entrenas en serio. Repártela "
+                "en 3–5 comidas — 0,3 g/kg por comida es de sobra.",
             ),
             (
-                "Calorie balance rules",
-                "Muscle gain: +200 to +500 kcal over maintenance. "
-                "Fat loss: −300 to −500 kcal under maintenance. Everything else "
-                "is fine-tuning.",
+                "El balance calórico manda",
+                "Ganar músculo: +200 a +500 kcal sobre mantenimiento. "
+                "Perder grasa: −300 a −500 kcal por debajo. Todo lo demás es "
+                "ajuste fino.",
             ),
             (
-                "Carbs around training",
-                "Your body uses carbs best on the 2–3 h around a hard session. "
-                "Plan the biggest carb meal there.",
+                "Carbohidratos alrededor del entreno",
+                "El cuerpo aprovecha mejor los carbohidratos en las 2–3 h "
+                "alrededor de una sesión dura. Pon ahí la comida más alta en "
+                "carbohidratos.",
             ),
             (
-                "Fats for hormones",
-                "Don't drop fat below ~0.8 g/kg. Testosterone, estrogen and "
-                "recovery all pay the price.",
+                "Grasas para las hormonas",
+                "No bajes la grasa de ~0,8 g/kg. La testosterona, los "
+                "estrógenos y la recuperación pagan el precio.",
             ),
             (
-                "Hydration",
-                "Roughly 35 ml per kg of bodyweight, more on training days. "
-                "Straw-coloured urine is the simplest check.",
+                "Hidratación",
+                "Unos 35 ml por kg de peso, más los días de entreno. La orina "
+                "color paja es la comprobación más simple.",
             ),
             (
-                "Whole foods first",
-                "Fill 80 % of the plate with minimally-processed foods. "
-                "Supplements are extras, not substitutes.",
+                "Comida real primero",
+                "Llena el 80 % del plato con alimentos poco procesados. Los "
+                "suplementos son extras, no sustitutos.",
             ),
             (
-                "Patience beats perfection",
-                "Pick a plan you can sustain 6 months. The ‘perfect’ diet you "
-                "abandon in 3 weeks beats nothing, but loses to the decent one you keep.",
+                "La paciencia gana a la perfección",
+                "Elige un plan que puedas sostener 6 meses. La dieta «perfecta» "
+                "que abandonas en 3 semanas pierde contra la decente que mantienes.",
             ),
         ],
     },

@@ -73,8 +73,8 @@ def week_headline(pw: ProgramWeek) -> str:
     routine from the editor — and "of 0" would be worse than saying nothing.
     """
     if pw.week is None:
-        return "THIS WEEK"
-    return f"WEEK {pw.week} OF {pw.total_weeks}" if pw.total_weeks else f"WEEK {pw.week}"
+        return "ESTA SEMANA"
+    return f"SEMANA {pw.week} DE {pw.total_weeks}" if pw.total_weeks else f"SEMANA {pw.week}"
 
 
 def next_session(pw: ProgramWeek) -> tuple[int, str] | None:
@@ -104,7 +104,7 @@ def start_caveat(pw: ProgramWeek) -> str | None:
     """
     if pw.start.certain or pw.start.day is None or not pw.start.known:
         return None
-    return f"Assuming you started on {pw.start.day.isoformat()} — your first logged session."
+    return f"Suponiendo que empezaste el {pw.start.day.isoformat()} — tu primera sesión registrada."
 
 
 def open_start_date_dialog(
@@ -130,7 +130,7 @@ def open_start_date_dialog(
     """
     monday = restart_date()
     field = ft.TextField(
-        label="Start date (YYYY-MM-DD)",
+        label="Fecha de inicio (AAAA-MM-DD)",
         value=(initial or monday).isoformat(),
         dense=True,
         color=C.text,
@@ -166,7 +166,7 @@ def open_start_date_dialog(
     dlg = ft.AlertDialog(
         modal=False,
         bgcolor=C.bg_surface,
-        title=ft.Text("Routine start date", size=16, weight=ft.FontWeight.W_900, color=C.text),
+        title=ft.Text("Inicio de la rutina", size=16, weight=ft.FontWeight.W_900, color=C.text),
         content=ft.Container(
             content=ft.Column(
                 [
@@ -174,17 +174,19 @@ def open_start_date_dialog(
                     # 300 px box clipped the second one on a narrow phone. The
                     # Column is STRETCH so it wraps to the dialog instead.
                     ft.Text(
-                        "The day you started week 1 of this routine. It is what "
-                        "tells the app which week and which phase you are in.",
+                        "El día que empezaste la semana 1 de esta rutina. Es lo que "
+                        "le dice a la app en qué semana y en qué fase estás.",
                         size=11,
                         color=C.text_secondary,
                     ),
                     field,
                     ft.Row(
                         [
-                            ghost_button("This week", on_click=lambda _: fill(monday), expand=True),
                             ghost_button(
-                                "Last week",
+                                "Esta semana", on_click=lambda _: fill(monday), expand=True
+                            ),
+                            ghost_button(
+                                "La semana pasada",
                                 on_click=lambda _: fill(monday - timedelta(days=7)),
                                 expand=True,
                             ),
@@ -205,11 +207,11 @@ def open_start_date_dialog(
         ),
         actions=[
             ft.TextButton(
-                "Cancel",
+                "Cancelar",
                 on_click=lambda _: page.close(dlg),
                 style=ft.ButtonStyle(color=C.text_secondary),
             ),
-            ft.TextButton("Save", on_click=save, style=ft.ButtonStyle(color=C.accent)),
+            ft.TextButton("Guardar", on_click=save, style=ft.ButtonStyle(color=C.accent)),
         ],
         actions_alignment=ft.MainAxisAlignment.END,
     )
@@ -309,7 +311,7 @@ class PlanView:
     def _phase_card(self, phase, idx: int, current: bool = False) -> ft.Container:
         header: list[ft.Control] = [
             ft.Text(
-                f"PHASE {phase.id} · WK {phase.weeks}",
+                f"FASE {phase.id} · SEM {phase.weeks}",
                 size=10,
                 color=phase_color(phase.id),
                 weight=ft.FontWeight.W_900,
@@ -338,7 +340,7 @@ class PlanView:
                     ft.Row(
                         [
                             chip(phase.scheme),
-                            chip("High freq." if phase.freq == "high" else "Low freq."),
+                            chip("Frec. alta" if phase.freq == "high" else "Frec. baja"),
                         ],
                         spacing=6,
                     ),
@@ -407,7 +409,7 @@ class PlanView:
                     ink=True,
                     border_radius=Radius.sm,
                     padding=2,
-                    tooltip=f"Duplicate '{r.name}' into an editable routine",
+                    tooltip=f"Duplicar '{r.name}' en una rutina editable",
                 )
             )
         return ft.Container(
@@ -433,14 +435,14 @@ class PlanView:
         buttons: list[ft.Control] = []
         if is_user_routine(active_routine().id):
             buttons.append(
-                ghost_button("Edit this routine", on_click=self._edit_active, expand=True)
+                ghost_button("Editar esta rutina", on_click=self._edit_active, expand=True)
             )
         buttons.append(
             ghost_button(
-                "My routines",
+                "Mis rutinas",
                 on_click=lambda _: self._open_editor(),
                 expand=True,
-                tooltip="Create, edit or delete your own routines",
+                tooltip="Crea, edita o borra tus propias rutinas",
             )
         )
         return ft.Row(buttons, spacing=Space.x2)
@@ -455,7 +457,7 @@ class PlanView:
         """
         rest = is_rest_label(label)
         trailing: ft.Control = (
-            ft.Text("TODAY", size=9, weight=ft.FontWeight.W_900, color=C.accent)
+            ft.Text("HOY", size=9, weight=ft.FontWeight.W_900, color=C.accent)
             if is_today
             else ft.Container(width=0)
         )
@@ -519,7 +521,9 @@ class PlanView:
                 ft.Text(
                     "No phase covers this week", size=16, weight=ft.FontWeight.W_900, color=C.text
                 ),
-                muted_text("The phases of this routine leave a gap here. Check their week ranges."),
+                muted_text(
+                    "Las fases de esta rutina dejan aquí un hueco. Revisa sus rangos de semanas."
+                ),
                 border_color=C.warning,
                 padding=12,
             )
@@ -537,7 +541,7 @@ class PlanView:
             # is not — nothing in the routine prescribes that order.
             days = active_routine().days_for_phase(phase.id)
             body = [
-                muted_text("This phase does not fix sessions to weekdays. It prescribes:"),
+                muted_text("Esta fase no ata las sesiones a días fijos. Prescribe:"),
                 ft.Container(height=Space.x1),
                 ft.Row([chip(d.name) for d in days], wrap=True, spacing=6, run_spacing=6),
             ]
@@ -560,7 +564,7 @@ class PlanView:
                         expand=True,
                     ),
                     ft.Text(
-                        f"PHASE {phase.id}",
+                        f"FASE {phase.id}",
                         size=10,
                         weight=ft.FontWeight.W_900,
                         color=phase_color(phase.id),
@@ -576,7 +580,7 @@ class PlanView:
             padding=12,
             on_click=lambda _: self._open_current_phase(pw),
             ink=True,
-            tooltip="Open this phase",
+            tooltip="Abrir esta fase",
         )
 
     def _stale_notice(self, pw: ProgramWeek) -> ft.Control:
@@ -591,14 +595,14 @@ class PlanView:
         return ft.Column(
             [
                 ft.Text(
-                    f"Nothing logged for {plural(weeks, 'week')}. The week number keeps counting "
-                    "with the calendar, so it is ahead of your training.",
+                    f"Nada registrado en {plural(weeks, 'semana')}. El número de semana sigue contando "
+                    "con el calendario, así que va por delante de tu entreno.",
                     size=11,
                     color=C.warning,
                 ),
                 ft.Container(height=Space.x1),
                 ghost_button(
-                    "Restart the program this week",
+                    "Reiniciar el programa esta semana",
                     on_click=lambda _: self._restart_program(),
                     expand=True,
                 ),
@@ -631,23 +635,23 @@ class PlanView:
         """No usable start date: say so, and offer every way out there is."""
         stale_date = pw.start.day if pw.start.source is StartSource.OTHER_ROUTINE else None
         body = (
-            "A start date is stored, but it was saved for another routine, so it "
-            "cannot say where you are in this one. Switching routines starts a new "
-            "program."
+            "Hay una fecha de inicio guardada, pero es de otra rutina, así que no "
+            "puede decir dónde vas en esta. Cambiar de rutina arranca un programa "
+            "nuevo."
             if stale_date
-            else "Nothing here records when you started this routine, so the app "
-            "cannot tell which week or phase you are in — and a guessed week would "
-            "put you on the wrong session. Set the date, or just train: the first "
-            "session you log dates the routine."
+            else "Nada registra aquí cuándo empezaste esta rutina, así que la app no "
+            "sabe en qué semana o fase estás — y una semana adivinada te pondría "
+            "en la sesión equivocada. Pon la fecha, o simplemente entrena: la "
+            "primera sesión que registres fecha la rutina."
         )
         actions: list[ft.Control] = [
             ghost_button(
-                "Set start date",
+                "Poner fecha de inicio",
                 on_click=lambda _, d=stale_date: self._set_start_date(d),
                 expand=True,
             ),
             primary_button(
-                "Start training",
+                "Empezar a entrenar",
                 on_click=lambda _: self.page.data["navigate_to"](VIEW_WORKOUT),
                 expand=True,
             ),
@@ -657,7 +661,7 @@ class PlanView:
             extra = [
                 ft.Container(height=Space.x1),
                 ghost_button(
-                    f"Use {stale_date.isoformat()} here too",
+                    f"Usar {stale_date.isoformat()} aquí también",
                     on_click=lambda _, d=stale_date: self._adopt_start(d),
                     expand=True,
                 ),
@@ -667,7 +671,7 @@ class PlanView:
                 [
                     ft.Icon(ft.Icons.HELP_OUTLINE, color=C.warning, size=18),
                     ft.Text(
-                        "Week unknown",
+                        "Semana desconocida",
                         size=15,
                         weight=ft.FontWeight.W_900,
                         color=C.text,
@@ -694,19 +698,21 @@ class PlanView:
         """The start date is in a future week. Not started is not unknown."""
         day = pw.start.day
         return card(
-            ft.Text("NOT STARTED YET", size=10, weight=ft.FontWeight.W_900, color=C.accent),
-            ft.Text("Week 1 is ahead", size=18, weight=ft.FontWeight.W_900, color=C.text),
+            ft.Text("AÚN SIN EMPEZAR", size=10, weight=ft.FontWeight.W_900, color=C.accent),
             ft.Text(
-                f"This routine is set to start on {day.isoformat()}. The week and the "
-                "distribution appear then."
+                "La semana 1 está por venir", size=18, weight=ft.FontWeight.W_900, color=C.text
+            ),
+            ft.Text(
+                f"Esta rutina está fijada para empezar el {day.isoformat()}. La semana y "
+                "la distribución aparecerán entonces."
                 if day
-                else "This routine is set to start in a later week.",
+                else "Esta rutina está fijada para empezar en una semana posterior.",
                 size=11,
                 color=C.text_secondary,
             ),
             ft.Container(height=Space.x1),
             ghost_button(
-                "Change start date", on_click=lambda _: self._set_start_date(), expand=True
+                "Cambiar fecha de inicio", on_click=lambda _: self._set_start_date(), expand=True
             ),
             border_color=C.border_strong,
             padding=12,
@@ -716,10 +722,10 @@ class PlanView:
         """Past the last week of the routine. A real state, not an error."""
         return card(
             ft.Text(week_headline(pw), size=10, weight=ft.FontWeight.W_900, color=C.accent),
-            ft.Text("Routine finished", size=18, weight=ft.FontWeight.W_900, color=C.text),
+            ft.Text("Rutina terminada", size=18, weight=ft.FontWeight.W_900, color=C.text),
             ft.Text(
-                f"The program runs {plural(pw.total_weeks, 'week')} and this one is past the end. "
-                "Start it again from this week, or pick another routine below.",
+                f"El programa dura {plural(pw.total_weeks, 'semana')} y esta ya pasa del final. "
+                "Vuelve a empezarlo desde esta semana, o elige otra rutina abajo.",
                 size=11,
                 color=C.text_secondary,
             ),
@@ -727,10 +733,14 @@ class PlanView:
             ft.Row(
                 [
                     ghost_button(
-                        "Set start date", on_click=lambda _: self._set_start_date(), expand=True
+                        "Poner fecha de inicio",
+                        on_click=lambda _: self._set_start_date(),
+                        expand=True,
                     ),
                     primary_button(
-                        "Start again now", on_click=lambda _: self._restart_program(), expand=True
+                        "Empezar de nuevo ya",
+                        on_click=lambda _: self._restart_program(),
+                        expand=True,
                     ),
                 ],
                 spacing=Space.x2,
@@ -760,13 +770,15 @@ class PlanView:
         current_phase_id = getattr(pw.phase, "id", None)
         return ft.Column(
             [
-                ft.Text("Training Plan", size=22, weight=ft.FontWeight.W_900, color=C.text),
+                ft.Text("Plan de entreno", size=22, weight=ft.FontWeight.W_900, color=C.text),
                 ft.Container(height=Space.x2),
                 self._week_card(pw),
                 ft.Container(height=Space.x4),
                 self._routine_selector(),
                 ft.Container(height=Space.x1),
-                muted_text("Tap a copy icon to fork a built-in routine and make it yours."),
+                muted_text(
+                    "Toca un icono de copia para clonar una rutina de serie y hacerla tuya."
+                ),
                 ft.Container(height=Space.x2),
                 self._routine_actions(),
                 ft.Container(height=Space.x3),
@@ -969,7 +981,7 @@ class PlanView:
             [
                 ft.Container(
                     content=ft.Text(
-                        f"WK {i + 1} · NOW" if i == here else f"WK {i + 1}",
+                        f"SEM {i + 1} · AHORA" if i == here else f"SEM {i + 1}",
                         size=11,
                         weight=ft.FontWeight.W_800,
                         color=C.accent if i == self.dist_week_idx else C.text_secondary,
@@ -988,8 +1000,8 @@ class PlanView:
             run_spacing=6,
         )
         caption = (
-            f"Week {self.dist_week_idx + 1} of this phase. The same three days rotate "
-            "over five sessions, so each week starts on a different one."
+            f"Semana {self.dist_week_idx + 1} de esta fase. Los mismos tres días rotan "
+            "en cinco sesiones, así que cada semana empieza en una distinta."
         )
         return ft.Column(
             [
@@ -1020,9 +1032,9 @@ class PlanView:
         # name day templates this phase actually has, which is true of phases
         # 1-3 (they share `DAYS_PHASE_1_3`) and of nothing else.
         rotates = rotation_applies_to(phase, routine)
-        tabs_row: list[ft.Control] = [self._tab_button("Exercises", "exercises")]
+        tabs_row: list[ft.Control] = [self._tab_button("Ejercicios", "exercises")]
         if rotates:
-            tabs_row.append(self._tab_button("Distribution", "distribution"))
+            tabs_row.append(self._tab_button("Distribución", "distribution"))
 
         body: ft.Control
         # `rotates` also guards the render: the subview survives a trip back to
@@ -1039,7 +1051,7 @@ class PlanView:
                     content=ft.Row(
                         [
                             ft.Icon(ft.Icons.ARROW_BACK, color=C.accent, size=16),
-                            ft.Text("Phases", color=C.accent, size=12, weight=ft.FontWeight.W_700),
+                            ft.Text("Fases", color=C.accent, size=12, weight=ft.FontWeight.W_700),
                         ],
                         spacing=4,
                         tight=True,
@@ -1053,7 +1065,7 @@ class PlanView:
                         [
                             ft.Container(
                                 content=ft.Text(
-                                    f"PHASE {phase.id}",
+                                    f"FASE {phase.id}",
                                     size=10,
                                     weight=ft.FontWeight.W_900,
                                     color=C.on_accent,
@@ -1062,7 +1074,7 @@ class PlanView:
                                 border_radius=6,
                                 padding=ft.padding.symmetric(horizontal=8, vertical=3),
                             ),
-                            ft.Text(f"Wk {phase.weeks}", size=11, color=C.text_secondary),
+                            ft.Text(f"Sem {phase.weeks}", size=11, color=C.text_secondary),
                             *(
                                 [
                                     ft.Text(
@@ -1086,8 +1098,8 @@ class PlanView:
                         weight=ft.FontWeight.W_700,
                     ),
                     ft.Container(height=6),
-                    ft.Text(f"Sets: {phase.scheme}", size=12, color=C.text),
-                    ft.Text(f"Rest: {phase.rest}", size=11, color=C.text_secondary),
+                    ft.Text(f"Series: {phase.scheme}", size=12, color=C.text),
+                    ft.Text(f"Descanso: {phase.rest}", size=11, color=C.text_secondary),
                     ft.Container(height=6),
                     ft.Text(phase.notes, size=11, color=C.text_muted),
                 ),
@@ -1117,4 +1129,4 @@ class PlanView:
             # A screen that renders nothing is indistinguishable from a crash,
             # and this one is opened in a gym to find out what today's session
             # is. Say why it is empty and offer the retry.
-            return db_error_screen("Training Plan", exc, on_retry=self._reload)
+            return db_error_screen("Plan de entreno", exc, on_retry=self._reload)

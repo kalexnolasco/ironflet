@@ -166,7 +166,7 @@ def test_bar_alone_is_always_loadable_even_with_an_empty_rack():
     options = loadable_options(20, bar=DEFAULT_BAR, inventory=empty)
     assert options.loadable
     assert options.exact.bar_only
-    assert options.exact.label() == "bar only"
+    assert options.exact.label() == "solo barra"
     assert options.above is None  # nothing heavier exists
 
 
@@ -177,7 +177,7 @@ def test_target_below_the_bar_says_so_instead_of_pretending():
     assert options.below is None  # you cannot take weight off a bar
     assert options.above.total == 20.0 and options.above.bar_only
     assert options.nearest.total == 20.0
-    assert "below the bar" in options.summary()
+    assert "por debajo de la barra" in options.summary()
 
 
 def test_zero_and_tiny_targets_are_under_the_bar_not_errors():

@@ -294,9 +294,9 @@ def test_without_history_nothing_is_invented(page):
     assert rec.action is Action.BASELINE
     assert rec.weight is None
     shown = _visible_texts(view.build())
-    assert any(t.startswith("First time") for t in shown), shown
+    assert any(t.startswith("Primera vez") for t in shown), shown
     # The explanation opens by default here, because it is the only content.
-    assert any("baseline" in t for t in shown)
+    assert any("línea base" in t for t in shown)
 
 
 def test_the_banner_leaves_once_the_first_working_set_is_in(trained):
@@ -323,8 +323,8 @@ def test_a_dead_database_still_renders_the_exercise(page):
 
 def test_the_plates_are_written_under_the_weight(trained):
     view, _ = trained
-    assert view._plate_hint("80") == "20 + 10 per side"
-    assert "20 + 10 per side" in _visible_texts(view.build())
+    assert view._plate_hint("80") == "20 + 10 por lado"
+    assert "20 + 10 por lado" in _visible_texts(view.build())
 
 
 def test_an_impossible_weight_names_both_neighbours(trained):
@@ -332,7 +332,7 @@ def test_an_impossible_weight_names_both_neighbours(trained):
     exactly what has to be known *before* walking to the rack."""
     view, _ = trained
     hint = view._plate_hint("81")
-    assert hint.startswith("not loadable · ")
+    assert hint.startswith("no montable · ")
     assert "80 kg" in hint and "82.5 kg" in hint
 
 
@@ -378,14 +378,14 @@ def test_typing_updates_the_hint_without_rebuilding_the_screen(trained, page):
     view, _ = trained
     tree = view.build()
     weight_field = _fields(tree)[0]
-    hints = [c for c in _walk(tree) if isinstance(c, ft.Text) and c.value == "20 + 10 per side"]
+    hints = [c for c in _walk(tree) if isinstance(c, ft.Text) and c.value == "20 + 10 por lado"]
     assert hints, "the first row showed no plate hint to begin with"
 
     event = MagicMock()
     event.control.value = "100"
     weight_field.on_change(event)
 
-    assert hints[0].value == "20 + 20 per side"  # 100 kg is 40 a side
+    assert hints[0].value == "20 + 20 por lado"  # 100 kg is 40 a side
     assert view.sets[0]["weight"] == "100"
     assert page.data["refresh_current"].call_count == 0
     assert _dialogs_opened(page) == []
@@ -396,7 +396,7 @@ def test_the_rack_in_the_preferences_is_the_one_used(page):
     store = FakeStore({BENCH: sessions(BENCH, 80.0, 8, (3,))})
     store.prefs["plates"] = "20x2,10x2,5x2,2.5x2"
     view = make_view(page, store)
-    assert view._plate_hint("82.5").startswith("not loadable")
+    assert view._plate_hint("82.5").startswith("no montable")
     # And with the default rack it is perfectly loadable, so the difference is
     # the preference and not the arithmetic.
     assert loadable_options(82.5, view._bar_for_current(), DEFAULT_INVENTORY).loadable
@@ -406,7 +406,7 @@ def test_an_unreadable_plate_preference_falls_back_instead_of_breaking(page):
     store = FakeStore({BENCH: sessions(BENCH, 80.0, 8, (3,))})
     store.prefs["plates"] = "not a plate list at all"
     view = make_view(page, store)
-    assert view._plate_hint("80") == "20 + 10 per side"
+    assert view._plate_hint("80") == "20 + 10 por lado"
 
 
 def test_a_silly_bar_preference_is_refused(page):
@@ -488,15 +488,21 @@ def test_a_weight_he_typed_beats_the_recommendation(trained):
 def test_the_button_disappears_once_the_ramp_is_in(trained):
     """Pressing it twice by accident must not stack two ramps."""
     view, _ = trained
-    assert any(t.startswith("Add ") and "warm-up" in t for t in _visible_texts(view.build()))
+    assert any(
+        t.startswith("Añadir ") and "calentamiento" in t for t in _visible_texts(view.build())
+    )
     view._add_warmup_sets()
-    assert not any(t.startswith("Add ") and "warm-up" in t for t in _visible_texts(view.build()))
+    assert not any(
+        t.startswith("Añadir ") and "calentamiento" in t for t in _visible_texts(view.build())
+    )
 
 
 def test_the_button_is_gone_once_the_exercise_has_started(trained):
     view, _ = trained
     view._update_set(0, "reps", "8")
-    assert not any(t.startswith("Add ") and "warm-up" in t for t in _visible_texts(view.build()))
+    assert not any(
+        t.startswith("Añadir ") and "calentamiento" in t for t in _visible_texts(view.build())
+    )
 
 
 def test_no_ramp_where_there_are_no_plates(page):
@@ -518,7 +524,7 @@ def test_no_history_and_no_typed_weight_means_no_ramp(page):
     view = make_view(page, FakeStore())
     assert view._warmup_target() is None
     assert view._warmup_plan() == []
-    assert not any(t.startswith("Add ") for t in _visible_texts(view.build()))
+    assert not any(t.startswith("Añadir ") for t in _visible_texts(view.build()))
 
 
 def test_the_ramp_shows_in_zen_mode(trained):
@@ -526,7 +532,9 @@ def test_the_ramp_shows_in_zen_mode(trained):
     action that deletes itself after the first set would hide it always."""
     view, _ = trained
     assert view.zen is True
-    assert any(t.startswith("Add ") and "warm-up" in t for t in _visible_texts(view.build()))
+    assert any(
+        t.startswith("Añadir ") and "calentamiento" in t for t in _visible_texts(view.build())
+    )
 
 
 def test_adding_the_ramp_opens_nothing(trained, page):
@@ -617,7 +625,7 @@ def test_the_panel_closes_when_the_exercise_changes(trained):
 # ── 6. plurals ───────────────────────────────────────────────────────────
 
 
-def test_the_finished_summary_counts_in_english(trained):
+def test_the_finished_summary_counts_in_spanish(trained):
     """ "1 sets" and "2 warm-up" both shipped. Every session ends on this screen,
     so it is also where a broken plural is seen every single time."""
     view, _ = trained
@@ -641,16 +649,16 @@ def test_the_finished_summary_counts_in_english(trained):
     ]
     view.finished = True
     shown = _texts(view.build())
-    assert "1 set · 1 warm-up" in shown
-    assert "2 sets · 2 warm-ups" in shown
-    assert not any(t.startswith("1 sets") for t in shown)
+    assert "1 serie · 1 calentamiento" in shown
+    assert "2 series · 2 calentamientos" in shown
+    assert not any(t.startswith("1 series") for t in shown)
 
 
 def test_one_exercise_logged_reads_as_one(trained):
     view, _ = trained
     view.completed = [{"exercise": BENCH, "sets": [{"weight": 80.0, "reps": 8}]}]
     view.finished = True
-    assert "1 exercise logged" in _texts(view.build())
+    assert "1 ejercicio registrado" in _texts(view.build())
 
 
 # ── 7. the rule that binds all of it ─────────────────────────────────────
@@ -733,11 +741,11 @@ def test_fase_de_solo_ultima_serie_no_marca_las_demas():
     lineas = [vista._row_target(i, r) for i, r in enumerate(vista.sets)]
 
     for texto in lineas[:-1]:
-        assert "failure" not in texto, (
+        assert "fallo" not in texto, (
             f"a non-final set says {texto!r} — that reads as an order to grind it"
         )
-    assert "to failure" in lineas[-1]
-    assert lineas[-1].count("failure") == 1, f"clause printed twice: {lineas[-1]!r}"
+    assert "al fallo" in lineas[-1]
+    assert lineas[-1].count("fallo") == 1, f"clause printed twice: {lineas[-1]!r}"
 
 
 def test_una_fase_con_rir_general_lo_muestra_en_todas():
@@ -747,7 +755,7 @@ def test_una_fase_con_rir_general_lo_muestra_en_todas():
 
     lineas = [vista._row_target(i, r) for i, r in enumerate(vista.sets)]
     assert all("RIR" in t for t in lineas), lineas
-    assert not any("last to failure" in t for t in lineas)
+    assert not any("última al fallo · última" in t for t in lineas)
 
 
 def test_los_calentamientos_no_llevan_objetivo():

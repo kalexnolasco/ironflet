@@ -567,19 +567,19 @@ def _parse(data) -> dict:
     """
     if not isinstance(data, Mapping):
         raise BackupError(
-            f"Not an IronFlet backup: expected an object, found {type(data).__name__}"
+            f"No es una copia de IronFlet: se esperaba un objeto y hay {type(data).__name__}"
         )
     if data.get("app") not in ACCEPTED_APPS:
-        raise BackupError(f"Not an IronFlet backup (app={data.get('app')!r})")
+        raise BackupError(f"No es una copia de IronFlet (app={data.get('app')!r})")
 
     version = _int(data.get("version"), "version", default=0)
     if version < 1:
-        raise BackupError("Not an IronFlet backup: no version number")
+        raise BackupError("No es una copia de IronFlet: sin número de versión")
     if version > BACKUP_VERSION:
         # The mirror image of the check in Storage.import_all: a file from a
         # newer app is refused whole rather than imported in part.
         raise BackupError(
-            f"Backup version {version} is newer than this app supports "
+            f"La versión {version} de la copia es más nueva de lo que esta app admite "
             f"(up to {BACKUP_VERSION}) — update IronFlet and try again"
         )
 
@@ -879,14 +879,14 @@ def _parse_routines(data: Mapping) -> list[dict]:
                 days.append(
                     {
                         "position": _int(d.get("position"), f"{dw}.position", default=k),
-                        "name": _text(d.get("name"), 120) or f"Day {k + 1}",
+                        "name": _text(d.get("name"), 120) or f"Día {k + 1}",
                         "exercises": exercises,
                     }
                 )
             phases.append(
                 {
                     "position": _int(p.get("position"), f"{pw}.position", default=j),
-                    "name": _text(p.get("name"), 120) or f"Phase {j + 1}",
+                    "name": _text(p.get("name"), 120) or f"Fase {j + 1}",
                     "subtitle": _text(p.get("subtitle"), 120),
                     "weeks": _text(p.get("weeks"), 40),
                     "scheme": _text(p.get("scheme"), 60),
@@ -902,7 +902,7 @@ def _parse_routines(data: Mapping) -> list[dict]:
         out.append(
             {
                 "old_pk": _int(r.get("id"), f"{where}.id", default=0),
-                "name": _text(r.get("name"), 120) or "Untitled routine",
+                "name": _text(r.get("name"), 120) or "Rutina sin título",
                 "description": _text(r.get("description"), 240),
                 "source": _text(r.get("source"), 60),
                 "created": _moment(r.get("created"), f"{where}.created"),
@@ -1312,9 +1312,9 @@ def loads(text: str | bytes) -> dict:
     try:
         data = json.loads(text)
     except (json.JSONDecodeError, UnicodeDecodeError) as exc:
-        raise BackupError(f"The file is not valid JSON — truncated or corrupt ({exc})") from exc
+        raise BackupError(f"El archivo no es JSON válido — truncado o corrupto ({exc})") from exc
     if not isinstance(data, dict):
-        raise BackupError(f"Not an IronFlet backup: found a {type(data).__name__}, not an object")
+        raise BackupError(f"No es una copia de IronFlet: hay {type(data).__name__}, no un objeto")
     return data
 
 
@@ -1331,7 +1331,7 @@ def import_from_file(store: Storage, path: str | Path, *, wipe: bool = True) -> 
     try:
         text = Path(path).read_text(encoding="utf-8")
     except OSError as exc:
-        raise BackupError(f"Cannot read the backup file: {exc}") from exc
+        raise BackupError(f"No se puede leer el archivo de copia: {exc}") from exc
     return import_all(store, loads(text), wipe=wipe)
 
 
@@ -1346,18 +1346,18 @@ def default_filename(when: float | None = None) -> str:
 # The seven counts worth showing. The other seven (servings, phases, days…) are
 # in the dict, but nobody restores a backup wondering how many servings moved.
 _HEADLINE = (
-    ("workouts", "workout", "workouts"),
-    ("weights", "weigh-in", "weigh-ins"),
+    ("workouts", "entreno", "entrenos"),
+    ("weights", "pesaje", "pesajes"),
     # Worth a line of its own even though it is a small table: it is one of the
     # two things in the file Alex entered by hand and nothing can regenerate.
-    ("session_notes", "session note", "session notes"),
+    ("session_notes", "nota de sesión", "notas de sesión"),
     # The other one. Listed for the same reason and with more at stake: a note
     # that failed to arrive is at least missed when the day is read back, while
     # a missing duration looks exactly like a session that was never timed.
-    ("session_durations", "session time", "session times"),
-    ("food_log", "food entry", "food entries"),
-    ("foods", "food", "foods"),
-    ("routines", "routine", "routines"),
+    ("session_durations", "tiempo de sesión", "tiempos de sesión"),
+    ("food_log", "apunte de comida", "apuntes de comida"),
+    ("foods", "alimento", "alimentos"),
+    ("routines", "rutina", "rutinas"),
 )
 
 
@@ -1368,4 +1368,4 @@ def summary_line(counts: Mapping[str, int]) -> str:
         for key, singular, plural in _HEADLINE
         if (n := int(counts.get(key) or 0))
     ]
-    return ", ".join(parts) if parts else "nothing"
+    return ", ".join(parts) if parts else "nada"

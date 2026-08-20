@@ -173,7 +173,7 @@ def test_guardar_dos_veces_no_duplica(store):
     filas = [e for e in store.get_all() if e.exercise == "Squat"]
     assert len(filas) == 1, f"{len(filas)} rows for one exercise on one day"
     assert filas[0].sets[0]["weight"] == 110
-    assert "Replaced" in dicho
+    assert "Reemplazado" in dicho
 
 
 # ── property 2: the key stays on the device ───────────────────────────────
@@ -452,7 +452,7 @@ def test_sin_clave_no_revienta_solo_avisa(store):
     coach = agent.Coach(store, today=HOY)
     respuesta = coach.ask("¿qué toca hoy?")
     assert not respuesta.ok
-    assert "Settings" in respuesta.error
+    assert "Ajustes" in respuesta.error
     assert coach.messages == [], "a failed turn left the question in the history"
 
 
@@ -580,7 +580,7 @@ def test_un_filtro_de_contenido_se_cuenta_no_se_traga(store, monkeypatch):
         agent, "_post_chat", TransporteFalso([RespuestaFalsa("", finish="content_filter")])
     )
     respuesta = agent.Coach(store, today=HOY).ask("algo raro")
-    assert not respuesta.ok and "declined" in respuesta.error
+    assert not respuesta.ok and "no quiso" in respuesta.error
 
 
 def test_una_respuesta_cortada_se_marca(store, monkeypatch):
@@ -589,7 +589,7 @@ def test_una_respuesta_cortada_se_marca(store, monkeypatch):
         agent, "_post_chat", TransporteFalso([RespuestaFalsa("Media frase", finish="length")])
     )
     respuesta = agent.Coach(store, today=HOY).ask("cuéntame")
-    assert respuesta.ok and "cut off" in respuesta.text
+    assert respuesta.ok and "cortado" in respuesta.text
 
 
 def test_el_bucle_no_gira_para_siempre(store, monkeypatch):
@@ -960,7 +960,7 @@ def test_los_precios_se_convierten_a_millones():
     )[0]
     assert modelo.prompt_price == pytest.approx(3.0)
     assert modelo.completion_price == pytest.approx(15.0)
-    assert modelo.price_label() == "$3 / $15 per M"
+    assert modelo.price_label() == "$3 / $15 por M"
 
 
 def test_un_catalogo_roto_no_vacia_la_lista():

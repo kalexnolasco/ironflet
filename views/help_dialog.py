@@ -62,27 +62,27 @@ from views.shared_ui import dialog_height, dialog_width
 TOPIC_TYPE = "type"
 TOPIC_RIR = "rir"
 
-TYPE_HEADING = "TYPE — what kind of set"
-RIR_HEADING = "RIR — reps in reserve"
+TYPE_HEADING = "TIPO — qué clase de serie"
+RIR_HEADING = "RIR — repeticiones en reserva"
 
 #: The one sentence that fixes the usual misreading. Kept first and kept blunt.
-RIR_LEAD = "How many more reps you could have done — not how many you did."
+RIR_LEAD = "Cuántas repeticiones más podrías haber hecho — no cuántas hiciste."
 
 RIR_EXAMPLE = (
-    "You rack the bar at 10 reps and two clean reps were still in you: "
-    "reps 10, RIR 2. If a single extra rep was not there, that is RIR 0."
+    "Dejas la barra a las 10 repeticiones y aún te quedaban dos limpias: "
+    "reps 10, RIR 2. Si no te quedaba ni una más, eso es RIR 0."
 )
 
 #: The scale, as (value, meaning). Four rows is the most that stays readable on
 #: a phone held between sets; anything finer is guesswork anyway.
 RIR_SCALE: tuple[tuple[str, str], ...] = (
-    ("0", "Nothing left. That is failure — mark the set F."),
-    ("1–2", "Where working sets should land. The growth zone."),
-    ("3–4", "Comfortable. Fine early in a block or on technique days."),
-    ("5+", "That is a warm-up, not a working set."),
+    ("0", "No quedaba nada. Eso es fallo — marca la serie F."),
+    ("1–2", "Donde deben caer las series efectivas. La zona de crecimiento."),
+    ("3–4", "Cómodo. Bien al principio de un bloque o en días de técnica."),
+    ("5+", "Eso es un calentamiento, no una serie efectiva."),
 )
 
-RIR_FOOTER = "Optional: leave it blank and nothing is stored."
+RIR_FOOTER = "Opcional: déjalo vacío y no se guarda nada."
 
 # How tall the body would *like* to be. `dialog_height()` cuts it down to what
 # the window actually has, so these are ceilings rather than sizes: the body
@@ -177,7 +177,7 @@ def _cycle_hint() -> ft.Text:
     """ "Tap the letter to cycle N → W → D → F", spelled from `CYCLE_ORDER`."""
     order = " → ".join(SHORT_LABELS[t] for t in CYCLE_ORDER)
     return ft.Text(
-        f"Tap the letter in the TYPE column to cycle {order}.",
+        f"Toca la letra de la columna TIPO para rotar {order}.",
         size=11,
         color=C.text_muted,
         italic=True,
@@ -188,8 +188,8 @@ def _rest_hint() -> ft.Text:
     """The rest consequence, read off the constants instead of retyped."""
     working = f"{format_rest(REST_ISOLATION_S)}–{format_rest(REST_COMPOUND_S)}"
     return ft.Text(
-        f"Rest timer: {format_rest(REST_AFTER_WARMUP_S)} after a warm-up, "
-        f"{working} after a working set.",
+        f"Temporizador: {format_rest(REST_AFTER_WARMUP_S)} tras un calentamiento, "
+        f"{working} tras una serie efectiva.",
         size=11,
         color=C.text_muted,
         italic=True,
@@ -245,14 +245,14 @@ def _type_block() -> list[ft.Control]:
 
 def _title_for(topic: str | None) -> str:
     if topic == TOPIC_TYPE:
-        return "Set types"
+        return "Tipos de serie"
     if topic == TOPIC_RIR:
         return "RIR"
-    return "Set types & RIR"
+    return "Tipos de serie y RIR"
 
 
 def help_dialog(
-    page, title: str, body: list[ft.Control], preferred_height: int, close_label: str = "Got it"
+    page, title: str, body: list[ft.Control], preferred_height: int, close_label: str = "Entendido"
 ) -> ft.AlertDialog:
     """The shell every help dialog in the app is built from.
 
@@ -344,9 +344,9 @@ def help_icon(page, topic: str | None = None, size: int = 30) -> ft.Container:
     costs no horizontal space on a 420 px phone.
     """
     tooltip = {
-        TOPIC_TYPE: "What do N, W, D and F mean?",
-        TOPIC_RIR: "What is RIR?",
-    }.get(topic, "What do TYPE and RIR mean?")
+        TOPIC_TYPE: "¿Qué significan N, C, D y F?",
+        TOPIC_RIR: "¿Qué es el RIR?",
+    }.get(topic, "¿Qué significan TIPO y RIR?")
     return _question_mark(lambda _: open_set_help(page, topic), tooltip, size)
 
 
@@ -384,49 +384,49 @@ class MetricHelp(NamedTuple):
 
 METRIC_HELP: dict[str, MetricHelp] = {
     TOPIC_E1RM: MetricHelp(
-        heading="est. 1RM — estimated one-rep max",
-        lead="The weight the app works out you could lift once, in kilos. You have not lifted it.",
+        heading="1RM est. — máximo estimado a una repetición",
+        lead="El peso que la app calcula que podrías levantar una vez, en kilos. No lo has levantado.",
         detail=(
-            "It is estimated from your best set — weight × (1 + reps ÷ 30) — so it goes up "
-            "when you add reps, not only when you add plates. That is what makes it the "
-            "fairest way to compare a 5×5 day against a 3×12 day. Read the trend; do not "
-            "go and attempt the number."
+            "Se estima de tu mejor serie — peso × (1 + reps ÷ 30) — así que sube "
+            "cuando añades repeticiones, no solo cuando añades discos. Por eso es la "
+            "forma más justa de comparar un día de 5×5 con uno de 3×12. Lee la "
+            "tendencia; no vayas a intentar el número."
         ),
     ),
     TOPIC_RECORDS: MetricHelp(
-        heading="🏆 — this session still holds a record",
-        lead="A trophy marks a session that is still your best ever for this exercise.",
-        detail="Warm-up sets count towards none of the three.",
+        heading="🏆 — esta sesión aún tiene un récord",
+        lead="Un trofeo marca una sesión que sigue siendo tu mejor marca en ese ejercicio.",
+        detail="Los calentamientos no cuentan para ninguno de los tres.",
         rows=(
-            ("🏆 1RM", "Best estimated 1RM — your best weight-and-reps combination."),
-            ("🏆 kg", "Heaviest single set, whatever the reps were."),
-            ("🏆 vol", "Biggest session total: every working set's weight × reps, added up."),
+            ("🏆 1RM", "Mejor 1RM estimado — tu mejor combinación de peso y repeticiones."),
+            ("🏆 kg", "La serie más pesada, con las repeticiones que fueran."),
+            ("🏆 vol", "Mayor total de sesión: peso × reps de cada serie efectiva, sumado."),
         ),
     ),
     TOPIC_VOLUME: MetricHelp(
-        heading="Volume, and the k",
-        lead="Volume is weight × reps added up over your working sets, and it is always kilos.",
+        heading="El volumen, y la k",
+        lead="El volumen es peso × reps sumado sobre tus series efectivas, y siempre en kilos.",
         detail=(
-            "Totals past 10,000 are shortened so they fit a tile: 12.3k means 12,300 kg. "
-            "The full figure is in the tooltip if you hover or long-press."
+            "Los totales que pasan de 10.000 se acortan para caber en la tarjeta: 12,3k "
+            "significa 12.300 kg. La cifra completa está en el tooltip al mantener pulsado."
         ),
     ),
     TOPIC_MUSCLE: MetricHelp(
-        heading="Weekly sets by muscle",
+        heading="Series semanales por músculo",
         lead=(
-            "How many working sets each muscle got that week — the number that says whether "
-            "a muscle is getting enough work, or too much."
+            "Cuántas series efectivas recibió cada músculo esa semana — el número que dice "
+            "si un músculo recibe suficiente trabajo, o demasiado."
         ),
         detail=(
-            "An exercise gives a whole set to the muscle it trains directly and half a set to "
-            "each muscle that only assists. Some exercises have no muscle data at all, so "
-            "their sets belong to nothing; the card says how many rather than quietly "
-            "dropping them, which is what the warning line underneath is counting."
+            "Un ejercicio da una serie entera al músculo que trabaja directo y media a "
+            "cada músculo que solo asiste. Algunos ejercicios no tienen datos musculares, "
+            "así que sus series no pertenecen a nada; la tarjeta dice cuántas en vez de "
+            "descartarlas en silencio — eso es lo que cuenta la línea de aviso de abajo."
         ),
     ),
 }
 
-METRICS_TITLE = "What these numbers mean"
+METRICS_TITLE = "Qué significan estos números"
 
 
 def _metric_block(topic: str) -> list[ft.Control]:
@@ -490,5 +490,5 @@ def metric_help_icon(page, topic: str | None = None, size: int = 26) -> ft.Conta
     layout rather than in the set table's fixed 30 px slot.
     """
     entry = METRIC_HELP.get(topic or "")
-    tooltip = f"What is {entry.heading.split('—')[0].strip()}?" if entry else METRICS_TITLE
+    tooltip = f"¿Qué es {entry.heading.split('—')[0].strip()}?" if entry else METRICS_TITLE
     return _question_mark(lambda _: open_metric_help(page, topic), tooltip, size)

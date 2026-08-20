@@ -107,7 +107,7 @@ class ProfileView:
 
     def _open_log_weight(self):
         kg_field = ft.TextField(
-            label="Weight (kg)",
+            label="Peso (kg)",
             keyboard_type=ft.KeyboardType.NUMBER,
             bgcolor=C.bg_page,
             border_color=C.border,
@@ -133,7 +133,7 @@ class ProfileView:
                 if kg <= 0:
                     raise ValueError("non-positive")
             except ValueError:
-                err.value = "Enter a valid weight"
+                err.value = "Pon un peso válido"
                 self.page.update()
                 return
             dv = (date_field.value or "").strip()
@@ -141,7 +141,7 @@ class ProfileView:
                 if dv:
                     date.fromisoformat(dv)
             except ValueError:
-                err.value = "Invalid date format"
+                err.value = "Formato de fecha inválido"
                 self.page.update()
                 return
             self.store.save_weight(kg, dv or None)
@@ -151,7 +151,7 @@ class ProfileView:
         dlg = ft.AlertDialog(
             modal=False,
             bgcolor=C.bg_surface,
-            title=ft.Text("Log weight", size=16, weight=ft.FontWeight.W_900, color=C.text),
+            title=ft.Text("Apuntar peso", size=16, weight=ft.FontWeight.W_900, color=C.text),
             content=ft.Container(
                 content=ft.Column(
                     [kg_field, date_field, err],
@@ -165,11 +165,11 @@ class ProfileView:
             ),
             actions=[
                 ft.TextButton(
-                    "Cancel",
+                    "Cancelar",
                     on_click=lambda _: self.page.close(dlg),
                     style=ft.ButtonStyle(color=C.text_secondary),
                 ),
-                ft.TextButton("Save", on_click=save, style=ft.ButtonStyle(color=C.accent)),
+                ft.TextButton("Guardar", on_click=save, style=ft.ButtonStyle(color=C.accent)),
             ],
             actions_alignment=ft.MainAxisAlignment.END,
         )
@@ -194,7 +194,7 @@ class ProfileView:
         here never costs him a chest or a thigh recorded at a check-in.
         """
         cm_field = ft.TextField(
-            label="Waist (cm)",
+            label="Cintura (cm)",
             keyboard_type=ft.KeyboardType.NUMBER,
             bgcolor=C.bg_page,
             border_color=C.border,
@@ -220,7 +220,7 @@ class ProfileView:
                 if dv:
                     date.fromisoformat(dv)
             except ValueError:
-                err.value = "Invalid date format"
+                err.value = "Formato de fecha inválido"
                 self.page.update()
                 return
             try:
@@ -237,13 +237,13 @@ class ProfileView:
         dlg = ft.AlertDialog(
             modal=False,
             bgcolor=C.bg_surface,
-            title=ft.Text("Log waist", size=16, weight=ft.FontWeight.W_900, color=C.text),
+            title=ft.Text("Apuntar cintura", size=16, weight=ft.FontWeight.W_900, color=C.text),
             content=ft.Container(
                 content=ft.Column(
                     [
                         ft.Text(
-                            "At the navel, relaxed, first thing — same way every time. "
-                            "The plan cuts 150 kcal if this drifts up ~1 cm.",
+                            "A la altura del ombligo, relajado, a primera hora — siempre igual. "
+                            "El plan recorta 150 kcal si esto sube ~1 cm.",
                             size=11,
                             color=C.text_secondary,
                         ),
@@ -258,11 +258,11 @@ class ProfileView:
             ),
             actions=[
                 ft.TextButton(
-                    "Cancel",
+                    "Cancelar",
                     on_click=lambda _: self.page.close(dlg),
                     style=ft.ButtonStyle(color=C.text_secondary),
                 ),
-                ft.TextButton("Save", on_click=save, style=ft.ButtonStyle(color=C.accent)),
+                ft.TextButton("Guardar", on_click=save, style=ft.ButtonStyle(color=C.accent)),
             ],
             actions_alignment=ft.MainAxisAlignment.END,
         )
@@ -277,8 +277,8 @@ class ProfileView:
         if not resumen.known:
             cuerpo: list[ft.Control] = [
                 ft.Text(
-                    "No measurement yet. This is the plan's brake — without a baseline "
-                    "there is nothing to compare a later one against.",
+                    "Sin medición todavía. Este es el freno del plan — sin una base "
+                    "no hay con qué comparar la siguiente.",
                     size=12,
                     color=C.text_secondary,
                 )
@@ -307,7 +307,7 @@ class ProfileView:
             if resumen.vs_baseline is None:
                 cuerpo.append(
                     ft.Text(
-                        "Baseline — a second one makes it a change.", size=11, color=C.text_muted
+                        "Base — con una segunda ya habrá variación.", size=11, color=C.text_muted
                     )
                 )
             else:
@@ -324,8 +324,8 @@ class ProfileView:
                 )
                 cuerpo.append(
                     ft.Text(
-                        f"The plan cuts 150 kcal at +1.0 cm. Tape noise is about ±0.5 cm, "
-                        f"so read it over {MEASUREMENT_EVERY_DAYS}-day steps, not day to day.",
+                        f"El plan recorta 150 kcal a +1,0 cm. El ruido de la cinta ronda ±0,5 cm, "
+                        f"así que léelo en pasos de {MEASUREMENT_EVERY_DAYS} días, no día a día.",
                         size=10,
                         color=C.text_muted,
                     )
@@ -336,7 +336,7 @@ class ProfileView:
             ft.Row(
                 [
                     primary_button(
-                        "Log waist" if resumen.known else "Set baseline",
+                        "Apuntar cintura" if resumen.known else "Fijar la base",
                         on_click=lambda _: self._open_log_waist(),
                         expand=True,
                     )
@@ -360,7 +360,7 @@ class ProfileView:
     def _backup_section(self) -> ft.Control:
         return ft.Row(
             [
-                ghost_button("Backup & restore", on_click=self._open_backup, expand=True),
+                ghost_button("Copia y restauración", on_click=self._open_backup, expand=True),
             ],
             spacing=8,
         )
@@ -385,7 +385,7 @@ class ProfileView:
             ),
             actions=[
                 ft.TextButton(
-                    "Cancel",
+                    "Cancelar",
                     on_click=lambda _: self.page.close(dlg),
                     style=ft.ButtonStyle(color=C.text_secondary),
                 ),
@@ -400,7 +400,7 @@ class ProfileView:
 
         This used `C.accent_2` and looked right for a year, because in the light
         palette that token happened to be a crimson. The Symmetry palette made
-        it a light blue and "Clear all data" turned friendly overnight — the
+        it a light blue and "Borrar todos los datos" turned friendly overnight — the
         role and the colour had never actually matched, the hue just covered for
         it. Any row that destroys data reads `danger`, whatever the theme.
         """
@@ -412,7 +412,7 @@ class ProfileView:
                         content=ft.Text(
                             label_key, size=12, color=C.text_secondary, weight=ft.FontWeight.W_700
                         ),
-                        expand=True,  # "Clear workout history" does not fit 230
+                        expand=True,  # "Borrar historial de entrenos" does not fit 230
                     ),
                     ft.Icon(ft.Icons.CHEVRON_RIGHT, color=C.text_muted, size=16),
                 ],
@@ -434,9 +434,9 @@ class ProfileView:
         total = st.total
         installed = st.complete
         status_label = ft.Text(
-            "Installed"
+            "Instaladas"
             if installed
-            else (f"{st.missing} of {total} missing" if st.present else "Not installed  ·  ~9 MB"),
+            else (f"{st.missing} of {total} missing" if st.present else "Sin instalar  ·  ~9 MB"),
             size=11,
             color=C.accent if installed else C.text_secondary,
             weight=ft.FontWeight.W_700,
@@ -458,7 +458,7 @@ class ProfileView:
                 pass
 
         async def do_download(_):
-            status_label.value = "Downloading…"
+            status_label.value = "Descargando…"
             status_label.color = C.accent
             self.page.update()
             ok, err = await asset_manager.download_all(progress_cb=on_progress)
@@ -467,18 +467,18 @@ class ProfileView:
             # repaired image keeps rendering as the broken one it replaced.
             exercise_images.clear_inline_cache()
             if err == 0:
-                status_label.value = "Installed"
+                status_label.value = "Instaladas"
             else:
-                status_label.value = f"Partial · {ok} ok / {err} err"
+                status_label.value = f"Parcial · {ok} bien / {err} err"
             self.page.update()
 
         def do_clear(_):
             asset_manager.clear_cache()
             # Mandatory here, not just tidy: the files are gone but their
             # base64 would live on in the cache, so cleared images would carry
-            # on rendering and "Clear cache" would look like it did nothing.
+            # on rendering and "Vaciar caché" would look like it did nothing.
             exercise_images.clear_inline_cache()
-            status_label.value = "Not installed  ·  ~9 MB"
+            status_label.value = "Sin instalar  ·  ~9 MB"
             status_label.color = C.text_secondary
             progress_bar.value = 0
             count_label.value = f"0 / {total}"
@@ -487,14 +487,14 @@ class ProfileView:
         dlg = ft.AlertDialog(
             modal=False,
             bgcolor=C.bg_surface,
-            title=ft.Text("Exercise guides", size=16, weight=ft.FontWeight.W_900, color=C.text),
+            title=ft.Text("Guías de ejercicios", size=16, weight=ft.FontWeight.W_900, color=C.text),
             content=ft.Container(
                 content=ft.Column(
                     [
                         ft.Text(
-                            "Exercise photos and instructions are downloaded "
+                            "Las fotos e instrucciones de los ejercicios se descargan "
                             "from a public fitness database (Unlicense). "
-                            "Approx. 9 MB over Wi-Fi is recommended.",
+                            "Unos 9 MB — mejor con wifi.",
                             size=11,
                             color=C.text_secondary,
                         ),
@@ -505,9 +505,9 @@ class ProfileView:
                         ft.Container(height=6),
                         ft.Row(
                             [
-                                ghost_button("Clear cache", on_click=do_clear, expand=True),
+                                ghost_button("Vaciar caché", on_click=do_clear, expand=True),
                                 primary_button(
-                                    "Download",
+                                    "Descargar",
                                     on_click=do_download,
                                     expand=True,
                                     icon=ft.Icons.CLOUD_DOWNLOAD,
@@ -520,13 +520,13 @@ class ProfileView:
                     tight=True,
                 ),
                 # The height went with the width: "Partial · 12 ok / 3 err" is
-                # a taller status line than "Installed", and 280 was measured
+                # a taller status line than "Instaladas", and 280 was measured
                 # against the short one.
                 width=self._dialog_width(),
             ),
             actions=[
                 ft.TextButton(
-                    "Close",
+                    "Cerrar",
                     on_click=lambda _: self.page.close(dlg),
                     style=ft.ButtonStyle(color=C.text_secondary),
                 ),
@@ -553,10 +553,10 @@ class ProfileView:
             self.page.open(
                 ft.AlertDialog(
                     bgcolor=C.bg_surface,
-                    title=ft.Text("No signal", size=16, weight=ft.FontWeight.W_900, color=C.text),
+                    title=ft.Text("Sin señal", size=16, weight=ft.FontWeight.W_900, color=C.text),
                     content=ft.Text(
-                        "The model list comes from OpenRouter and this device could not reach "
-                        "it. The shortlist in Settings still works.",
+                        "La lista de modelos viene de OpenRouter y este aparato no pudo conectar. "
+                        "La lista corta de Ajustes sigue funcionando.",
                         size=12,
                         color=C.text_secondary,
                     ),
@@ -607,7 +607,7 @@ class ProfileView:
                 )
                 for m in encontrados
             ]
-            contador.value = f"{len(encontrados)} of {len(catalogo)} · cheapest first"
+            contador.value = f"{len(encontrados)} de {len(catalogo)} · el más barato primero"
 
         render()
 
@@ -617,7 +617,7 @@ class ProfileView:
             # that shows four of them. The list is already sorted cheapest-first,
             # which is what most people came to look at; the keyboard appears
             # when he taps the box, which is when he actually wants it.
-            hint_text=f"Search {len(catalogo)} models…",
+            hint_text=f"Buscar entre {len(catalogo)} modelos…",
             dense=True,
             border_color=C.border,
             color=C.text,
@@ -626,7 +626,7 @@ class ProfileView:
 
         dlg = ft.AlertDialog(
             bgcolor=C.bg_surface,
-            title=ft.Text("Choose a model", size=16, weight=ft.FontWeight.W_900, color=C.text),
+            title=ft.Text("Elegir modelo", size=16, weight=ft.FontWeight.W_900, color=C.text),
             content=ft.Container(
                 content=ft.Column([buscador, contador, lista], spacing=8, tight=False),
                 width=dialog_width(self.page),
@@ -634,7 +634,7 @@ class ProfileView:
             ),
             actions=[
                 ft.TextButton(
-                    "Close",
+                    "Cerrar",
                     on_click=lambda _: self.page.close(dlg),
                     style=ft.ButtonStyle(color=C.text_secondary),
                 )
@@ -667,9 +667,9 @@ class ProfileView:
             return go
 
         ETIQUETAS = {
-            "symmetry": ("Dark", "Near-black and blue"),
-            "light": ("Daylight", "Easier to read in the sun"),
-            "dark": ("Warm dark", "The original dark theme"),
+            "symmetry": ("Oscuro", "Casi negro y azul"),
+            "light": ("Luz de día", "Se lee mejor al sol"),
+            "dark": ("Oscuro cálido", "El tema oscuro original"),
         }
         filas = []
         for nombre in PALETTES:
@@ -757,7 +757,7 @@ class ProfileView:
         corta = openrouter.curated(catalogo)
 
         field = ft.TextField(
-            label="OpenRouter API key" if not stored else "Replace the key",
+            label="OpenRouter API key" if not stored else "Cambiar la clave",
             hint_text="sk-or-v1-…",
             password=True,
             can_reveal_password=True,
@@ -778,7 +778,7 @@ class ProfileView:
                 self.page.update()
                 return
             except Exception as exc:  # pragma: no cover - defensive
-                message.value = f"Could not store it: {exc}"
+                message.value = f"No se pudo guardar: {exc}"
                 message.color = C.danger
                 self.page.update()
                 return
@@ -787,10 +787,10 @@ class ProfileView:
                 # A warning, not a rejection: the prefix is Anthropic's to
                 # change, and refusing a valid key in a gym would be worse than
                 # accepting an invalid one and saying so on the first request.
-                message.value = "Stored — though it does not start with sk-or-, so double-check."
+                message.value = "Guardada — aunque no empieza por sk-or-, revísala."
                 message.color = C.warning
             else:
-                message.value = "Stored. The coach is ready."
+                message.value = "Guardada. El entrenador está listo."
                 message.color = C.success
             self.page.update()
             self._reload()
@@ -806,13 +806,13 @@ class ProfileView:
                     [
                         ft.Icon(ft.Icons.KEY_ROUNDED, size=15, color=C.success),
                         ft.Text(
-                            f"Key stored: {agent.mask_key(stored)}",
+                            f"Clave guardada: {agent.mask_key(stored)}",
                             size=12,
                             color=C.text,
                             weight=ft.FontWeight.W_600,
                             expand=True,
                         ),
-                        ghost_button("Forget", on_click=forget),
+                        ghost_button("Olvidar", on_click=forget),
                     ],
                     spacing=6,
                     vertical_alignment=ft.CrossAxisAlignment.CENTER,
@@ -821,15 +821,15 @@ class ProfileView:
         else:
             rows.append(
                 ft.Text(
-                    "The coach needs your own OpenRouter key — one key, every model in the "
-                    "list. Paste it once: it is kept in this app's private storage, never in "
-                    "the installed file and never in a backup.",
+                    "El entrenador necesita tu clave de OpenRouter — una sola para todos los modelos. "
+                    "Pégala una vez: se guarda en el almacenamiento privado de la app, nunca en "
+                    "el fichero instalado ni en ninguna copia de seguridad.",
                     size=11,
                     color=C.text_secondary,
                 )
             )
 
-        rows.append(ft.Row([field, primary_button("Save key", on_click=save)], spacing=8))
+        rows.append(ft.Row([field, primary_button("Guardar clave", on_click=save)], spacing=8))
 
         def set_model(e):
             elegido = catalogo_por_id.get(e.control.value)
@@ -854,7 +854,7 @@ class ProfileView:
             ft.Row(
                 [
                     ft.Dropdown(
-                        label="Model",
+                        label="Modelo",
                         value=model,
                         dense=True,
                         expand=True,
@@ -864,7 +864,7 @@ class ProfileView:
                         label_style=ft.TextStyle(color=C.text_secondary),
                         options=opciones,
                     ),
-                    ghost_button("All 350…", on_click=lambda _: self._open_model_picker()),
+                    ghost_button("Los 350…", on_click=lambda _: self._open_model_picker()),
                 ],
                 spacing=8,
             )
@@ -876,17 +876,17 @@ class ProfileView:
             linea = f"{elegido.name} · {elegido.price_label()} · {elegido.context:,} ctx"
         elif precio is not None:
             # Offline: the snapshot taken when it was chosen, said to be one.
-            linea = f"{model} · ${precio[0]:g} / ${precio[1]:g} per M (last known)"
+            linea = f"{model} · ${precio[0]:g} / ${precio[1]:g} por M (último conocido)"
         else:
-            linea = f"{model} · price unknown until there is signal"
+            linea = f"{model} · precio desconocido hasta que haya señal"
         if fallo_catalogo:
-            linea += "  ·  could not reach OpenRouter"
+            linea += "  ·  sin conexión con OpenRouter"
         rows.append(ft.Text(linea, size=10, color=C.text_secondary))
         rows.append(message)
         rows.append(
             ft.Text(
-                "Billed by OpenRouter to that key, per message. The coach needs signal; "
-                "nothing else in the app does.",
+                "Lo cobra OpenRouter a esa clave, por mensaje. El entrenador necesita señal; "
+                "el resto de la app, no.",
                 size=10,
                 color=C.text_muted,
             )
@@ -904,11 +904,11 @@ class ProfileView:
         # training screen has a grey box where the photo goes, because that is
         # the only reason anyone opens this row.
         if st.complete:
-            status = f"Installed · all {st.total}"
+            status = f"Instaladas · las {st.total}"
         elif st.present:
             status = f"{st.missing} of {st.total} missing"
         else:
-            status = "Not downloaded — photos won't show"
+            status = "Sin descargar — las fotos no se verán"
         return ft.Container(
             content=ft.Row(
                 [
@@ -921,7 +921,7 @@ class ProfileView:
                         content=ft.Column(
                             [
                                 ft.Text(
-                                    "Exercise photos",
+                                    "Fotos de ejercicios",
                                     size=12,
                                     color=C.text_secondary,
                                     weight=ft.FontWeight.W_700,
@@ -950,9 +950,9 @@ class ProfileView:
     def _danger_zone(self) -> ft.Control:
         def clear_history():
             self._confirm_action(
-                "Clear workout history",
-                "This will permanently delete all logged workouts. Profile and weight log stay.",
-                "Delete",
+                "Borrar historial de entrenos",
+                "Borra para siempre todos los entrenos. El perfil y los pesajes se quedan.",
+                "Borrar",
                 self.store.clear_workouts,
             )
 
@@ -965,16 +965,18 @@ class ProfileView:
                 set_active_routine("cambiatufisico")
 
             self._confirm_action(
-                "Clear all data",
-                "This will erase profile, weight log, workouts and preferences. Cannot be undone.",
-                "Erase all",
+                "Borrar todos los datos",
+                "Borra perfil, pesajes, entrenos y preferencias. No se puede deshacer.",
+                "Borrarlo todo",
                 do_wipe,
             )
 
         return ft.Column(
             [
-                self._danger_row(ft.Icons.DELETE_SWEEP, "Clear workout history", clear_history),
-                self._danger_row(ft.Icons.DELETE_FOREVER, "Clear all data", clear_all),
+                self._danger_row(
+                    ft.Icons.DELETE_SWEEP, "Borrar historial de entrenos", clear_history
+                ),
+                self._danger_row(ft.Icons.DELETE_FOREVER, "Borrar todos los datos", clear_all),
             ],
             spacing=0,
             tight=True,
@@ -998,7 +1000,7 @@ class ProfileView:
             # Every one of these lives inside a Row, and a TextField with no
             # `expand` takes its own preferred width instead of a share of the
             # row. Two of them side by side therefore overflowed the screen:
-            # on the phone the "Height (cm)" field was cut off mid-label, as
+            # on the phone the "Altura (cm)" field was cut off mid-label, as
             # "Heig", with its input area entirely off-screen and unreachable.
             expand=True,
             on_change=on_change,
@@ -1059,13 +1061,13 @@ class ProfileView:
                 return "—"
             return f"{v:.{digits}f}{unit}"
 
-        age_row = self._stat("Age", fmt(age, "y"))
+        age_row = self._stat("Edad", fmt(age, "y"))
         bmi_row = self._stat("BMI", fmt(b, "", 1), bcat if bcat else "")
         bmr_row = self._stat("BMR", f"{fmt(bmr, ' kcal')}" if bmr else "—")
         tdee_row = self._stat("TDEE", f"{fmt(tdv, ' kcal')}" if tdv else "—", activity)
         protein_txt = f"{prot[0]:g}–{prot[1]:g} g" if prot else "—"
-        prot_row = self._stat("Protein", protein_txt, "1.6–2.2 g/kg")
-        water_row = self._stat("Water", f"{fmt(water, ' L', 1)}" if water else "—", "~35 ml/kg")
+        prot_row = self._stat("Proteína", protein_txt, "1.6–2.2 g/kg")
+        water_row = self._stat("Agua", f"{fmt(water, ' L', 1)}" if water else "—", "~35 ml/kg")
 
         return ft.Column(
             [
@@ -1098,13 +1100,13 @@ class ProfileView:
         media, ritmo = self._trend(entries)
         if media is None:
             return []
-        chips: list[ft.Control] = [self._stat("7-DAY AVG", f"{media:.1f} kg")]
+        chips: list[ft.Control] = [self._stat("MEDIA 7 DÍAS", f"{media:.1f} kg")]
         if ritmo is None:
-            chips.append(self._stat("PER WEEK", "—", f"needs {self.MIN_TREND_DAYS} days"))
+            chips.append(self._stat("POR SEMANA", "—", f"a los {self.MIN_TREND_DAYS} días"))
         else:
             # No colour: whether losing is good depends on the block, and this
             # app is not the place that decides. The sign is the information.
-            chips.append(self._stat("PER WEEK", f"{ritmo:+.2f} kg", "7-day avg"))
+            chips.append(self._stat("POR SEMANA", f"{ritmo:+.2f} kg", "media de 7 días"))
         return chips
 
     def _weight_section(self) -> ft.Control:
@@ -1118,7 +1120,7 @@ class ProfileView:
                 ft.Column(
                     [
                         ft.Text(
-                            "Current weight",
+                            "Peso actual",
                             size=11,
                             color=C.text_muted,
                             weight=ft.FontWeight.W_700,
@@ -1135,7 +1137,7 @@ class ProfileView:
                     expand=True,
                 ),
                 primary_button(
-                    "Log weight", icon=ft.Icons.ADD, on_click=lambda _: self._open_log_weight()
+                    "Apuntar peso", icon=ft.Icons.ADD, on_click=lambda _: self._open_log_weight()
                 ),
             ],
             alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
@@ -1164,7 +1166,7 @@ class ProfileView:
                 tight=True,
             )
             if entries
-            else ft.Text("No weight logged yet", size=11, color=C.text_muted, italic=True),
+            else ft.Text("Sin pesajes todavía", size=11, color=C.text_muted, italic=True),
             bgcolor=C.bg_surface,
             border=ft.border.all(1, C.border),
             border_radius=12,
@@ -1216,11 +1218,11 @@ class ProfileView:
 
         # A heading with nothing under it reads as a screen that failed to
         # load. With no weigh-ins there is no history to title, so the title
-        # goes too — the "No weight logged yet" chip above already says it.
+        # goes too — the "Sin pesajes todavía" chip above already says it.
         history_block = (
             [
                 ft.Container(height=10),
-                section_title("History"),
+                section_title("Historial"),
                 ft.Container(height=6),
                 *history_rows,
             ]
@@ -1259,31 +1261,31 @@ class ProfileView:
         try:
             return self._build_screen()
         except Exception as exc:
-            return db_error_screen("Settings", exc, on_retry=self._reload)
+            return db_error_screen("Ajustes", exc, on_retry=self._reload)
 
     def _build_screen(self) -> ft.Control:
         profile = self.store.get_profile()
         latest_weight = self.store.get_latest_weight()
 
         sex_options = [
-            ("M", "Male"),
-            ("F", "Female"),
-            ("", "Prefer not to say"),
+            ("M", "Hombre"),
+            ("F", "Mujer"),
+            ("", "Prefiero no decirlo"),
         ]
         activity_options = [(k, k) for k in ACTIVITY_KEYS]
 
-        name_field = self._text_input("Name", "name")
+        name_field = self._text_input("Nombre", "name")
         dob_field = self._text_input(
             "Birthdate (YYYY-MM-DD)",
             "birthdate",
         )
         height_field = self._text_input(
-            "Height (cm)",
+            "Altura (cm)",
             "height_cm",
             keyboard=ft.KeyboardType.NUMBER,
         )
-        sex_field = self._dropdown("Sex", "sex", sex_options)
-        activity_field = self._dropdown("Activity level", "activity_level", activity_options)
+        sex_field = self._dropdown("Sexo", "sex", sex_options)
+        activity_field = self._dropdown("Nivel de actividad", "activity_level", activity_options)
 
         form = card(
             ft.Row([name_field], spacing=8),
@@ -1291,7 +1293,11 @@ class ProfileView:
             ft.Row([sex_field, activity_field], spacing=8),
             ft.Container(height=6),
             ft.Row(
-                [primary_button("Save profile", on_click=lambda _: self._save_form(), expand=True)],
+                [
+                    primary_button(
+                        "Guardar perfil", on_click=lambda _: self._save_form(), expand=True
+                    )
+                ],
             ),
             padding=14,
         )
@@ -1302,7 +1308,7 @@ class ProfileView:
                     content=ft.Row(
                         [
                             ft.Icon(ft.Icons.ARROW_BACK, color=C.accent, size=16),
-                            ft.Text("Home", color=C.accent, size=12, weight=ft.FontWeight.W_700),
+                            ft.Text("Inicio", color=C.accent, size=12, weight=ft.FontWeight.W_700),
                         ],
                         spacing=4,
                         tight=True,
@@ -1311,7 +1317,7 @@ class ProfileView:
                     padding=ft.padding.symmetric(vertical=6),
                     ink=True,
                 ),
-                ft.Text("Settings", size=18, weight=ft.FontWeight.W_900, color=C.text),
+                ft.Text("Ajustes", size=18, weight=ft.FontWeight.W_900, color=C.text),
                 ft.Container(width=60),
             ],
             alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
@@ -1322,35 +1328,35 @@ class ProfileView:
             [
                 header,
                 ft.Container(height=10),
-                section_title("Your data"),
+                section_title("Tus datos"),
                 ft.Container(height=4),
                 form,
                 ft.Container(height=14),
-                section_title("Derived metrics"),
+                section_title("Métricas derivadas"),
                 ft.Container(height=4),
                 self._metrics_row(profile, latest_weight),
                 ft.Container(height=14),
-                section_title("Weight"),
+                section_title("Peso"),
                 ft.Container(height=4),
                 self._weight_section(),
                 ft.Container(height=14),
-                section_title("Appearance"),
+                section_title("Apariencia"),
                 ft.Container(height=4),
                 self._appearance_section(),
                 ft.Container(height=14),
-                section_title("Waist"),
+                section_title("Cintura"),
                 ft.Container(height=4),
                 self._waist_section(),
                 ft.Container(height=14),
-                section_title("Coach"),
+                section_title("Entrenador"),
                 ft.Container(height=4),
                 self._coach_section(),
                 ft.Container(height=14),
-                section_title("Backup"),
+                section_title("Copia de seguridad"),
                 ft.Container(height=4),
                 self._backup_section(),
                 ft.Container(height=14),
-                section_title("Data"),
+                section_title("Datos"),
                 ft.Container(height=4),
                 self._guides_section(),
                 self._danger_zone(),

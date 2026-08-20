@@ -78,13 +78,13 @@ BAR_MAX_WIDTH = 150
 
 #: One chart at a time. Three stacked charts on a phone means none get read.
 CHART_KINDS: tuple[tuple[str, str], ...] = (
-    ("e1rm", "Est. 1RM (kg)"),
-    ("weight", "Max kg"),
-    ("volume", "Volume (kg)"),
+    ("e1rm", "1RM est. (kg)"),
+    ("weight", "Máx kg"),
+    ("volume", "Volumen (kg)"),
 )
 
-#: Which glossary entry the `?` beside "Progression" should open, per chart.
-#: "Max kg" is the only one of the three that needs no explaining, so it
+#: Which glossary entry the `?` beside "Progresión" should open, per chart.
+#: "Máx kg" is the only one of the three that needs no explaining, so it
 #: borrows the records entry, which defines "heaviest single set".
 CHART_HELP_TOPICS: dict[str, str] = {
     "e1rm": TOPIC_E1RM,
@@ -95,9 +95,9 @@ CHART_HELP_TOPICS: dict[str, str] = {
 #: Tile-width labels for the three records. `analytics.PR_LABELS` is the prose
 #: version and does not fit in a third of a phone screen.
 PR_TILE_LABELS: dict[PRKind, str] = {
-    PRKind.E1RM: "Est. 1RM",
-    PRKind.MAX_WEIGHT: "Heaviest",
-    PRKind.SESSION_VOLUME: "Session vol",
+    PRKind.E1RM: "1RM est.",
+    PRKind.MAX_WEIGHT: "Más pesado",
+    PRKind.SESSION_VOLUME: "Vol. sesión",
 }
 PR_BADGES: dict[PRKind, str] = {
     PRKind.E1RM: "1RM",
@@ -108,9 +108,9 @@ PR_BADGES: dict[PRKind, str] = {
 #: itself has room for three characters; this is the sentence behind them, and
 #: it is the same wording as `help_dialog.METRIC_HELP[TOPIC_RECORDS]`.
 PR_BADGE_TOOLTIPS: dict[PRKind, str] = {
-    PRKind.E1RM: "Best estimated 1RM for this exercise",
-    PRKind.MAX_WEIGHT: "Heaviest single set for this exercise",
-    PRKind.SESSION_VOLUME: "Biggest session total (weight × reps) for this exercise",
+    PRKind.E1RM: "Mejor 1RM estimado de este ejercicio",
+    PRKind.MAX_WEIGHT: "La serie más pesada de este ejercicio",
+    PRKind.SESSION_VOLUME: "Mayor total de sesión (peso × reps) de este ejercicio",
 }
 
 #: Above this a tile shows `12.3k` instead of the figure. Named because the
@@ -154,11 +154,11 @@ def _kg_tooltip(value: float, what: str) -> str:
 
 def _week_label(weeks_back: int) -> str:
     """ISO week keys ("2026-W33") mean nothing at a glance; offsets do."""
-    return "This week" if weeks_back == 0 else f"−{weeks_back}w"
+    return "Esta semana" if weeks_back == 0 else f"−{weeks_back}w"
 
 
 def _sessions_label(count: int) -> str:
-    return plural(count, "session")
+    return plural(count, "sesión", "sesiones")
 
 
 def _set_label(one_set: dict) -> str:
@@ -288,7 +288,7 @@ class HistoryView:
             top = ranked[0][1]
             rows = [self._muscle_bar(m, v, top) for m, v in ranked]
         else:
-            rows = [muted_text("No working sets logged this week", size=11)]
+            rows = [muted_text("Sin series efectivas esta semana", size=11)]
 
         # The unresolved keys are counted over the whole window, not the
         # selected week — say so instead of letting them read as this week's.
@@ -303,14 +303,14 @@ class HistoryView:
             names = ", ".join(list(mv.unattributed)[:2])
             extra = len(mv.unattributed) - 2
             if extra > 0:
-                names += f" and {plural(extra, 'other')}"
+                names += f" y {plural(extra, 'otro')}"
             # Phrased so no verb has to agree with a count: "1 set ... are not
             # counted ... Not A Real Exercise have no muscle data" is what the
             # obvious wording produced on a one-row database. Nouns only.
             notes.append(
                 ft.Text(
-                    f"Not counted above: {plural(mv.unattributed_sets, 'set')} in the "
-                    f"last {plural(MUSCLE_WEEKS, 'week')}. No muscle data for {names}.",
+                    f"Sin contar arriba: {plural(mv.unattributed_sets, 'serie')} de "
+                    f"las últimas {plural(MUSCLE_WEEKS, 'semana')}. Sin datos musculares de {names}.",
                     size=10,
                     color=C.warning,
                     max_lines=3,
@@ -319,8 +319,8 @@ class HistoryView:
         if mv.partial:
             notes.append(
                 ft.Text(
-                    f"Partly counted: {plural(len(mv.partial), 'combined exercise')} — "
-                    "only the muscles that could be identified.",
+                    f"Contado a medias: {plural(len(mv.partial), 'ejercicio combinado', 'ejercicios combinados')} — "
+                    "solo los músculos que se pudieron identificar.",
                     size=10,
                     color=C.text_muted,
                     max_lines=3,
@@ -330,10 +330,10 @@ class HistoryView:
         return card(
             ft.Row(
                 [
-                    section_title("Weekly sets by muscle"),
+                    section_title("Series semanales por músculo"),
                     ft.Row(
                         [
-                            ft.Text(plural(MUSCLE_WEEKS, "week"), size=10, color=C.text_muted),
+                            ft.Text(plural(MUSCLE_WEEKS, "semana"), size=10, color=C.text_muted),
                             metric_help_icon(self.page, TOPIC_MUSCLE),
                         ],
                         spacing=2,
@@ -344,7 +344,7 @@ class HistoryView:
                 alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
             ),
-            muted_text("A muscle worked directly counts 1 set, one that assists counts ½", size=10),
+            muted_text("Un músculo trabajado directo cuenta 1 serie; uno que asiste, ½", size=10),
             ft.Container(height=6),
             chips,
             ft.Container(height=8),
@@ -372,7 +372,7 @@ class HistoryView:
             ft.Row(
                 [
                     ft.Icon(ft.Icons.EDIT_NOTE, size=16, color=C.accent),
-                    section_title("Session notes"),
+                    section_title("Notas de sesión"),
                 ],
                 spacing=6,
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
@@ -421,12 +421,12 @@ class HistoryView:
             ft.Row(
                 [
                     ft.Icon(ft.Icons.TIMER_OUTLINED, size=16, color=C.accent),
-                    section_title("Session times"),
+                    section_title("Tiempos de sesión"),
                 ],
                 spacing=6,
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
             ),
-            muted_text("Only the sessions you timed — the rest were never clocked", size=10),
+            muted_text("Solo las sesiones cronometradas — el resto no se midió", size=10),
             ft.Container(height=6),
             *[
                 ft.Container(
@@ -463,7 +463,7 @@ class HistoryView:
         return ft.Column(
             [
                 self._title_row(),
-                muted_text("Tap an exercise to see records and progression"),
+                muted_text("Toca un ejercicio para ver marcas y progresión"),
                 ft.Container(height=20),
                 # A day can carry a note with nothing logged against it, and
                 # that day is exactly the one this screen would otherwise call
@@ -472,7 +472,7 @@ class HistoryView:
                 card(
                     ft.Text("📭", size=28, text_align=ft.TextAlign.CENTER),
                     ft.Text(
-                        "Start training to see your progress",
+                        "Entrena para empezar a ver tu progreso",
                         size=12,
                         color=C.text_muted,
                         text_align=ft.TextAlign.CENTER,
@@ -497,7 +497,7 @@ class HistoryView:
         return ft.Row(
             [
                 ft.Text(
-                    "History & Progress",
+                    "Historial y progreso",
                     size=22,
                     weight=ft.FontWeight.W_900,
                     color=C.text,
@@ -516,7 +516,7 @@ class HistoryView:
             # Without this the exception escapes `build()` and History renders
             # as a blank screen, which reads as a crash rather than as "the
             # server is off".
-            return db_error_screen("History & Progress", exc, on_retry=self._reload)
+            return db_error_screen("Historial y progreso", exc, on_retry=self._reload)
         notes_card = self._notes_card(self._session_notes())
         times_card = self._times_card(self._durations())
         if not summary:
@@ -588,9 +588,9 @@ class HistoryView:
                         alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                     ),
                     tooltip=(
-                        _kg_tooltip(e1rm, "Estimated one-rep max")
+                        _kg_tooltip(e1rm, "Máximo estimado a una repetición")
                         if e1rm
-                        else "No estimated one-rep max yet for this exercise"
+                        else "Aún no hay 1RM estimado para este ejercicio"
                     ),
                     bgcolor=C.bg_surface,
                     border=ft.border.all(1, C.border),
@@ -605,12 +605,12 @@ class HistoryView:
         return ft.Column(
             [
                 self._title_row(),
-                muted_text("Tap an exercise to see records and progression"),
+                muted_text("Toca un ejercicio para ver marcas y progresión"),
                 ft.Container(height=10),
                 self._muscle_card(entries),
                 times_card,
                 notes_card,
-                section_title("Exercises"),
+                section_title("Ejercicios"),
                 ft.Container(height=6),
                 *items,
             ],
@@ -639,7 +639,7 @@ class HistoryView:
                         weight=ft.FontWeight.W_700,
                         color=C.text_secondary,
                     ),
-                    ft.Text(record.date if record else "no data", size=8, color=C.text_muted),
+                    ft.Text(record.date if record else "sin datos", size=8, color=C.text_muted),
                 ],
                 spacing=0,
                 horizontal_alignment=ft.CrossAxisAlignment.CENTER,
@@ -653,9 +653,9 @@ class HistoryView:
             # likely to be showing `12.3k`. The tooltip carries the real number
             # and the sentence behind the three-letter label.
             tooltip=(
-                f"{PR_BADGE_TOOLTIPS[kind]} — {_kg(record.value)} on {record.date}"
+                f"{PR_BADGE_TOOLTIPS[kind]} — {_kg(record.value)} el {record.date}"
                 if record
-                else f"{PR_BADGE_TOOLTIPS[kind]} — nothing logged yet"
+                else f"{PR_BADGE_TOOLTIPS[kind]} — nada registrado aún"
             ),
         )
 
@@ -769,7 +769,7 @@ class HistoryView:
             # Says whose time it is. The duration belongs to the whole day, not
             # to this exercise, and a bare "1h 12m" on a Bench Press card reads
             # like an hour of bench pressing.
-            tooltip="How long the whole session that day lasted",
+            tooltip="Cuánto duró la sesión entera de ese día",
         )
 
     def _note_line(self, text: str, *, whole_session: bool) -> ft.Control:
@@ -805,7 +805,7 @@ class HistoryView:
             border_radius=Radius.sm,
             padding=8,
             margin=ft.margin.only(top=6),
-            tooltip=("Note on the whole session" if whole_session else "Note on this exercise"),
+            tooltip=("Nota de la sesión entera" if whole_session else "Nota de este ejercicio"),
         )
 
     def _session_card(
@@ -842,7 +842,7 @@ class HistoryView:
             # `🏆 vol` is three characters of internal shorthand sitting on a
             # card with no key anywhere near it. The badge stays — it has to fit
             # a header row — but it now carries the sentence, and the `?` beside
-            # "Personal records" carries all three.
+            # "Marcas personales" carries all three.
             header.append(
                 ft.Container(
                     content=ft.Text(
@@ -851,7 +851,7 @@ class HistoryView:
                     bgcolor=C.bg_sunken,
                     border_radius=Radius.sm,
                     padding=ft.padding.symmetric(horizontal=6, vertical=2),
-                    tooltip=f"Still your best: {PR_BADGE_TOOLTIPS[kind]}",
+                    tooltip=f"Sigue siendo tu mejor marca: {PR_BADGE_TOOLTIPS[kind]}",
                 )
             )
 
@@ -965,12 +965,12 @@ class HistoryView:
 
         return [
             ft.Container(height=14),
-            self._section_with_help("Plan from this 1RM", TOPIC_E1RM),
+            self._section_with_help("Planificar desde este 1RM", TOPIC_E1RM),
             ft.Container(height=6),
             card(
                 muted_text(
-                    "Percentages of the estimated 1RM above, rounded to weights "
-                    "you can actually load. The reps are an estimate, not a target.",
+                    "Porcentajes del 1RM estimado de arriba, redondeados a pesos que "
+                    "puedes montar de verdad. Las reps son una estimación, no un objetivo.",
                     size=10,
                 ),
                 ft.Container(height=8),
@@ -1001,7 +1001,7 @@ class HistoryView:
 
         headline = _sessions_label(len(hist))
         if records.e1rm:
-            headline += f" · best estimated 1RM {_kg(records.e1rm.value)}"
+            headline += f" · mejor 1RM estimado {_kg(records.e1rm.value)}"
 
         return ft.Column(
             [
@@ -1010,7 +1010,7 @@ class HistoryView:
                         [
                             ft.Icon(ft.Icons.ARROW_BACK, color=C.accent, size=16),
                             ft.Text(
-                                "Exercises", color=C.accent, size=12, weight=ft.FontWeight.W_700
+                                "Ejercicios", color=C.accent, size=12, weight=ft.FontWeight.W_700
                             ),
                         ],
                         spacing=4,
@@ -1023,7 +1023,7 @@ class HistoryView:
                 ft.Text(name, size=20, weight=ft.FontWeight.W_900, color=C.text, max_lines=2),
                 muted_text(headline, size=12),
                 ft.Container(height=12),
-                self._section_with_help("Personal records", TOPIC_RECORDS),
+                self._section_with_help("Marcas personales", TOPIC_RECORDS),
                 ft.Container(height=6),
                 ft.Row(
                     [
@@ -1035,10 +1035,10 @@ class HistoryView:
                     vertical_alignment=ft.CrossAxisAlignment.STRETCH,
                 ),
                 ft.Container(height=14),
-                # The chart's own chips are "Est. 1RM", "Max kg" and "Volume",
+                # The chart's own chips are "1RM est.", "Máx kg" and "Volumen",
                 # so the `?` follows whichever one is selected rather than
                 # always explaining the first.
-                self._section_with_help("Progression", CHART_HELP_TOPICS[self.chart_kind]),
+                self._section_with_help("Progresión", CHART_HELP_TOPICS[self.chart_kind]),
                 ft.Container(height=6),
                 ft.Row([self._chart_chip(k, lbl) for k, lbl in CHART_KINDS], spacing=6, wrap=True),
                 ft.Container(height=8),
@@ -1048,7 +1048,7 @@ class HistoryView:
                 ),
                 *self._percent_table(records.e1rm.value if records.e1rm else None),
                 ft.Container(height=14),
-                section_title("Session detail"),
+                section_title("Detalle de la sesión"),
                 ft.Container(height=6),
                 *[
                     self._session_card(

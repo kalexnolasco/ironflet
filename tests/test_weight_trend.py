@@ -151,8 +151,8 @@ def test_con_datos_las_fichas_llegan_a_pantalla():
     assert chips, "the trend was computed and then never rendered"
 
     texto = " ".join(t for c in chips for t in _textos(c))
-    assert "7-DAY AVG" in texto
-    assert "PER WEEK" in texto
+    assert "MEDIA 7 DÍAS" in texto
+    assert "POR SEMANA" in texto
     assert "kg" in texto
 
 
@@ -160,4 +160,4 @@ def test_con_pocos_dias_dice_que_faltan_datos():
     """Silence would read as "no change"; it has to say why there is no number."""
     datos = serie([(3, 82.0), (2, 81.0), (1, 81.5), (0, 80.8)])
     texto = " ".join(t for c in vista(datos)._trend_chips(datos) for t in _textos(c))
-    assert "needs" in texto.lower()
+    assert "a los" in texto.lower()

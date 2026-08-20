@@ -66,7 +66,7 @@ def build_guide_dialog(page, guide_id: str) -> ft.AlertDialog:
         ),
         actions=[
             ft.TextButton(
-                "Close",
+                "Cerrar",
                 on_click=lambda _: page.close(dialog),
                 style=ft.ButtonStyle(color=C.accent),
             ),

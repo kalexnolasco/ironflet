@@ -41,29 +41,30 @@ import backup
 from backup import BACKUP_VERSION, BackupError, export_all, import_all
 from storage import Storage
 from theme import C, card, ghost_button, muted_text, primary_button, section_title
+from views.shared_ui import plural
 
 # Display order and grouping of `backup.TABLES`. Keys not listed here still get
 # rendered — `ordered_counts()` appends them under "Other" — so a table added to
 # backup.py appears on screen even before anyone updates this tuple.
 TABLE_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("Training", ("workouts", "weights", "profile", "prefs")),
-    ("Nutrition", ("foods", "servings", "food_log", "nutrition_targets")),
-    ("Routines", ("routines", "routine_phases", "routine_days", "routine_exercises")),
+    ("Entreno", ("workouts", "weights", "profile", "prefs")),
+    ("Nutrición", ("foods", "servings", "food_log", "nutrition_targets")),
+    ("Rutinas", ("routines", "routine_phases", "routine_days", "routine_exercises")),
 )
 
 TABLE_LABELS = {
-    "workouts": "Workouts",
-    "weights": "Body weight",
-    "profile": "Profile",
-    "prefs": "Preferences",
-    "foods": "Foods",
-    "servings": "Servings",
-    "food_log": "Food diary",
-    "nutrition_targets": "Nutrition targets",
-    "routines": "Routines",
-    "routine_phases": "Routine phases",
-    "routine_days": "Routine days",
-    "routine_exercises": "Routine exercises",
+    "workouts": "Entrenos",
+    "weights": "Peso corporal",
+    "profile": "Perfil",
+    "prefs": "Preferencias",
+    "foods": "Alimentos",
+    "servings": "Raciones",
+    "food_log": "Diario de comida",
+    "nutrition_targets": "Objetivos de nutrición",
+    "routines": "Rutinas",
+    "routine_phases": "Fases de rutina",
+    "routine_days": "Días de rutina",
+    "routine_exercises": "Ejercicios de rutina",
 }
 
 # Tables whose entire content is one row: printing "5" for a profile that has
@@ -176,7 +177,7 @@ def ordered_counts(counts: dict[str, int]) -> list[tuple[str, str, int]]:
         for key in keys
         if key in counts
     ]
-    out += [("Other", k, int(counts[k] or 0)) for k in sorted(counts) if k not in known]
+    out += [("Otros", k, int(counts[k] or 0)) for k in sorted(counts) if k not in known]
     return out
 
 
@@ -369,7 +370,7 @@ class DataView:
             dump = export_all(self.store)
             payload = backup.dumps(dump).encode("utf-8")
         except Exception as exc:
-            self._set_status("error", f"Could not read the database: {exc}")
+            self._set_status("error", f"No se pudo leer la base de datos: {exc}")
             self._refresh()
             return
 
@@ -394,20 +395,20 @@ class DataView:
         if local_error:
             self._set_status(
                 "error",
-                f"Could not write to app storage ({local_error}). "
-                "Pick a destination in the dialog to save the backup.",
+                f"No se pudo escribir en el almacenamiento de la app ({local_error}). "
+                "Elige un destino en el diálogo para guardar la copia.",
             )
         else:
             self._set_status(
                 "success",
                 f"{rows} rows · {format_size(len(payload))} saved to {self._last_export}. "
-                "Choose a destination to keep a second copy.",
+                "Elige un destino para guardar una segunda copia.",
             )
         self._refresh()
 
         try:
             self._save_picker.save_file(
-                dialog_title="Save IronFlet backup",
+                dialog_title="Guardar copia de IronFlet",
                 file_name=name,
                 file_type=ft.FilePickerFileType.CUSTOM,
                 allowed_extensions=["json"],
@@ -418,7 +419,7 @@ class DataView:
             if not local_error:
                 self._set_status(
                     "info",
-                    f"Backup saved to {self._last_export}. This device has no save dialog ({exc}).",
+                    f"Copia guardada en {self._last_export}. Este dispositivo no tiene diálogo de guardado ({exc}).",
                 )
                 self._refresh()
 
@@ -429,13 +430,17 @@ class DataView:
             # Cancelled, or a platform that silently declines. Not an error:
             # the app-storage copy written before the dialog is intact.
             if self._last_export:
-                self._set_status("info", f"No second copy made. Backup kept at {self._last_export}")
+                self._set_status(
+                    "info", f"Sin segunda copia. La copia queda en {self._last_export}"
+                )
             else:
-                self._set_status("error", "Export cancelled and no copy could be written.")
+                self._set_status(
+                    "error", "Exportación cancelada y no se pudo escribir ninguna copia."
+                )
             self._refresh()
             return
         if payload is None:
-            self._set_status("error", "Nothing left to write — run Export again.")
+            self._set_status("error", "No queda nada que escribir — vuelve a Exportar.")
             self._refresh()
             return
 
@@ -448,9 +453,9 @@ class DataView:
         try:
             target.write_bytes(payload)
         except OSError as exc:
-            self._set_status("error", f"Could not write {target.name}: {exc}")
+            self._set_status("error", f"No se pudo escribir {target.name}: {exc}")
         else:
-            self._set_status("success", f"Backup saved to {target}")
+            self._set_status("success", f"Copia guardada en {target}")
         self._refresh()
 
     # ── import ───────────────────────────────────────────────
@@ -461,18 +466,18 @@ class DataView:
             # the user in a picker where every file is greyed out. The content
             # check below is the one that actually matters anyway.
             self._open_picker.pick_files(
-                dialog_title="Open IronFlet backup",
+                dialog_title="Abrir copia de IronFlet",
                 allow_multiple=False,
                 file_type=ft.FilePickerFileType.ANY,
             )
         except Exception as exc:
-            self._set_status("error", f"Could not open the file picker: {exc}")
+            self._set_status("error", f"No se pudo abrir el selector de archivos: {exc}")
             self._refresh()
 
     def _on_open_result(self, e: ft.FilePickerResultEvent):
         files = e.files or []
         if not files:
-            self._set_status("info", "Import cancelled. Nothing was changed.")
+            self._set_status("info", "Importación cancelada. No se cambió nada.")
             self._refresh()
             return
         picked = files[0]
@@ -482,8 +487,8 @@ class DataView:
             # open(None).
             self._set_status(
                 "error",
-                "This build cannot read a file the browser picked. "
-                "Import from the Android or desktop app.",
+                "Esta versión no puede leer un archivo elegido en el navegador. "
+                "Importa desde la app de Android o de escritorio.",
             )
             self._refresh()
             return
@@ -492,7 +497,7 @@ class DataView:
             raw = Path(picked.path).read_bytes()
             data = backup.loads(raw)  # BackupError on truncated/corrupt JSON
         except (OSError, BackupError) as exc:
-            self._set_status("error", f"Could not read {picked.name}: {exc}")
+            self._set_status("error", f"No se pudo leer {picked.name}: {exc}")
             self._refresh()
             return
 
@@ -508,18 +513,18 @@ class DataView:
         """
         app_id = data.get("app")
         if app_id not in backup.ACCEPTED_APPS:
-            return f"This file was written by '{app_id or 'something else'}', not IronFlet."
+            return f"Este archivo lo escribió '{app_id or 'otra cosa'}', no IronFlet."
         try:
             version = int(data.get("version") or 0)
         except (TypeError, ValueError):
-            return "This backup has no readable version number."
+            return "Esta copia no tiene un número de versión legible."
         if version > BACKUP_VERSION:
             return (
-                f"Backup format v{version} is newer than this app understands "
-                f"(v{BACKUP_VERSION}). Update IronFlet first."
+                f"El formato v{version} de la copia es más nuevo de lo que esta app entiende "
+                f"(v{BACKUP_VERSION}). Actualiza IronFlet primero."
             )
         if not any(count_document(data).values()):
-            return "This backup contains no data."
+            return "Esta copia no contiene datos."
         return None
 
     def _open_import_preview(self, filename: str, size_bytes: int, data: dict):
@@ -538,7 +543,7 @@ class DataView:
                 [
                     ft.Text("", width=132),
                     ft.Text(
-                        "IN FILE",
+                        "EN EL ARCHIVO",
                         size=9,
                         width=54,
                         color=C.text_muted,
@@ -546,7 +551,7 @@ class DataView:
                         text_align=ft.TextAlign.RIGHT,
                     ),
                     ft.Text(
-                        "ON DEVICE",
+                        "EN EL MÓVIL",
                         size=9,
                         width=64,
                         color=C.text_muted,
@@ -597,7 +602,7 @@ class DataView:
         # import will do. "Erase" over an empty database is a lie the user
         # learns to click through, and then it is not a warning any more.
         confirm = ft.TextButton(
-            "Erase and import" if losing else "Import",
+            "Borrar e importar" if losing else "Importar",
             disabled=True,
             style=ft.ButtonStyle(color=C.danger if losing else C.accent),
             on_click=lambda _: self._do_import(data),
@@ -609,9 +614,9 @@ class DataView:
 
         ack = ft.Checkbox(
             label=(
-                "I understand the data on this device will be deleted"
+                "Entiendo que los datos de este dispositivo se borrarán"
                 if losing
-                else "Restore this backup onto this device"
+                else "Restaurar esta copia en este dispositivo"
             ),
             value=False,
             on_change=toggle,
@@ -631,7 +636,7 @@ class DataView:
                     overflow=ft.TextOverflow.ELLIPSIS,
                 ),
                 muted_text(
-                    f"Exported {format_timestamp(data)}"
+                    f"Exportada {format_timestamp(data)}"
                     f"  ·  v{data.get('version', '?')}"
                     f"  ·  {data.get('engine', '?')}"
                     f"  ·  {format_size(size_bytes)}",
@@ -662,14 +667,14 @@ class DataView:
             if losing:
                 tone = C.danger
                 warning = (
-                    f"Importing deletes the {losing} row{'' if losing == 1 else 's'} on this "
-                    "device and replaces them with the file. There is no undo."
+                    f"Importar borra {plural(losing, 'fila')} de este dispositivo y las "
+                    "reemplaza con el archivo. No hay deshacer."
                 )
             else:
                 tone = C.warning
                 warning = (
-                    "This device has no data yet, so nothing is lost — the file's "
-                    "contents are written in as they are."
+                    "Este dispositivo aún no tiene datos, así que no se pierde nada — "
+                    "el contenido del archivo se escribe tal cual."
                 )
             body += [
                 ft.Container(height=10),
@@ -700,7 +705,7 @@ class DataView:
         dlg = ft.AlertDialog(
             modal=True,  # a wipe is not something to dismiss by tapping outside
             bgcolor=C.bg_surface,
-            title=ft.Text("Import backup", size=16, weight=ft.FontWeight.W_900, color=C.text),
+            title=ft.Text("Importar copia", size=16, weight=ft.FontWeight.W_900, color=C.text),
             content=ft.Container(
                 content=ft.Column(body, spacing=2, tight=True, scroll=ft.ScrollMode.AUTO),
                 width=330,
@@ -708,7 +713,7 @@ class DataView:
             ),
             actions=[
                 ft.TextButton(
-                    "Cancel",
+                    "Cancelar",
                     on_click=lambda _: self._cancel_import(),
                     style=ft.ButtonStyle(color=C.text_secondary),
                 ),
@@ -721,7 +726,7 @@ class DataView:
 
     def _cancel_import(self):
         self._close_dialog()
-        self._set_status("info", "Import cancelled. Nothing was changed.")
+        self._set_status("info", "Importación cancelada. No se cambió nada.")
         self._refresh()
 
     def _do_import(self, data: dict):
@@ -732,17 +737,17 @@ class DataView:
             # backup.py parses the whole document before it opens a session, and
             # keeps the wipe inside the write transaction — so "nothing was
             # replaced" is a promise the module makes, not optimism here.
-            self._set_status("error", f"Import refused, nothing was replaced: {exc}")
+            self._set_status("error", f"Importación rechazada, no se reemplazó nada: {exc}")
             self._refresh()
             return
         except Exception as exc:
-            self._set_status("error", f"Import failed, nothing was replaced: {exc}")
+            self._set_status("error", f"La importación falló, no se reemplazó nada: {exc}")
             self._refresh()
             return
 
         # import_all() already re-synced data.ROUTINES and the active routine
         # pref; re-doing it here would only risk disagreeing with it.
-        self._set_status("success", f"Restored {backup.summary_line(counts)}.")
+        self._set_status("success", f"Restaurado: {backup.summary_line(counts)}.")
         self._load_counts()
         self._refresh()
 
@@ -765,33 +770,37 @@ class DataView:
         self._dl_running = True
         self._dl_done = 0
         self._dl_total = asset_manager.total_file_count()
-        self._set_status("info", f"Downloading exercise images ({IMAGE_BUNDLE_LABEL})…")
+        self._set_status("info", f"Descargando imágenes de ejercicios ({IMAGE_BUNDLE_LABEL})…")
         self._refresh()
         try:
             ok, failed = await asset_manager.download_all(progress_cb=self._on_dl_progress)
         except Exception as exc:
             self._dl_running = False
-            self._set_status("error", f"Image download failed: {exc}")
+            self._set_status("error", f"Falló la descarga de imágenes: {exc}")
             self._refresh()
             return
         self._dl_running = False
         if ok and not failed:
             self._set_status("success", f"{ok} exercise images installed.")
         elif ok:
-            self._set_status("error", f"Partial download: {ok} saved, {failed} missing. Retry.")
+            self._set_status(
+                "error", f"Descarga parcial: {ok} guardadas, {failed} faltan. Reintenta."
+            )
         else:
             # download_all swallows network errors and returns (0, total).
-            self._set_status("error", "Download failed. Check the connection and retry.")
+            self._set_status("error", "Falló la descarga. Revisa la conexión y reintenta.")
         self._refresh()
 
     def _clear_images(self, _=None):
         try:
             asset_manager.clear_cache()
         except OSError as exc:
-            self._set_status("error", f"Could not clear the image cache: {exc}")
+            self._set_status("error", f"No se pudo vaciar la caché de imágenes: {exc}")
         else:
             self._dl_done = 0
-            self._set_status("info", f"Exercise images removed ({IMAGE_BUNDLE_LABEL} freed).")
+            self._set_status(
+                "info", f"Imágenes de ejercicios borradas ({IMAGE_BUNDLE_LABEL} liberados)."
+            )
         self._refresh()
 
     # ── sections ─────────────────────────────────────────────
@@ -802,7 +811,7 @@ class DataView:
                     content=ft.Row(
                         [
                             ft.Icon(ft.Icons.ARROW_BACK, color=C.accent, size=16),
-                            ft.Text("Profile", color=C.accent, size=12, weight=ft.FontWeight.W_700),
+                            ft.Text("Ajustes", color=C.accent, size=12, weight=ft.FontWeight.W_700),
                         ],
                         spacing=4,
                         tight=True,
@@ -811,9 +820,9 @@ class DataView:
                     padding=ft.padding.symmetric(vertical=6),
                     ink=True,
                 ),
-                ft.Text("Backup & data", size=22, weight=ft.FontWeight.W_900, color=C.text),
+                ft.Text("Copia y datos", size=22, weight=ft.FontWeight.W_900, color=C.text),
                 ft.Text(
-                    "Move everything between your phone and your computer.",
+                    "Mueve todo entre tu móvil y tu ordenador.",
                     size=11,
                     color=C.text_secondary,
                 ),
@@ -866,9 +875,9 @@ class DataView:
     def _current_data_card(self) -> ft.Control:
         if self._counts_error:
             return card(
-                section_title("On this device"),
+                section_title("En este dispositivo"),
                 ft.Text(
-                    f"The database could not be read: {self._counts_error}",
+                    f"No se pudo leer la base de datos: {self._counts_error}",
                     size=11,
                     color=C.danger,
                     weight=ft.FontWeight.W_700,
@@ -907,7 +916,7 @@ class DataView:
             rows.append(ft.Container(height=6))
             rows.append(
                 ft.Text(
-                    "Not counted on this screen: " + ", ".join(UNCOUNTED_TABLES),
+                    "Sin contar en esta pantalla: " + ", ".join(UNCOUNTED_TABLES),
                     size=10,
                     color=C.warning,
                     weight=ft.FontWeight.W_700,
@@ -917,7 +926,7 @@ class DataView:
         return card(
             ft.Row(
                 [
-                    section_title("On this device"),
+                    section_title("En este dispositivo"),
                     ft.Text(
                         f"{sum(self._counts.values())} rows · {format_size(self._counts_bytes)}",
                         size=10,
@@ -927,17 +936,18 @@ class DataView:
                 ],
                 alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
             ),
-            muted_text(f"Every one of the {len(self._counts)} tables a backup carries.", size=10),
+            muted_text(f"Las {len(self._counts)} tablas que lleva una copia, una a una.", size=10),
             *rows,
         )
 
     def _export_card(self) -> ft.Control:
         children: list[ft.Control] = [
-            section_title("Export"),
+            section_title("Exportar"),
             ft.Text(
-                "The file is written to this app's storage first, then you pick where "
-                "to copy it. If no dialog opens, this device has no folder picker — "
-                "the copy in app storage is still a complete backup.",
+                "El archivo se escribe primero en el almacenamiento de la app y luego "
+                "eliges dónde copiarlo. Si no se abre ningún diálogo, este "
+                "dispositivo no tiene selector de carpetas — la copia interna ya es "
+                "una copia completa.",
                 size=11,
                 color=C.text_secondary,
             ),
@@ -945,7 +955,9 @@ class DataView:
         if self._last_export is not None:
             children += [
                 ft.Container(height=4),
-                ft.Text("Last export", size=9, color=C.text_muted, weight=ft.FontWeight.W_800),
+                ft.Text(
+                    "Última exportación", size=9, color=C.text_muted, weight=ft.FontWeight.W_800
+                ),
                 ft.Text(
                     str(self._last_export),
                     size=10,
@@ -957,22 +969,22 @@ class DataView:
         children += [
             ft.Container(height=8),
             primary_button(
-                "Export to file", icon=ft.Icons.SAVE_ALT, on_click=self._export, expand=True
+                "Exportar a archivo", icon=ft.Icons.SAVE_ALT, on_click=self._export, expand=True
             ),
         ]
         return card(*children)
 
     def _import_card(self) -> ft.Control:
         return card(
-            section_title("Import"),
+            section_title("Importar"),
             ft.Text(
-                "Restores a backup file. You see what it holds and what it replaces "
-                "before anything is touched.",
+                "Restaura un archivo de copia. Ves lo que trae y lo que reemplaza "
+                "antes de tocar nada.",
                 size=11,
                 color=C.text_secondary,
             ),
             ft.Container(height=8),
-            ghost_button("Choose backup file…", on_click=self._pick_import, expand=True),
+            ghost_button("Elegir archivo de copia…", on_click=self._pick_import, expand=True),
         )
 
     def _images_card(self) -> ft.Control:
@@ -1000,20 +1012,20 @@ class DataView:
         # had no caller anywhere.
         faltan = asset_manager.missing_summary()
         if installed:
-            state, tone = "Installed", C.success
+            state, tone = "Instaladas", C.success
         elif self._dl_running:
-            state, tone = "Downloading…", C.accent
+            state, tone = "Descargando…", C.accent
         elif faltan and asset_manager.status().present:
             state, tone = faltan, C.warning
         else:
-            state, tone = f"Not installed · {IMAGE_BUNDLE_LABEL}", C.text_secondary
+            state, tone = f"Sin instalar · {IMAGE_BUNDLE_LABEL}", C.text_secondary
 
         buttons: list[ft.Control] = []
         if installed:
-            buttons.append(ghost_button("Remove", on_click=self._clear_images, expand=True))
+            buttons.append(ghost_button("Borrar", on_click=self._clear_images, expand=True))
         buttons.append(
             primary_button(
-                "Re-download" if installed else "Download",
+                "Volver a descargar" if installed else "Descargar",
                 icon=ft.Icons.CLOUD_DOWNLOAD,
                 on_click=self._download_images,
                 expand=True,
@@ -1021,11 +1033,11 @@ class DataView:
         )
 
         return card(
-            section_title("Exercise images"),
+            section_title("Imágenes de ejercicios"),
             ft.Text(
-                "Photos are not shipped inside the app — they download once "
-                f"({IMAGE_BUNDLE_LABEL}), so use Wi-Fi. They are not part of a backup: "
-                "download them again on a new device.",
+                "Las fotos no van dentro de la app — se descargan una vez "
+                f"({IMAGE_BUNDLE_LABEL}), así que usa Wi-Fi. No forman parte de la copia: "
+                "descárgalas de nuevo en un dispositivo nuevo.",
                 size=11,
                 color=C.text_secondary,
             ),

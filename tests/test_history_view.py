@@ -178,8 +178,8 @@ def test_the_muscle_note_has_no_verb_to_disagree_with_its_count():
     """
     one = make_view([entry("2026-08-10", [work(40, 10)], exercise="Not A Real Exercise")])
     rendered = blob(one.build())
-    assert "Not counted above: 1 set in the last 4 weeks." in rendered
-    for wrong in (" are not counted", " have no muscle data", "1 set are"):
+    assert "Sin contar arriba: 1 serie de las últimas 4 semanas." in rendered
+    for wrong in (" are not counted", " have no muscle data", "1 serie son"):
         assert wrong not in rendered
 
     many = make_view(
@@ -188,7 +188,7 @@ def test_the_muscle_note_has_no_verb_to_disagree_with_its_count():
             entry("2026-08-11", [work(40, 10)], exercise="Also Not Real"),
         ]
     )
-    assert "Not counted above: 3 sets in the last 4 weeks." in blob(many.build())
+    assert "Sin contar arriba: 3 series de las últimas 4 semanas." in blob(many.build())
 
 
 # ── jargon ──────────────────────────────────────────────────────────────
@@ -201,7 +201,7 @@ def test_the_muscle_card_does_not_say_unmapped():
     assert "unmapped" not in rendered
     assert "attributed" not in rendered
     # And it says what actually happened instead.
-    assert "no muscle data" in rendered
+    assert "sin datos musculares" in rendered
 
 
 def test_the_list_says_what_unit_the_big_number_is_in():
@@ -209,7 +209,7 @@ def test_the_list_says_what_unit_the_big_number_is_in():
     tree = view.build()
     assert "est. 1RM · kg" in blob(tree)
     # …and the tooltip carries the unshortened figure.
-    assert any("Estimated one-rep max" in t and "kg" in t for t in tooltips(tree))
+    assert any("Máximo estimado a una repetición" in t and "kg" in t for t in tooltips(tree))
 
 
 def test_the_session_summary_prints_kilos_not_a_bare_k():
@@ -232,8 +232,8 @@ def test_every_trophy_carries_the_sentence_behind_it():
     view = make_view([entry("2026-08-10", [work(100, 5)])])
     view.selected = "Squat"
     tips = tooltips(view.build())
-    assert any("Biggest session total" in t for t in tips)
-    assert any("Heaviest single set" in t for t in tips)
+    assert any("Mayor total de sesión" in t for t in tips)
+    assert any("La serie más pesada" in t for t in tips)
 
 
 def test_the_glossary_is_reachable_from_the_screen():
@@ -254,7 +254,7 @@ def test_the_empty_screen_also_offers_the_glossary():
     """Nothing logged yet is exactly when the words are unfamiliar."""
     view = make_view([])
     tips = tooltips(view.build())
-    assert any("numbers" in t.lower() for t in tips)
+    assert any("números" in t.lower() for t in tips)
 
 
 def _walk(node, seen=None):
@@ -284,17 +284,17 @@ _DriverError.__module__ = "sqlalchemy.exc"
 def test_a_dead_database_renders_a_message_not_a_blank_screen():
     view = make_view([], fail=_DriverError("could not connect to server"))
     rendered = blob(view.build())
-    assert "Can't reach the database" in rendered
+    assert "No se llega a la base de datos" in rendered
     assert "could not connect to server" in rendered
     # The heading survives, so this reads as "no data" and not "the app is gone".
-    assert "History & Progress" in rendered
+    assert "Historial y progreso" in rendered
 
 
 def test_the_detail_screen_survives_the_database_too():
     view = make_view([], fail=_DriverError("server closed the connection"))
     view.selected = "Squat"
     rendered = blob(view.build())
-    assert "Can't reach the database" in rendered
+    assert "No se llega a la base de datos" in rendered
     assert "Squat" in rendered
 
 
@@ -303,6 +303,6 @@ def test_the_error_card_offers_a_retry():
     retry = [
         c
         for c in _walk(view.build())
-        if getattr(c, "on_click", None) and any("Try again" in t for t in texts(c))
+        if getattr(c, "on_click", None) and any("Reintentar" in t for t in texts(c))
     ]
     assert retry, "no way to try again once the database comes back"

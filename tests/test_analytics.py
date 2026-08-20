@@ -569,8 +569,16 @@ def test_sets_per_muscle_group_coarse_folds_into_app_buckets():
     fine = sets_per_muscle_group(entries, 1, today=THURSDAY)
     coarse = sets_per_muscle_group(entries, 1, today=THURSDAY, coarse=True)
     assert "middle back" in fine.by_week["2026-W33"]
-    assert "Back" in coarse.by_week["2026-W33"]
-    assert set(coarse.totals) <= {"Chest", "Back", "Shoulder", "Biceps", "Triceps", "Leg", "Abs"}
+    assert "Espalda" in coarse.by_week["2026-W33"]
+    assert set(coarse.totals) <= {
+        "Pecho",
+        "Espalda",
+        "Hombro",
+        "Bíceps",
+        "Tríceps",
+        "Pierna",
+        "Abdomen",
+    }
 
 
 def test_coarse_mapping_covers_the_whole_details_vocabulary():

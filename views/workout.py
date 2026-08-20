@@ -235,16 +235,16 @@ def _date_label(day: date, today: date | None = None) -> str:
     today = today or date.today()
     gap = (today - day).days
     if gap == 0:
-        return "Today"
+        return "Hoy"
     if gap == 1:
-        return "Yesterday"
+        return "Ayer"
     stamp = f"{day_name(day.weekday())} {day.day} {month_name(day.month - 1)}"
     if gap < 0:
         # Only reachable from a hand-edited preference row: `_set_log_date`
         # clamps and the dialog refuses. Say something true rather than
         # "-3 days ago".
-        return f"{stamp} · in the future"
-    return f"{stamp} · {gap} days ago"
+        return f"{stamp} · en el futuro"
+    return f"{stamp} · hace {gap} días"
 
 
 def _set_type_color(set_type: SetType) -> str:
@@ -359,7 +359,7 @@ class WorkoutView:
 
         # The date every set of this session is written under. Today until Alex
         # says otherwise, and back to today the moment the session it belonged
-        # to is over — see the "Logging date" block below for the full rule.
+        # to is over — see the "Fecha de registro" block below for the full rule.
         self.log_date: date = date.today()
         # The real calendar day on which `log_date` was last chosen. `None` means
         # "never chosen", i.e. plain today, and is the state a fresh view is in.
@@ -814,17 +814,17 @@ class WorkoutView:
         if len(days) < 2:
             return ""
         names = ", ".join(_date_label(d).split(" · ")[0] for d in days)
-        return f"This session writes to {plural(len(days), 'day')} — {names}."
+        return f"Esta sesión escribe en {plural(len(days), 'día')} — {names}."
 
     def _scope_text(self, resolved: ResolvedDate) -> str:
         """ "this exercise only" / "the whole session" — never left to be guessed."""
         if resolved.source is DateSource.EXERCISE:
-            return "this exercise only"
+            return "solo este ejercicio"
         if self._dates_by_key:
             # Some other exercise was moved, so "the whole session" would be a
             # lie by exactly the amount that matters.
-            return "the rest of this session"
-        return "the whole session"
+            return "el resto de esta sesión"
+        return "toda la sesión"
 
     def _forget_dated_reads(self, ex_idx: int | None = None):
         """Drop everything that was read *as of* a date that has just moved.
@@ -1034,7 +1034,7 @@ class WorkoutView:
         ex_name = self._raw_at(ex_idx) if ex_idx is not None else ""
 
         field = ft.TextField(
-            label="Date (YYYY-MM-DD)",
+            label="Fecha (AAAA-MM-DD)",
             value=self._date_for(ex_idx).isoformat(),
             dense=True,
             color=C.text,
@@ -1054,13 +1054,13 @@ class WorkoutView:
         def describe():
             if scope["ex"] is None:
                 blurb.value = (
-                    "The day the sets were actually performed. Every exercise you have "
-                    "not given a day of its own goes under it."
+                    "El día en que las series se hicieron de verdad. Todo ejercicio al "
+                    "que no des un día propio cae bajo él."
                 )
             else:
                 blurb.value = (
-                    f"The day {ex_name or 'this exercise'} was actually performed. "
-                    "Only this exercise moves — everything else keeps the session's day."
+                    f"El día en que {ex_name or 'este ejercicio'} se hizo de verdad. "
+                    "Solo se mueve este ejercicio — el resto conserva el día de la sesión."
                 )
 
         def fill(day: date):
@@ -1082,17 +1082,19 @@ class WorkoutView:
             try:
                 chosen = date.fromisoformat(text)
             except ValueError:
-                err.value = "Use YYYY-MM-DD"
+                err.value = "Usa AAAA-MM-DD"
                 self.page.update()
                 return
             if chosen > today:
                 # Refused, not clamped: see the block comment above. Silently
                 # moving the date to today would be the app pretending to obey.
-                err.value = "Not the future — a workout you have not done has nothing to log."
+                err.value = (
+                    "El futuro no — un entreno que no has hecho no tiene nada que registrar."
+                )
                 self.page.update()
                 return
             if chosen < self._min_log_date(today):
-                err.value = f"Too far back — {MAX_BACKDATE_DAYS} days is the limit."
+                err.value = f"Demasiado atrás — el límite son {MAX_BACKDATE_DAYS} días."
                 self.page.update()
                 return
             if scope["ex"] is None:
@@ -1127,12 +1129,12 @@ class WorkoutView:
                 ft.Row(
                     [
                         ghost_button(
-                            "This exercise",
+                            "Este ejercicio",
                             on_click=lambda _: pick_scope(ex_idx),
                             expand=True,
                         ),
                         ghost_button(
-                            "Whole session",
+                            "Toda la sesión",
                             on_click=lambda _: pick_scope(None),
                             expand=True,
                         ),
@@ -1148,7 +1150,7 @@ class WorkoutView:
             # what the exercise's day currently is.
             rows.append(
                 ghost_button(
-                    f"Back to the session's day ({self._log_date_text()})",
+                    f"Volver al día de la sesión ({self._log_date_text()})",
                     on_click=reset_to_session,
                     expand=True,
                 )
@@ -1156,7 +1158,7 @@ class WorkoutView:
         rows.extend([note, err])
 
         dlg.title = ft.Text(
-            "Log this workout to" if ex_idx is None else "Log this exercise to",
+            "Registrar este entreno en" if ex_idx is None else "Registrar este ejercicio en",
             size=16,
             weight=ft.FontWeight.W_900,
             color=C.text,
@@ -1167,8 +1169,8 @@ class WorkoutView:
             height=dialog_height(self.page, 340),
         )
         dlg.actions = [
-            ghost_button("Cancel", on_click=lambda _: self.page.close(dlg)),
-            primary_button("Use this date", on_click=save),
+            ghost_button("Cancelar", on_click=lambda _: self.page.close(dlg)),
+            primary_button("Usar esta fecha", on_click=save),
         ]
         dlg.actions_alignment = ft.MainAxisAlignment.END
         dlg.bgcolor = C.bg_surface
@@ -1254,7 +1256,7 @@ class WorkoutView:
         Read once and cached, because this is on the render path and
         `active_substitutions` is a database round-trip. Dropped whenever the
         scope changes or a swap is made, which are the only moments it can go
-        stale. A database that will not answer means "no substitutions", never a
+        stale. A database that will not answer means "sin sustituciones", never a
         dead screen.
         """
         if self._subs_cache is None:
@@ -1348,11 +1350,11 @@ class WorkoutView:
                 today=self.log_date,
             )
         except Exception:
-            self._toast("Could not save the swap.", ft.Icons.ERROR_OUTLINE, C.danger)
+            self._toast("No se pudo guardar el cambio.", ft.Icons.ERROR_OUTLINE, C.danger)
             return
         self._forget_exercise(idx)
         self._toast(
-            f"Swapped to {exercise_key(performed)} — "
+            f"Sustituido por {exercise_key(performed)} — "
             f"{'today only' if scope is Scope.TODAY else 'for the rest of this phase'}.",
             ft.Icons.SWAP_HORIZ,
             C.accent_2,
@@ -1466,7 +1468,7 @@ class WorkoutView:
     def _last_sets(self, ex_idx: int) -> list[dict] | None:
         """Previous session of exercise `ex_idx`, read once per workout.
 
-        "Previous" means the most recent row *before* `log_date`, not the most
+        "Anterior" means the most recent row *before* `log_date`, not the most
         recent row in the table. On a back-dated session those differ, and the
         difference is not academic: log Saturday on Monday having trained
         Sunday, and the prefill offers Sunday's numbers for a session that, on
@@ -1602,7 +1604,7 @@ class WorkoutView:
             value = _num_value(self.store.get_pref(BAR_PREF))
             # An upper bound as well as a lower one: "200" in the bar field is
             # a typo for a plate weight, and honouring it would make every
-            # single hint on every exercise read "not loadable".
+            # single hint on every exercise read "no montable".
             if value is not None and 0 < value <= 60:
                 self._bar_override = value
 
@@ -1741,7 +1743,7 @@ class WorkoutView:
         if options.exact is not None:
             if options.exact.bar_only:
                 return f"empty {_num_text(options.exact.bar)} kg bar"
-            return f"{options.exact.label()} per side"
+            return f"{options.exact.label()} por lado"
         if options.under_bar:
             if options.above is None:
                 return ""
@@ -1749,7 +1751,7 @@ class WorkoutView:
         near = [o for o in (options.below, options.above) if o is not None]
         if not near:
             return ""
-        return "not loadable · " + " or ".join(f"{_num_text(o.total)} kg" for o in near)
+        return "no montable · " + " o ".join(f"{_num_text(o.total)} kg" for o in near)
 
     def _row_target(self, i: int, row: dict) -> str:
         """What row `i` is aiming at: `"→ 5-8 @ RIR 2-3"`. "" when unknown.
@@ -1847,7 +1849,7 @@ class WorkoutView:
             rir_text = ""
         elif solo_ultima:
             rir_text = (
-                ("to failure" if rir.last_set == (0, 0) else f"RIR {rir.last_set[0]}")
+                ("al fallo" if rir.last_set == (0, 0) else f"RIR {rir.last_set[0]}")
                 if es_la_ultima
                 else ""
             )
@@ -1969,7 +1971,7 @@ class WorkoutView:
         self.sets = rows + list(self.sets)
         self._persist_draft()
         self._toast(
-            f"{plural(len(rows), 'warm-up set')} added — confirm each as you finish it",
+            f"{plural(len(rows), 'serie de calentamiento añadida', 'series de calentamiento añadidas')} — confirma cada una al acabarla",
             ft.Icons.LOCAL_FIRE_DEPARTMENT,
             C.warning,
         )
@@ -2261,7 +2263,7 @@ class WorkoutView:
             # feature is built to avoid, so it is said out loud.
             with contextlib.suppress(Exception):
                 self._toast(
-                    f"Back to today for: {', '.join(draft.stale_dates)}",
+                    f"De vuelta a hoy para: {', '.join(draft.stale_dates)}",
                     ft.Icons.EVENT_BUSY,
                     C.warning,
                 )
@@ -2301,7 +2303,7 @@ class WorkoutView:
             # losing them would look like the bug this whole change is about.
             with contextlib.suppress(Exception):
                 self._toast(
-                    f"Resumed. Dropped sets for: {', '.join(draft.dropped)}",
+                    f"Retomado. Series descartadas de: {', '.join(draft.dropped)}",
                     ft.Icons.INFO_OUTLINE,
                     C.warning,
                 )
@@ -2477,7 +2479,7 @@ class WorkoutView:
         """
         current = self._durations().get(day.isoformat())
         field = ft.TextField(
-            label="Minutes",
+            label="Minutos",
             # `max(1, ...)`: a stored duration under 30 s rounds to "0", and a
             # zero in this box means "not timed" — so opening the dialog on a
             # short session and saving would silently delete it.
@@ -2509,11 +2511,11 @@ class WorkoutView:
                 try:
                     minutes = float(text.replace(",", "."))
                 except ValueError:
-                    err.value = "Minutes, as a number."
+                    err.value = "Minutos, en número."
                     self.page.update()
                     return
                 if minutes < 0:
-                    err.value = "Minutes, as a number."
+                    err.value = "Minutos, en número."
                     self.page.update()
                     return
                 seconds = minutes * 60
@@ -2525,7 +2527,7 @@ class WorkoutView:
                 self.page.update()
                 return
             except Exception:
-                err.value = "Could not save — check the connection."
+                err.value = "No se pudo guardar — revisa la conexión."
                 self.page.update()
                 return
             self._forget_durations()
@@ -2534,7 +2536,7 @@ class WorkoutView:
 
         rows: list[ft.Control] = [
             ft.Text(
-                f"How long did {_date_label(day)} last?",
+                f"¿Cuánto duró {_date_label(day)}?",
                 size=12,
                 color=C.text_secondary,
             )
@@ -2543,7 +2545,7 @@ class WorkoutView:
             elapsed = self._session_elapsed_s()
             rows.append(
                 ghost_button(
-                    f"Use the clock — {format_duration(elapsed)}",
+                    f"Usar el reloj — {format_duration(elapsed)}",
                     on_click=lambda _: fill(max(1, round(elapsed / 60))),
                     expand=True,
                 )
@@ -2551,8 +2553,8 @@ class WorkoutView:
         elif self.session_started_at is not None:
             rows.append(
                 ft.Text(
-                    "The clock is not offered here: it ran while you typed this "
-                    "session in, which is not how long you trained.",
+                    "Aquí no se ofrece el reloj: corrió mientras tecleabas la sesión, "
+                    "y eso no es lo que duró el entreno.",
                     size=11,
                     color=C.warning,
                 )
@@ -2570,9 +2572,9 @@ class WorkoutView:
             [
                 field,
                 ft.Text(
-                    "Leave it empty for 'not timed' — that is a real answer, "
-                    f"and the honest one for a session nobody clocked. "
-                    f"Longest accepted: {format_duration(MAX_SESSION_SECONDS)}.",
+                    "Déjalo vacío para 'sin cronometrar' — es una respuesta real, "
+                    f"y la honesta para una sesión que nadie midió. "
+                    f"Lo más largo aceptado: {format_duration(MAX_SESSION_SECONDS)}.",
                     size=10,
                     color=C.text_muted,
                 ),
@@ -2580,15 +2582,15 @@ class WorkoutView:
             ]
         )
 
-        dlg.title = ft.Text("Session time", size=16, weight=ft.FontWeight.W_900, color=C.text)
+        dlg.title = ft.Text("Tiempo de sesión", size=16, weight=ft.FontWeight.W_900, color=C.text)
         dlg.content = ft.Container(
             content=ft.Column(rows, spacing=10, tight=True, scroll=ft.ScrollMode.AUTO),
             width=dialog_width(self.page),
             height=dialog_height(self.page, 300),
         )
         dlg.actions = [
-            ghost_button("Cancel", on_click=lambda _: self.page.close(dlg)),
-            primary_button("Save", on_click=save),
+            ghost_button("Cancelar", on_click=lambda _: self.page.close(dlg)),
+            primary_button("Guardar", on_click=save),
         ]
         dlg.actions_alignment = ft.MainAxisAlignment.END
         dlg.bgcolor = C.bg_surface
@@ -2959,7 +2961,7 @@ class WorkoutView:
     def _note_chip_text(self) -> str:
         note = self._note_for(self.ex_idx)
         if not note:
-            return "Note"
+            return "Nota"
         if len(note) <= NOTE_PREVIEW_CHARS:
             return note
         return note[:NOTE_PREVIEW_CHARS].rstrip() + "…"
@@ -3105,7 +3107,7 @@ class WorkoutView:
             # would fork today into two rows for the same exercise, which
             # `get_last_sets` and `detect_new_records` both read as two
             # separate sessions. Refusing is the honest answer; the button
-            # says "Saved" rather than pretending there is still work to do.
+            # says "Guardado" rather than pretending there is still work to do.
             return "logged"
         rows = self._sets_by_ex.get(idx) or []
         valid = [s for s in rows if not self._is_suggested(s) and self._has_content(s)]
@@ -3126,7 +3128,7 @@ class WorkoutView:
             # now per exercise: it walks exercise → session → today through
             # `WorkoutDraft.resolve_date`, so it is today unless Alex said
             # otherwise about *this* exercise or about the session, and it can
-            # never be a future date. See the "Logging date" block.
+            # never be a future date. See the "Fecha de registro" block.
             #
             # `entry.timestamp` is deliberately left alone: `creado` records
             # when the row was *written*, which for a backdated session is
@@ -3188,7 +3190,9 @@ class WorkoutView:
         try:
             status = self._save_exercise(self.ex_idx)
         except Exception:
-            self._toast("Could not save — check the connection.", ft.Icons.ERROR_OUTLINE, C.danger)
+            self._toast(
+                "No se pudo guardar — revisa la conexión.", ft.Icons.ERROR_OUTLINE, C.danger
+            )
             return
         if status == "unconfirmed":
             # Everything on screen is still a suggestion. Saving nothing while
@@ -3208,7 +3212,7 @@ class WorkoutView:
             )
             return
         if status == "logged":
-            # Reached by tapping the "Saved" pill. A dead control that eats the
+            # Reached by tapping the "Guardado" pill. A dead control that eats the
             # tap is worse than one that explains itself.
             self._toast(
                 "Already saved in this session — it cannot be logged twice.",
@@ -3225,7 +3229,7 @@ class WorkoutView:
             # Nothing is said on an ordinary save; a toast for the normal case
             # is noise, and noise is what stops warnings being read.
             self._toast(
-                f"Saved to {_date_label(resolved.day)} — {self._scope_text(resolved)}.",
+                f"Guardado en {_date_label(resolved.day)} — {self._scope_text(resolved)}.",
                 ft.Icons.EVENT_BUSY,
                 C.warning,
             )
@@ -3313,7 +3317,7 @@ class WorkoutView:
 
         lines: list[ft.Control] = [
             ft.Text(
-                f"{plural(logged, 'exercise')} logged · "
+                f"{plural(logged, 'ejercicio')} en el registro · "
                 f"{self._format_elapsed(self._session_elapsed_s())}",
                 size=12,
                 color=C.text_secondary,
@@ -3331,7 +3335,9 @@ class WorkoutView:
             names = ", ".join(_date_label(d) for d in days)
             lines.append(
                 ft.Text(
-                    f"Writing to {names}." if len(days) > 1 else f"Writing to {names} — not today.",
+                    f"Escribiendo en {names}."
+                    if len(days) > 1
+                    else f"Escribiendo en {names} — hoy no.",
                     size=12,
                     color=C.warning,
                     weight=ft.FontWeight.W_700,
@@ -3344,11 +3350,11 @@ class WorkoutView:
         lines.append(
             ft.Text(
                 (
-                    f"Session time {format_duration(self._session_elapsed_s())} "
-                    "will be saved — you can correct it next."
+                    f"Se guardará un tiempo de sesión de {format_duration(self._session_elapsed_s())} "
+                    "— podrás corregirlo ahora mismo."
                     if self._clock_measures(days)
-                    else "The clock is not saved as your session time — "
-                    "you can type the real one next."
+                    else "El reloj no se guarda como tu tiempo de sesión — "
+                    "podrás teclear el real ahora mismo."
                 ),
                 size=11,
                 color=C.text_secondary,
@@ -3358,8 +3364,7 @@ class WorkoutView:
             lines.append(ft.Container(height=6))
             lines.append(
                 ft.Text(
-                    "These have sets you have not saved yet. They will be "
-                    "written to your history now:",
+                    "Estos tienen series sin guardar. Se escriben en tu historial ahora:",
                     size=12,
                     color=C.warning,
                     weight=ft.FontWeight.W_700,
@@ -3374,12 +3379,12 @@ class WorkoutView:
             )
 
         dlg.title = ft.Text(
-            "Finish this session?", size=16, weight=ft.FontWeight.W_900, color=C.text
+            "¿Terminar la sesión?", size=16, weight=ft.FontWeight.W_900, color=C.text
         )
         dlg.content = ft.Column(lines, spacing=2, tight=True)
         dlg.actions = [
-            ghost_button("Keep training", on_click=close),
-            primary_button("Save & finish" if unsaved else "Finish", on_click=confirm),
+            ghost_button("Seguir entrenando", on_click=close),
+            primary_button("Guardar y terminar" if unsaved else "Terminar", on_click=confirm),
         ]
         dlg.actions_alignment = ft.MainAxisAlignment.END
         dlg.bgcolor = C.bg_surface
@@ -3400,7 +3405,7 @@ class WorkoutView:
             return
         if saved:
             self._toast(
-                f"Saved {plural(saved, 'more exercise')}.",
+                f"Guardados {plural(saved, 'ejercicio más', 'ejercicios más')}.",
                 ft.Icons.CHECK_CIRCLE,
                 C.success,
             )
@@ -3445,17 +3450,17 @@ class WorkoutView:
             then()
 
         dlg.title = ft.Text(
-            "Discard this workout?", size=16, weight=ft.FontWeight.W_900, color=C.text
+            "¿Descartar este entreno?", size=16, weight=ft.FontWeight.W_900, color=C.text
         )
         dlg.content = ft.Text(
-            "Sets you already saved stay in your history. Anything typed and "
-            "not saved yet will be lost.",
+            "Las series ya guardadas se quedan en tu historial. Lo tecleado y "
+            "no guardado se pierde.",
             size=12,
             color=C.text_secondary,
         )
         dlg.actions = [
-            ghost_button("Keep training", on_click=close),
-            primary_button("Discard", on_click=confirm),
+            ghost_button("Seguir entrenando", on_click=close),
+            primary_button("Descartar", on_click=confirm),
         ]
         dlg.actions_alignment = ft.MainAxisAlignment.END
         dlg.bgcolor = C.bg_surface
@@ -3493,14 +3498,14 @@ class WorkoutView:
         routine = active_routine()
         return ft.Column(
             [
-                ft.Text("Start Routine", size=22, weight=ft.FontWeight.W_900, color=C.text),
+                ft.Text("Empezar sesión", size=22, weight=ft.FontWeight.W_900, color=C.text),
                 ft.Text(
-                    f"Routine: {routine.name}",
+                    f"Rutina: {routine.name}",
                     size=11,
                     color=C.accent,
                     weight=ft.FontWeight.W_700,
                 ),
-                ft.Text("Choose your current phase", size=11, color=C.text_muted),
+                ft.Text("Elige tu fase actual", size=11, color=C.text_muted),
                 ft.Container(height=10),
                 # Backing all the way out of a live workout must not hide it:
                 # without this the only way back would be to re-pick the phase
@@ -3553,7 +3558,7 @@ class WorkoutView:
                 # Not `_select_phase(0)`: that is a *state* change and it used
                 # to drag the open workout down with it. Showing the phase list
                 # is a screen, and `phase_id` stays where it is.
-                self._back_btn("Phases", lambda _: self._show_phases()),
+                self._back_btn("Fases", lambda _: self._show_phases()),
                 ft.Text(phase.name, size=22, weight=ft.FontWeight.W_900, color=C.text),
                 ft.Container(height=10),
                 # Above the day cards, not below: the date is part of choosing
@@ -3625,7 +3630,7 @@ class WorkoutView:
         off = self.is_backdated()
         tint = C.warning if off else C.text_muted
         lines: list[ft.Control] = [
-            ft.Text("LOGGING TO", size=9, color=tint, weight=ft.FontWeight.W_900),
+            ft.Text("REGISTRANDO EN", size=9, color=tint, weight=ft.FontWeight.W_900),
             ft.Text(
                 self._log_date_text(),
                 size=13,
@@ -3641,7 +3646,7 @@ class WorkoutView:
             # comes back to the workout.
             lines.append(
                 ft.Text(
-                    f"{plural(moved, 'exercise')} filed under a day of its own",
+                    f"{plural(moved, 'ejercicio')} con día propio",
                     size=10,
                     color=C.warning,
                     weight=ft.FontWeight.W_700,
@@ -3656,7 +3661,7 @@ class WorkoutView:
                         color=tint,
                     ),
                     ft.Column(lines, spacing=0, expand=True),
-                    ft.Text("Change", size=11, color=C.accent, weight=ft.FontWeight.W_700),
+                    ft.Text("Cambiar", size=11, color=C.accent, weight=ft.FontWeight.W_700),
                 ],
                 spacing=8,
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
@@ -3666,7 +3671,7 @@ class WorkoutView:
             border_radius=12,
             padding=ft.padding.symmetric(horizontal=12, vertical=8),
             margin=ft.margin.only(bottom=8),
-            tooltip="Change the day this session is written under",
+            tooltip="Cambiar el día bajo el que se escribe esta sesión",
             on_click=self._open_date_dialog,
             ink=True,
         )
@@ -3708,13 +3713,13 @@ class WorkoutView:
         tint = C.warning if off else C.accent
         lines: list[ft.Control] = [
             ft.Text(
-                "NOT TODAY" if off else "TODAY",
+                "NO ES HOY" if off else "HOY",
                 size=9,
                 color=tint,
                 weight=ft.FontWeight.W_900,
             ),
             ft.Text(
-                f"Saving to {_date_label(resolved.day)} · {self._scope_text(resolved)}",
+                f"Guardando en {_date_label(resolved.day)} · {self._scope_text(resolved)}",
                 size=13,
                 color=C.text,
                 weight=ft.FontWeight.W_900,
@@ -3732,7 +3737,7 @@ class WorkoutView:
                         color=tint,
                     ),
                     ft.Column(lines, spacing=0, expand=True),
-                    ft.Text("Change", size=11, color=tint, weight=ft.FontWeight.W_700),
+                    ft.Text("Cambiar", size=11, color=tint, weight=ft.FontWeight.W_700),
                 ],
                 spacing=8,
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
@@ -3743,9 +3748,9 @@ class WorkoutView:
             padding=ft.padding.symmetric(horizontal=10, vertical=8),
             margin=ft.margin.only(bottom=10),
             tooltip=(
-                "These sets go into a past day — tap to change it"
+                "Estas series van a un día pasado — toca para cambiarlo"
                 if off
-                else "These sets go into today — tap to file this exercise under another day"
+                else "Estas series van a hoy — toca para archivar este ejercicio en otro día"
             ),
             # Scoped to the exercise on screen, which is what the tap came from
             # and what the strip is describing. The dialog can still reach the
@@ -3772,7 +3777,7 @@ class WorkoutView:
             content=ft.Row(
                 [
                     ft.Icon(ft.Icons.EVENT_AVAILABLE, size=11, color=C.text_muted),
-                    ft.Text("Today", size=10, color=C.text_muted, weight=ft.FontWeight.W_700),
+                    ft.Text("Hoy", size=10, color=C.text_muted, weight=ft.FontWeight.W_700),
                 ],
                 spacing=3,
                 tight=True,
@@ -3780,13 +3785,13 @@ class WorkoutView:
             border=ft.border.all(1, C.border),
             border_radius=Radius.sm,
             padding=ft.padding.symmetric(horizontal=6, vertical=2),
-            tooltip="Logging to today — tap to file this exercise under another day",
+            tooltip="Registrando en hoy — toca para archivar este ejercicio en otro día",
             on_click=lambda _: self._open_date_dialog(ex_idx=self.ex_idx),
             ink=True,
         )
 
     def _in_progress_banner(self) -> ft.Control:
-        """ "You have a workout open" — the way back in, and the way out.
+        """ "Tienes un entreno abierto" — the way back in, and the way out.
 
         The only exit from a live session, and it asks first. Without this the
         day list would be a dead end: tapping the day you are already training
@@ -3795,7 +3800,7 @@ class WorkoutView:
         if not self._workout_in_progress():
             return ft.Container()
         days = active_routine().days_for_phase(self.phase_id)
-        name = days[self.day_idx].name if 0 <= self.day_idx < len(days) else "Workout"
+        name = days[self.day_idx].name if 0 <= self.day_idx < len(days) else "Entreno"
         done = len(self.completed)
         detail = f"{done} logged · {self._format_elapsed(self._session_elapsed_s())}"
         return ft.Container(
@@ -3824,14 +3829,14 @@ class WorkoutView:
                     ft.Row(
                         [
                             ghost_button(
-                                "Discard",
+                                "Descartar",
                                 on_click=lambda _: self._ask_discard(
                                     lambda: self.page.data["refresh_current"]()
                                 ),
                                 expand=True,
                             ),
                             primary_button(
-                                "Resume",
+                                "Retomar",
                                 on_click=lambda _: self._resume_day(),
                                 expand=True,
                             ),
@@ -3881,9 +3886,9 @@ class WorkoutView:
             # existed. The summary of a finished session is the one screen
             # every workout ends on, so it is also the one where a broken
             # plural is seen every single time.
-            count = plural(len(working_sets(c["sets"])), "set")
+            count = plural(len(working_sets(c["sets"])), "serie")
             if warm:
-                count += f" · {plural(len(warm), 'warm-up')}"
+                count += f" · {plural(len(warm), 'calentamiento')}"
             completed_blocks.append(
                 card(
                     ft.Row(
@@ -3916,13 +3921,13 @@ class WorkoutView:
         logged = len(self.completed)
         if logged:
             hero = "🎉"
-            title = "Session Complete!"
-            subtitle = f"{plural(logged, 'exercise')} logged"
+            title = "¡Sesión completa!"
+            subtitle = f"{plural(logged, 'ejercicio registrado', 'ejercicios registrados')}"
             subtitle_color = C.accent
         else:
             hero = "👋"
-            title = "Session closed"
-            subtitle = "Nothing logged this time"
+            title = "Sesión cerrada"
+            subtitle = "Esta vez no se registró nada"
             subtitle_color = C.text_muted
 
         # Says where it went. Without this the summary would read exactly the
@@ -3936,7 +3941,7 @@ class WorkoutView:
                 [
                     ft.Icon(ft.Icons.EVENT_BUSY, color=C.warning, size=14),
                     ft.Text(
-                        f"Logged to {', '.join(_date_label(d) for d in written)}",
+                        f"Registrado en {', '.join(_date_label(d) for d in written)}",
                         size=12,
                         color=C.warning,
                         weight=ft.FontWeight.W_700,
@@ -3978,7 +3983,7 @@ class WorkoutView:
                 self._session_note_block(),
                 *completed_blocks,
                 ft.Container(height=10),
-                primary_button("Back to Home", on_click=self._finish, expand=True),
+                primary_button("Volver a Inicio", on_click=self._finish, expand=True),
             ],
             horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
             scroll=ft.ScrollMode.AUTO,
@@ -4015,7 +4020,7 @@ class WorkoutView:
                 target = f" · × {reps}"
             else:
                 target = ""
-            return f"SET {i + 1} OF {total}{target}"
+            return f"SERIE {i + 1} DE {total}{target}"
         return "ALL SETS IN — SAVE THIS EXERCISE"
 
     def _zen_toggle(self) -> ft.Control:
@@ -4040,9 +4045,9 @@ class WorkoutView:
             border_radius=Radius.md,
             alignment=ft.alignment.center,
             tooltip=(
-                "Zen mode on — tap to bring the rest of the app back"
+                "Modo zen activo — toca para recuperar el resto de la app"
                 if on
-                else "Zen mode off — tap to focus on the workout"
+                else "Modo zen apagado — toca para centrarte en el entreno"
             ),
             on_click=self._toggle_zen,
             ink=True,
@@ -4103,11 +4108,11 @@ class WorkoutView:
         # freeze whichever theme was loaded at import.
         looks = {
             Action.ADD_WEIGHT: ("Go up", ft.Icons.TRENDING_UP, C.success),
-            Action.REPEAT: ("Same weight", ft.Icons.REPLAY, C.accent),
+            Action.REPEAT: ("Mismo peso", ft.Icons.REPLAY, C.accent),
             Action.BACK_OFF: ("Back off", ft.Icons.TRENDING_DOWN, C.warning),
             Action.HOLD_STALE: ("Hold", ft.Icons.PAUSE_CIRCLE_OUTLINE, C.warning),
             Action.HOLD_DELOAD: ("Deload — hold", ft.Icons.SPA_OUTLINED, C.accent_2),
-            Action.BASELINE: ("First time", ft.Icons.HELP_OUTLINE, C.text_secondary),
+            Action.BASELINE: ("Primera vez", ft.Icons.HELP_OUTLINE, C.text_secondary),
         }
         verb, icon, tint = looks.get(rec.action, ("Today", ft.Icons.FITNESS_CENTER, C.accent))
         headline = rec.headline()
@@ -4152,7 +4157,7 @@ class WorkoutView:
             border_radius=Radius.md,
             padding=ft.padding.symmetric(horizontal=10, vertical=8),
             margin=ft.margin.only(top=8),
-            tooltip="Tap for the reasoning behind this",
+            tooltip="Toca para ver el porqué",
             on_click=self._toggle_reason,
             ink=True,
         )
@@ -4191,7 +4196,7 @@ class WorkoutView:
                         [
                             ft.Icon(ft.Icons.LOCAL_FIRE_DEPARTMENT, size=15, color=C.warning),
                             ft.Text(
-                                f"Add {plural(len(plan), 'warm-up set')}",
+                                f"Añadir {plural(len(plan), 'serie de calentamiento', 'series de calentamiento')}",
                                 size=12,
                                 weight=ft.FontWeight.W_900,
                                 color=C.warning,
@@ -4212,7 +4217,7 @@ class WorkoutView:
             border_radius=Radius.md,
             padding=ft.padding.symmetric(horizontal=10, vertical=8),
             margin=ft.margin.only(bottom=8),
-            tooltip="Every weight here can be loaded with the plates you have",
+            tooltip="Todos los pesos de aquí se montan con tus discos",
             on_click=self._add_warmup_sets,
             ink=True,
         )
@@ -4313,7 +4318,7 @@ class WorkoutView:
             ),
             padding=ft.padding.symmetric(horizontal=8, vertical=6),
             border_radius=8,
-            tooltip="Previous sessions of this exercise — nothing you typed is touched",
+            tooltip="Sesiones anteriores de este ejercicio — nada de lo escrito se toca",
             on_click=self._toggle_history,
             ink=True,
         )
@@ -4399,13 +4404,13 @@ class WorkoutView:
         swap = self._substitution_at(self.ex_idx)
         if swap is None:
             return ft.Container()
-        scope_text = "today only" if swap.scope is Scope.TODAY else "for the rest of this phase"
+        scope_text = "solo hoy" if swap.scope is Scope.TODAY else "para el resto de la fase"
         lines: list[ft.Control] = [
             ft.Row(
                 [
                     ft.Icon(ft.Icons.SWAP_HORIZ, size=15, color=C.accent_2),
                     ft.Text(
-                        f"SUBSTITUTE · {swap.performed}",
+                        f"SUSTITUTO · {swap.performed}",
                         size=11,
                         color=C.accent_2,
                         weight=ft.FontWeight.W_900,
@@ -4417,8 +4422,8 @@ class WorkoutView:
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
             ),
             ft.Text(
-                f"Instead of {swap.prescribed} — {scope_text}. "
-                f"Logged to your history as {swap.key_to_log}.",
+                f"En lugar de {swap.prescribed} — {scope_text}. "
+                f"Va a tu historial como {swap.key_to_log}.",
                 size=10,
                 color=C.text_secondary,
                 max_lines=3,
@@ -4442,7 +4447,7 @@ class WorkoutView:
             border_radius=Radius.md,
             padding=ft.padding.symmetric(horizontal=10, vertical=8),
             margin=ft.margin.only(bottom=8),
-            tooltip="Tap to change or clear this swap",
+            tooltip="Toca para cambiar o quitar esta sustitución",
             on_click=self._open_swap_dialog,
             ink=True,
         )
@@ -4466,7 +4471,9 @@ class WorkoutView:
             border_radius=Radius.md,
             alignment=ft.alignment.center,
             tooltip=(
-                "Swapped — tap to change or clear" if active else "Machine busy? Swap this exercise"
+                "Sustituido — toca para cambiarlo o quitarlo"
+                if active
+                else "Machine busy? Swap this exercise"
             ),
             on_click=self._open_swap_dialog,
             ink=True,
@@ -4548,7 +4555,7 @@ class WorkoutView:
 
         def scope_chip(scope: Scope) -> ft.Control:
             active = chosen["scope"] is scope
-            label = "Today only" if scope is Scope.TODAY else "Rest of this phase"
+            label = "Solo hoy" if scope is Scope.TODAY else "El resto de esta fase"
             return ft.Container(
                 content=ft.Text(
                     label,
@@ -4576,7 +4583,7 @@ class WorkoutView:
 
         body: list[ft.Control] = [
             ft.Text(
-                f"Prescribed: {exercise_key(prescribed)}",
+                f"Prescrito: {exercise_key(prescribed)}",
                 size=12,
                 color=C.text_secondary,
                 weight=ft.FontWeight.W_700,
@@ -4619,14 +4626,16 @@ class WorkoutView:
                 )
             )
 
-        dlg.title = ft.Text("Swap this exercise", size=16, weight=ft.FontWeight.W_900, color=C.text)
+        dlg.title = ft.Text(
+            "Sustituir este ejercicio", size=16, weight=ft.FontWeight.W_900, color=C.text
+        )
         dlg.content = ft.Container(
             content=ft.Column(body, spacing=6, tight=True, scroll=ft.ScrollMode.AUTO),
             width=dialog_width(self.page),
             height=dialog_height(self.page, 420),
         )
         dlg.actions = [
-            ghost_button("Cancel", on_click=lambda _: self.page.close(dlg)),
+            ghost_button("Cancelar", on_click=lambda _: self.page.close(dlg)),
             *([ghost_button("Do the prescribed one", on_click=clear)] if current else []),
         ]
         dlg.actions_alignment = ft.MainAxisAlignment.END
@@ -4644,7 +4653,7 @@ class WorkoutView:
         under the numbers, one mis-tap from the reps box).
 
         What is left is a chip that shows the note when there is one and the
-        word "Note" when there is not, and a box that unfolds under it *in
+        word "Nota" when there is not, and a box that unfolds under it *in
         place* — `_toggle_note` flips `visible` on a mounted control, so nothing
         typed anywhere else on the screen is rebuilt, and the caret in a weight
         field survives opening it.
@@ -4667,7 +4676,7 @@ class WorkoutView:
 
         field = ft.TextField(
             value=note,
-            hint_text="How did it feel? What did you change?",
+            hint_text="¿Qué tal ha ido? ¿Qué has cambiado?",
             multiline=True,
             min_lines=2,
             max_lines=4,
@@ -4702,7 +4711,7 @@ class WorkoutView:
             bgcolor=C.bg_sunken,
             border_radius=8,
             padding=ft.padding.symmetric(horizontal=8, vertical=6),
-            tooltip="A note on this exercise — kept with the sets you save",
+            tooltip="Una nota de este ejercicio — se guarda con las series",
             on_click=self._toggle_note,
             ink=True,
         )
@@ -4735,13 +4744,13 @@ class WorkoutView:
                         expand=True,
                     ),
                     ft.Text(
-                        text or "Not timed",
+                        text or "Sin cronometrar",
                         size=13,
                         color=C.text if timed else C.text_muted,
                         weight=ft.FontWeight.W_900,
                     ),
                     ft.Text(
-                        "Change" if timed else "Add",
+                        "Cambiar" if timed else "Añadir",
                         size=11,
                         color=C.accent,
                         weight=ft.FontWeight.W_700,
@@ -4754,7 +4763,7 @@ class WorkoutView:
             border_radius=Radius.sm,
             padding=ft.padding.symmetric(horizontal=10, vertical=8),
             margin=ft.margin.only(top=6),
-            tooltip=f"Set how long the session on {_date_label(day)} lasted",
+            tooltip=f"Di cuánto duró la sesión de {_date_label(day)}",
             on_click=lambda _, d=day: self._open_duration_dialog(d),
             ink=True,
         )
@@ -4770,7 +4779,7 @@ class WorkoutView:
         A **measured** time is already in the table by the time this renders
         (`_store_measured_duration`), so the ordinary live workout finds its own
         duration filled in and the caption says where it came from. A back-dated
-        one finds "Not timed" and a caption saying why the clock was not
+        one finds "Sin cronometrar" and a caption saying why the clock was not
         trusted — which is the asking Alex wanted, put somewhere he is standing
         still rather than in a modal thrown at him mid-Finish.
         """
@@ -4779,20 +4788,20 @@ class WorkoutView:
             return ft.Container()
         stored = self._durations()
         if self._duration_is_measured():
-            caption = "Measured by the timer. Tap to correct it."
+            caption = "Medido por el cronómetro. Toca para corregirlo."
         elif self.session_started_at is not None:
             caption = (
-                "The timer ran while you typed this in, so it was not saved as "
-                "your session time. Tap to set the real one."
+                "El cronómetro corrió mientras tecleabas esto, así que no se guardó "
+                "como tu tiempo de sesión. Toca para poner el real."
             )
         else:
-            caption = "Tap a day to say how long it took."
+            caption = "Toca un día para decir cuánto duró."
         return card(
             ft.Row(
                 [
                     ft.Icon(ft.Icons.TIMER_OUTLINED, size=16, color=C.accent),
                     ft.Text(
-                        "Session time",
+                        "Tiempo de sesión",
                         size=12,
                         weight=ft.FontWeight.W_900,
                         color=C.text,
@@ -4819,7 +4828,7 @@ class WorkoutView:
         """
         field = ft.TextField(
             value=self._session_note(),
-            hint_text="How did the session go?",
+            hint_text="¿Cómo ha ido la sesión?",
             multiline=True,
             min_lines=2,
             max_lines=5,
@@ -4837,7 +4846,7 @@ class WorkoutView:
                 [
                     ft.Icon(ft.Icons.EDIT_NOTE, size=16, color=C.accent),
                     ft.Text(
-                        "Session note",
+                        "Nota de la sesión",
                         size=12,
                         weight=ft.FontWeight.W_900,
                         color=C.text,
@@ -4848,7 +4857,7 @@ class WorkoutView:
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
             ),
             ft.Text(
-                f"About the whole day — saved to {_date_label(self._session_note_day())}.",
+                f"Sobre el día entero — se guarda en {_date_label(self._session_note_day())}.",
                 size=10,
                 color=C.text_muted,
             ),
@@ -5002,7 +5011,7 @@ class WorkoutView:
             width=20,
             height=40,
             alignment=ft.alignment.center,
-            tooltip=("Tap to confirm this set" if suggested else f"Set {i + 1}"),
+            tooltip=("Toca para confirmar esta serie" if suggested else f"Serie {i + 1}"),
             on_click=(lambda _, idx=i: self._confirm_set(idx)) if suggested else None,
             ink=suggested,
         )
@@ -5151,7 +5160,9 @@ class WorkoutView:
                 padding=10,
             )
         else:
-            last_row = ft.Text("First time - no history", size=11, color=C.text_muted, italic=True)
+            last_row = ft.Text(
+                "Primera vez — sin historial", size=11, color=C.text_muted, italic=True
+            )
 
         set_rows = [self._set_row(i, s, last_ref_for_placeholder) for i, s in enumerate(self.sets)]
 
@@ -5172,8 +5183,8 @@ class WorkoutView:
         # have to line up with the fields below them.
         header_row = ft.Row(
             [
-                column_head("SET", 20),
-                column_head("TYPE", 30),
+                column_head("SERIE", 20),
+                column_head("TIPO", 30),
                 column_head("KG"),
                 column_head("REPS"),
                 column_head("RIR", 46),
@@ -5197,7 +5208,7 @@ class WorkoutView:
         pending = self._pending_count()
         row_actions: list[ft.Control] = [add_btn]
         if pending:
-            # "Same as last time" in one tap — the whole point of prefilling.
+            # "Igual que la última vez" in one tap — the whole point of prefilling.
             # Only rendered while something is unconfirmed, so the button
             # disappears the moment it would do nothing.
             row_actions.append(
@@ -5242,7 +5253,7 @@ class WorkoutView:
                     [
                         ft.Icon(ft.Icons.HISTORY, size=13, color=C.text_secondary),
                         ft.Text(
-                            "Tap the set number as you finish each set"
+                            "Toca el número de la serie al terminarla"
                             if ramped
                             else "From your last session — tap the set number to confirm",
                             size=10,
@@ -5352,7 +5363,7 @@ class WorkoutView:
         # mode the first two get the size, and `build_large` gives the third.
         if zen:
             rest_block: ft.Control = self.timer.build_large(
-                caption=f"AUTO {format_rest(self._rest_seconds())} AFTER EACH SET"
+                caption=f"AUTO {format_rest(self._rest_seconds())} TRAS CADA SERIE"
             )
             next_line: ft.Control = ft.Container(
                 content=ft.Text(
@@ -5370,7 +5381,7 @@ class WorkoutView:
                     # that appears after a set does not look like something went
                     # wrong.
                     ft.Text(
-                        f"Rest · auto {format_rest(self._rest_seconds())} after each set",
+                        f"Descanso · auto {format_rest(self._rest_seconds())} tras cada serie",
                         size=10,
                         color=C.text_muted,
                         weight=ft.FontWeight.W_700,
@@ -5397,7 +5408,7 @@ class WorkoutView:
             ft.Row(
                 [
                     ft.Text(
-                        f"EXERCISE {self.ex_idx + 1}",
+                        f"EJERCICIO {self.ex_idx + 1}",
                         size=10,
                         color=phase_color(phase.id),
                         weight=ft.FontWeight.W_900,
@@ -5466,7 +5477,7 @@ class WorkoutView:
         # before the last exercise. Save now only saves; the arrows only move;
         # Finish only finishes and is on screen the whole time.
         #
-        # "Skip" is gone rather than kept as a third button, because with Save
+        # "Saltar" is gone rather than kept as a third button, because with Save
         # no longer advancing it *is* Next — `_skip` was `_advance()`, i.e.
         # "move on without writing anything", which is exactly what the right
         # arrow does. Two buttons for one action is how you press the wrong one.
@@ -5480,7 +5491,7 @@ class WorkoutView:
                 content=ft.Row(
                     [
                         ft.Icon(ft.Icons.CHECK_CIRCLE, size=16, color=C.success),
-                        ft.Text("Saved", size=14, weight=ft.FontWeight.W_800, color=C.success),
+                        ft.Text("Guardado", size=14, weight=ft.FontWeight.W_800, color=C.success),
                     ],
                     spacing=6,
                     tight=True,
@@ -5496,7 +5507,7 @@ class WorkoutView:
             )
         else:
             save_slot = primary_button(
-                "Save",
+                "Guardar",
                 icon=ft.Icons.CHECK_ROUNDED,
                 on_click=self._save,
                 expand=True,
@@ -5510,21 +5521,21 @@ class WorkoutView:
             # daríamos cuenta". What has not been written is visible before he
             # commits to leaving, not discovered afterwards in History.
             finish_tint = C.warning
-            finish_label = f"Finish session · {len(unsaved)} unsaved"
+            finish_label = f"Terminar sesión · {len(unsaved)} sin guardar"
         elif day_complete:
             # Save is spent and both arrows are dead: Finish is the only live
             # control on the screen, so it stops being the quiet one.
             finish_tint = C.accent
-            finish_label = "Finish session"
+            finish_label = "Terminar sesión"
         else:
             finish_tint = C.text_secondary
-            finish_label = "Finish session"
+            finish_label = "Terminar sesión"
 
         action_row = ft.Row(
             [
                 self._step_button(
                     ft.Icons.CHEVRON_LEFT,
-                    "Previous exercise",
+                    "Ejercicio anterior",
                     lambda _: self._go_prev_exercise(),
                     enabled=self.ex_idx > 0,
                 ),
@@ -5562,7 +5573,7 @@ class WorkoutView:
                     border_radius=Radius.md,
                     padding=ft.padding.symmetric(horizontal=18, vertical=10),
                     alignment=ft.alignment.center,
-                    tooltip="End the session — anything unsaved is written first",
+                    tooltip="Cerrar la sesión — lo no guardado se escribe antes",
                     on_click=self._ask_finish,
                     ink=True,
                 )
@@ -5599,7 +5610,7 @@ class WorkoutView:
                 # the door out of the exercise screen, and therefore the door
                 # back to the navigation bar. Hiding it would turn a layout into
                 # a cage, which is the one thing zen mode must never be.
-                self._back_btn("Back", lambda _: None, raw_handler=lambda _: self._back_to_days()),
+                self._back_btn("Atrás", lambda _: None, raw_handler=lambda _: self._back_to_days()),
                 session_chip,
                 ft.Text(
                     f"{self.ex_idx + 1}/{total}",

@@ -249,7 +249,7 @@ def test_an_ordinary_workout_is_not_taxed_for_the_feature(view):
 def test_a_dated_exercise_says_so_on_its_own_screen(view):
     view._set_exercise_date(0, MONDAY)
     view.ex_idx = 0
-    assert _said(view._backdate_strip(), "not today")
+    assert _said(view._backdate_strip(), "NO ES HOY")
 
 
 def test_an_exercise_on_today_still_carries_a_day_line_once_anything_is_dated(view):
@@ -266,14 +266,14 @@ def test_an_exercise_on_today_still_carries_a_day_line_once_anything_is_dated(vi
 
     strip = view._backdate_strip()
     assert _texts(strip), "exercise 1 said nothing about which day it goes to"
-    assert _said(strip, "today")
+    assert _said(strip, "HOY")
 
 
 def test_the_strip_says_whose_day_it_is(view):
     """A date the reader has to *attribute* is a date they will attribute wrong."""
     view._set_exercise_date(0, MONDAY)
     view.ex_idx = 0
-    assert _said(view._backdate_strip(), "this exercise only")
+    assert _said(view._backdate_strip(), "solo este ejercicio")
 
 
 def test_the_strip_does_not_claim_the_whole_session_when_it_is_not_true(view):
@@ -285,7 +285,7 @@ def test_the_strip_does_not_claim_the_whole_session_when_it_is_not_true(view):
     view._set_log_date(MONDAY)
     view._set_exercise_date(0, TUESDAY)
     view.ex_idx = 1
-    assert _said(view._backdate_strip(), "the rest of this session")
+    assert _said(view._backdate_strip(), "el resto de esta sesión")
 
 
 def test_zen_mode_does_not_get_to_hide_it(view):
@@ -293,7 +293,7 @@ def test_zen_mode_does_not_get_to_hide_it(view):
     view._set_exercise_date(0, MONDAY)
     view.ex_idx = 0
     view.zen = True
-    assert _said(view._backdate_strip(), "not today")
+    assert _said(view._backdate_strip(), "NO ES HOY")
 
     view.ex_idx = 1
     assert _texts(view._backdate_strip()), "zen mode silenced the day line on exercise 1"
@@ -304,7 +304,7 @@ def test_the_strip_reaches_the_built_exercise_screen(view):
     view._set_exercise_date(0, MONDAY)
     view.ex_idx = 0
     view.zen = True
-    assert _said(view.build(), "not today")
+    assert _said(view.build(), "NO ES HOY")
 
 
 def test_the_strip_warns_when_the_session_spans_more_than_one_day(view):
@@ -319,7 +319,7 @@ def test_the_strip_warns_when_the_session_spans_more_than_one_day(view):
     view.ex_idx = 0
 
     assert view._dates_in_use() == (MONDAY, TUESDAY, date.today())
-    assert _said(view._backdate_strip(), "writes to 3 days")
+    assert _said(view._backdate_strip(), "escribe en 3 días")
 
 
 def test_one_day_is_not_announced_as_several(view):
@@ -332,7 +332,7 @@ def test_one_day_is_not_announced_as_several(view):
 def test_the_today_pill_gives_way_to_the_strip(view):
     """Two controls answering "which day" on one card is one too many."""
     view.zen = False
-    assert _said(view._log_date_chip(), "today")
+    assert _said(view._log_date_chip(), "Hoy")
 
     view._set_exercise_date(0, MONDAY)
     assert _texts(view._log_date_chip()) == []
@@ -345,7 +345,7 @@ def test_the_day_list_admits_that_exercises_were_moved(view):
     exercises are exactly the ones its headline does not describe.
     """
     view._set_exercise_date(0, MONDAY)
-    assert _said(view._log_date_row(), "day of its own")
+    assert _said(view._log_date_row(), "día propio")
 
 
 def test_saving_says_which_day_it_went_to(view, page):
@@ -356,8 +356,8 @@ def test_saving_says_which_day_it_went_to(view, page):
     view._save(None)
 
     bar = page.open.call_args_list[-1][0][0]
-    assert _said(bar, "saved to")
-    assert _said(bar, "this exercise only")
+    assert _said(bar, "Guardado en")
+    assert _said(bar, "solo este ejercicio")
 
 
 def test_an_ordinary_save_says_nothing(view, page):
@@ -365,7 +365,7 @@ def test_an_ordinary_save_says_nothing(view, page):
     _type_a_set(view)
     view._save(None)
     said = page.open.call_args_list
-    assert not any(_said(c[0][0], "saved to") for c in said)
+    assert not any(_said(c[0][0], "Guardado en") for c in said)
 
 
 def test_the_finish_dialog_names_every_day_it_is_about_to_write_to(view, page):
@@ -375,7 +375,7 @@ def test_the_finish_dialog_names_every_day_it_is_about_to_write_to(view, page):
     view._ask_finish(None)
 
     dlg = _last_dialog(page)
-    assert _said(dlg, "writing to")
+    assert _said(dlg, "Escribiendo en")
     # By the label the rest of the app uses — "Yesterday", not a raw ISO date.
     for day in (MONDAY, TUESDAY):
         assert _said(dlg, _date_label(day)), f"{day} was not named in the finish dialog"
@@ -389,7 +389,7 @@ def test_the_summary_names_every_day_it_wrote_to(view, store):
     view._save_exercise(0)
     view.finished = True
 
-    assert _said(view._render_finished(), "logged to")
+    assert _said(view._render_finished(), "Registrado en")
 
 
 # ── 3. everything read "as of" a date follows that exercise ──────────────
@@ -540,31 +540,31 @@ def test_the_dialog_opens_scoped_to_the_exercise_it_was_tapped_from(view, page):
     view.ex_idx = 1
     view._open_date_dialog(ex_idx=1)
     dlg = _last_dialog(page)
-    assert _said(dlg, "log this exercise to")
-    assert _said(dlg, "only this exercise moves")
+    assert _said(dlg, "Registrar este ejercicio en")
+    assert _said(dlg, "Solo se mueve este ejercicio")
 
 
 def test_the_dialog_bare_is_still_about_the_whole_session(view, page):
     """The day list has always opened it this way and must keep doing so."""
     view._open_date_dialog()
-    assert _said(_last_dialog(page), "log this workout to")
+    assert _said(_last_dialog(page), "Registrar este entreno en")
 
 
 def test_the_dialog_can_switch_from_the_exercise_to_the_session(view, page):
     view._open_date_dialog(ex_idx=0)
     dlg = _last_dialog(page)
-    assert _said(dlg, "this exercise")
-    assert _said(dlg, "whole session")
+    assert _said(dlg, "Este ejercicio")
+    assert _said(dlg, "Toda la sesión")
 
 
 def test_the_dialog_offers_a_way_back_only_when_there_is_one(view, page):
     """A button that would do nothing teaches the wrong lesson about the day."""
     view._open_date_dialog(ex_idx=0)
-    assert not _said(_last_dialog(page), "back to the session")
+    assert not _said(_last_dialog(page), "Volver al día de la sesión")
 
     view._set_exercise_date(0, MONDAY)
     view._open_date_dialog(ex_idx=0)
-    assert _said(_last_dialog(page), "back to the session")
+    assert _said(_last_dialog(page), "Volver al día de la sesión")
 
 
 def test_no_future_date_survives_the_setter(view):

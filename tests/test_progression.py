@@ -190,7 +190,7 @@ def test_rir_comes_from_the_phase_prose_of_the_routine_alex_trains():
     target = prog.rir_for_phase(BASE, RECOMP)
     assert (target.low, target.high) == (2, 3)
     assert target.label() == "RIR 2-3"
-    assert "reps in reserve" in target.source
+    assert "reps en reserva" in target.source
 
 
 def test_rir_is_inherited_when_a_phase_states_none():
@@ -211,7 +211,7 @@ def test_explicit_rir_wins_and_last_set_failure_is_kept_separately():
     ppl2 = next(p for p in data.PPL_PHASES if p.id == 2)
     target = prog.rir_for_phase(ppl2, None)
     assert target.last_set == (0, 0)
-    assert target.full_label() == "last set to failure"
+    assert target.full_label() == "última al fallo"
 
 
 def test_no_failure_phrasing_becomes_a_floor_not_a_number():
@@ -248,7 +248,7 @@ def test_prescribed_target_is_the_one_string_the_set_row_needs():
 def test_prescribed_target_degrades_instead_of_inventing():
     """No readable RIR → reps only. Nothing readable at all → empty string."""
     phase6 = next(p for p in data.PHASES if p.id == 6)
-    assert prog.prescribed_target("Push-ups [3×failure]", phase6) == "max reps"
+    assert prog.prescribed_target("Push-ups [3×failure]", phase6) == "reps máx"
     assert prog.prescribed_target("Unprescribed Thing") == ""
 
 
@@ -301,7 +301,7 @@ def test_a_curl_and_a_bench_press_do_not_get_the_same_event():
 
 def test_dips_and_pull_ups_add_weight_to_a_belt_not_to_a_bar():
     assert prog.classify_equipment("Parallel Bar Dips") is Equipment.BODYWEIGHT
-    assert "belt" in prog.weight_step("Pull-ups").reason
+    assert "cinturón" in prog.weight_step("Pull-ups").reason
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -370,7 +370,7 @@ def test_no_history_refuses_to_invent_a_weight():
     assert rec.weight is None
     assert rec.has_weight() is False
     assert rec.confidence is Confidence.NONE
-    assert "No history" in rec.reason
+    assert "Sin historial" in rec.reason
     assert "8 reps" in rec.reason  # it still tells you what to aim for
     assert rec.target_label == "5-8 reps @ RIR 2-3"
     assert rec.reps_low == 5 and rec.reps_high == 8
@@ -412,7 +412,7 @@ def test_inside_the_range_repeats_the_weight_and_names_the_rep_to_beat():
     assert rec.reps_low == 7  # beat the worst set (6), still capped by the range
     assert rec.reps_high == 8
     assert rec.confidence is Confidence.HIGH
-    assert "80 kg" in rec.reason and "beat 6" in rec.reason
+    assert "80 kg" in rec.reason and "supera 6" in rec.reason
     assert rec.headline() == "80 kg × 7-8"
 
 
@@ -431,7 +431,7 @@ def test_fewer_sets_than_prescribed_does_not_earn_the_jump():
     rec = prog.recommend(BENCH, history, phase=BASE, today=TODAY)
     assert rec.action is Action.REPEAT
     assert rec.weight == 80
-    assert "3 of 4 sets" in rec.reason
+    assert "3 de 4 series" in rec.reason
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -447,7 +447,7 @@ def test_top_of_the_range_on_every_set_adds_the_upper_body_step():
     assert rec.reps_low == 5 and rec.reps_high == 8  # back to the bottom
     assert rec.confidence is Confidence.HIGH
     assert "82.5 kg" in rec.reason
-    assert "Rebuild from 5 reps" in rec.reason
+    assert "Reconstruye desde 5 reps" in rec.reason
 
 
 def test_the_same_success_on_a_squat_adds_five_kilos():
@@ -471,8 +471,8 @@ def test_bodyweight_pull_ups_earn_weight_on_a_belt_not_a_new_bar_load():
     rec = prog.recommend("Pull-ups [4×6-10]", history, phase=BASE, today=TODAY)
     assert rec.action is Action.ADD_WEIGHT
     assert rec.weight == 2.5
-    assert "belt" in rec.reason
-    assert "bodyweight" in rec.reason
+    assert "cinturón" in rec.reason
+    assert "peso corporal" in rec.reason
 
 
 def test_a_fixed_scheme_progresses_when_every_set_hits_the_number():
@@ -494,7 +494,7 @@ def test_one_short_session_repeats_the_weight():
     assert rec.action is Action.REPEAT
     assert rec.weight == 85
     assert rec.reps_low == 5  # the bottom of the range, not "beat 3"
-    assert "bad day" in rec.reason
+    assert "mal día" in rec.reason
 
 
 def test_two_short_sessions_at_the_same_weight_drop_the_load():
@@ -506,7 +506,7 @@ def test_two_short_sessions_at_the_same_weight_drop_the_load():
     assert rec.action is Action.BACK_OFF
     assert rec.weight == 77.5  # 85 × 0.9 = 76.5, rounded onto the 2.5 kg grid
     assert rec.reps_low == 5 and rec.reps_high == 8
-    assert "Two sessions in a row" in rec.reason
+    assert "Dos sesiones seguidas" in rec.reason
 
 
 def test_a_failure_at_a_different_weight_does_not_count_as_the_second_strike():
@@ -533,7 +533,7 @@ def test_a_three_week_gap_suppresses_the_jump_it_would_otherwise_earn():
     assert rec.weight == 80  # repeat, do not add
     assert rec.days_since == 24
     assert rec.confidence is Confidence.MEDIUM
-    assert "24 days ago" in rec.reason
+    assert "hace 24 días" in rec.reason
 
 
 def test_a_gap_just_under_the_threshold_still_progresses():
@@ -549,7 +549,7 @@ def test_two_months_off_is_a_re_entry_at_ninety_percent():
     assert rec.action is Action.BACK_OFF
     assert rec.weight == 72.5  # 80 × 0.9 = 72, onto the 2.5 kg grid
     assert rec.confidence is Confidence.LOW
-    assert "re-entry" in rec.reason
+    assert "vuelta" in rec.reason
 
 
 def test_history_with_no_usable_date_cannot_trigger_a_staleness_decision():
@@ -593,7 +593,7 @@ def test_pyramid_that_misses_one_step_repeats_the_whole_ladder():
     rec = prog.recommend(PYRAMID, [entry("Barbell Bench Press", days_ago(4), sets)], today=TODAY)
     assert rec.action is Action.REPEAT
     assert [t.weight for t in rec.per_set] == [60, 70, 80, 80, 80]
-    assert "every step meets its number" in rec.reason
+    assert "cada peldaño cumple su número" in rec.reason
 
 
 def test_amrap_says_out_loud_that_it_cannot_earn_a_jump():
@@ -603,7 +603,7 @@ def test_amrap_says_out_loud_that_it_cannot_earn_a_jump():
     assert rec.action is Action.REPEAT
     assert rec.weight is None  # bodyweight: there is nothing to load
     assert rec.confidence is Confidence.LOW
-    assert "no rep ceiling" in rec.reason
+    assert "no tiene techo de repeticiones" in rec.reason
     assert "39" in rec.reason  # beat the total, since there is no ceiling
 
 
@@ -618,7 +618,7 @@ def test_a_cluster_is_never_progressed_on_a_guess():
     assert rec.action is Action.REPEAT
     assert rec.weight == 15
     assert rec.confidence is Confidence.LOW
-    assert "cluster" in rec.reason
+    assert "clúster" in rec.reason
 
 
 def test_an_unreadable_scheme_repeats_and_admits_it():
@@ -627,7 +627,7 @@ def test_an_unreadable_scheme_repeats_and_admits_it():
     assert rec.action is Action.REPEAT
     assert rec.weight == 40
     assert rec.confidence is Confidence.LOW
-    assert "No readable rep prescription" in rec.reason
+    assert "Sin prescripción de repeticiones legible" in rec.reason
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -807,7 +807,7 @@ def test_la_descarga_no_sube_el_peso():
     )
     assert rec.action is pr.Action.HOLD_DELOAD
     assert rec.weight == 80.0, "the deload must repeat the load, not add to it"
-    assert "deload" in rec.reason.lower()
+    assert "descarga" in rec.reason.lower()
 
 
 def test_una_fase_normal_si_sube():
@@ -838,7 +838,7 @@ def test_is_deload_reconoce_ambas_rutinas():
         fases = data.active_routine().phases
         descargas = [f for f in fases if pr.is_deload(f)]
         assert len(descargas) == 1, f"{rid}: expected exactly one deload phase"
-        assert "deload" in descargas[0].name.lower()
+        assert "descarga" in descargas[0].name.lower()
     data.set_active_routine("cambiatufisico")
 
 

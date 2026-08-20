@@ -289,8 +289,8 @@ def test_empty_day_is_an_invitation_not_an_error(view):
     _seed_yesterday(view.test_fake)
     tree = view.build()
     blob = joined(tree)
-    assert "Nothing logged yet" in blob
-    assert "Copy yesterday" in blob
+    assert "Nada registrado todavía" in blob
+    assert "Copiar ayer" in blob
     assert "2,550 kcal" in blob  # the plan is restated, so the day has a shape
     assert not re.search(r"error|failed|none", blob, re.I)
 
@@ -303,12 +303,12 @@ def test_empty_state_does_not_offer_a_copy_of_an_empty_yesterday(view):
     that always works, so on this day search is the primary one.
     """
     blob = joined(view.build())
-    assert "Nothing logged yet" in blob
-    assert "Copy yesterday" not in blob
+    assert "Nada registrado todavía" in blob
+    assert "Copiar ayer" not in blob
     # And it says why, rather than silently dropping the button the reader saw
     # yesterday.
-    assert "nothing to copy" in blob.lower()
-    assert "Search food" in blob
+    assert "nada que copiar" in blob.lower()
+    assert "Buscar alimento" in blob
 
 
 def test_empty_state_names_the_day_it_would_copy_from(view):
@@ -317,8 +317,8 @@ def test_empty_state_names_the_day_it_would_copy_from(view):
     view.day = date.today() - timedelta(days=3)
     fake.log_food(None, (view.day - timedelta(days=1)).isoformat(), "lunch", FOODS[0])
     blob = joined(view.build())
-    assert "Copy the day before" in blob
-    assert "Copy yesterday" not in blob
+    assert "Copiar el día anterior" in blob
+    assert "Copiar ayer" not in blob
 
 
 def test_empty_state_does_not_invent_targets(view, monkeypatch):
@@ -332,12 +332,12 @@ def test_empty_state_does_not_invent_targets(view, monkeypatch):
     monkeypatch.setattr(view.test_module, "targets_for", lambda *a, **k: None)
     blob = joined(view.build())
     assert "0 kcal ·" not in blob
-    assert "No daily targets are set" in blob
+    assert "Aún no hay objetivos diarios" in blob
 
 
 def test_all_five_meals_are_always_listed(view):
     blob = joined(view.build())
-    for label in ("Breakfast", "Mid-morning", "Lunch", "Afternoon", "Dinner"):
+    for label in ("Desayuno", "Media mañana", "Comida", "Merienda", "Cena"):
         assert label in blob
 
 
@@ -346,7 +346,7 @@ def test_macros_show_what_is_left(view):
     fake.log_food(None, date.today().isoformat(), "lunch", FOODS[2])  # 248 kcal, 46P 5F 0C
     blob = joined(view.build())
     assert "2,302" in blob  # 2550 - 248 kcal left, in the ring
-    assert "46/115 g" in blob and "69 left" in blob  # protein bar
+    assert "46/115 g" in blob and "quedan 69" in blob  # protein bar
     assert "248 / 2,550" in blob  # eaten / target caption
 
 
@@ -356,8 +356,8 @@ def test_going_over_target_is_flagged_not_hidden(view):
     for _ in range(20):
         fake.log_food(None, today, "dinner", FOODS[0])  # 20 × 50 g carbs = 1000 g
     blob = joined(view.build())
-    assert "over" in blob
-    assert "635 over" in blob  # carbs: 1000 eaten against a 365 target
+    assert "de más" in blob
+    assert "635 de más" in blob  # carbs: 1000 eaten against a 365 target
 
 
 def test_meal_subtotal_is_visible_while_collapsed(view):
@@ -394,20 +394,20 @@ def test_removing_an_entry_calls_delete(view):
     fake = view.test_fake
     entry = fake.log_food(None, date.today().isoformat(), "lunch", FOODS[0])
     view.expanded = {"lunch"}
-    clickable_with_tooltip(view.build(), "Remove").on_click(None)
+    clickable_with_tooltip(view.build(), "Quitar").on_click(None)
     assert fake.deleted == [entry["id"]]
 
 
 def test_copy_yesterday_from_the_empty_state(view):
     _seed_yesterday(view.test_fake)
-    clickable_with(view.build(), "Copy yesterday").on_click(None)
+    clickable_with(view.build(), "Copiar ayer").on_click(None)
     assert view.test_fake.copied == [date.today().isoformat()]
 
 
 def test_copy_yesterday_is_still_reachable_on_a_used_day(view):
     fake = view.test_fake
     fake.log_food(None, date.today().isoformat(), "lunch", FOODS[0])
-    clickable_with(view.build(), "Copy yesterday").on_click(None)
+    clickable_with(view.build(), "Copiar ayer").on_click(None)
     assert fake.copied
 
 
@@ -418,7 +418,7 @@ def test_day_navigation_moves_back_and_forward(view):
     today = date.today()
     containers_with_icon(view.build(), ft.Icons.CHEVRON_LEFT)[0].on_click(None)
     assert view.day == today - timedelta(days=1)
-    assert "Yesterday" in joined(view.build())
+    assert "Ayer" in joined(view.build())
 
     containers_with_icon(view.build(), ft.Icons.CHEVRON_RIGHT)[0].on_click(None)
     assert view.day == today
@@ -462,7 +462,7 @@ def test_search_starts_on_favourites(view):
     view._open_search("lunch")
     assert view.page.open.called
     blob = joined(view._results)
-    assert "FAVOURITES" in blob
+    assert "FAVORITOS" in blob
     assert "Oats" in blob
 
 
@@ -483,7 +483,7 @@ def test_named_portions_instead_of_grams(view):
     fake = view.test_fake
     view._open_search("breakfast")
     # The tune icon opens the alternatives; the row itself logs the default.
-    clickable_with_tooltip(view._results, "Other portions").on_click(None)
+    clickable_with_tooltip(view._results, "Otras raciones").on_click(None)
     clickable_with(view._results, "120 g").on_click(None)
     assert fake.logged[-1]["portion"] == "120 g"
 
@@ -491,7 +491,7 @@ def test_named_portions_instead_of_grams(view):
 def test_no_match_says_so_politely(view):
     view._open_search("lunch")
     view._on_query(MagicMock(control=MagicMock(value="zzz")))
-    assert 'No match for "zzz"' in joined(view._results)
+    assert 'Nada que encaje con "zzz"' in joined(view._results)
 
 
 def test_back_closes_the_sheet_first(view):
@@ -606,7 +606,7 @@ def test_renders_a_real_logged_day(real_view):
     assert entry["name"] in labels
     assert entry["serving"] in " | ".join(labels)
     # The plan's target is seeded, so the ring has something to count down from.
-    assert any("left" in t for t in labels)
+    assert any("quedan" in t for t in labels)
 
 
 def test_removing_a_real_entry_empties_the_day(real_view):
@@ -615,7 +615,7 @@ def test_removing_a_real_entry_empties_the_day(real_view):
     nutrition.log_food(store, day, "lunch", {"id": "chicken_breast"})
     view.expanded = {"lunch"}
 
-    clickable_with_tooltip(view.build(), "Remove").on_click(None)
+    clickable_with_tooltip(view.build(), "Quitar").on_click(None)
     assert nutrition.day_totals(store, day)["kcal"] == 0
 
 
@@ -630,7 +630,7 @@ def test_a_real_portion_is_logged_by_name(real_view):
 
     view._open_search("breakfast")
     view._on_query(MagicMock(control=MagicMock(value="rolled")))
-    clickable_with_tooltip(view._results, "Other portions").on_click(None)
+    clickable_with_tooltip(view._results, "Otras raciones").on_click(None)
     clickable_with(view._results, alt["label"]).on_click(None)
 
     logged = nutrition.day_entries(store, day)

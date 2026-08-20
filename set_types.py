@@ -66,15 +66,18 @@ DEFAULT_SET_TYPE = SetType.NORMAL
 
 #: Full labels for menus.
 LABELS: dict[SetType, str] = {
-    SetType.WARMUP: "Warm-up",
-    SetType.NORMAL: "Working set",
+    SetType.WARMUP: "Calentamiento",
+    SetType.NORMAL: "Serie efectiva",
     SetType.DROPSET: "Drop set",
-    SetType.FAILURE: "To failure",
+    SetType.FAILURE: "Al fallo",
 }
 
 #: One-letter badges for the set row, where there is no space for a word.
+# La letra de la columna TIPO. "C" de calentamiento — la W venía de warm-up y
+# en una interfaz en español era la única letra que no casaba con su palabra.
+# Solo presentación: la clave guardada sigue siendo "warmup".
 SHORT_LABELS: dict[SetType, str] = {
-    SetType.WARMUP: "W",
+    SetType.WARMUP: "C",
     SetType.NORMAL: "N",
     SetType.DROPSET: "D",
     SetType.FAILURE: "F",
@@ -104,42 +107,42 @@ class SetTypeHelp:
 HELP: dict[SetType, SetTypeHelp] = {
     SetType.WARMUP: SetTypeHelp(
         what=(
-            "Light reps to prime the movement before the real work — "
-            "well under the weight you are about to lift."
+            "Repeticiones ligeras para preparar el movimiento antes del trabajo de "
+            "verdad — bastante por debajo del peso que vas a levantar."
         ),
         consequence=(
-            "Not counted: no volume, no set count, and it can never take a "
-            "record. Rest afterwards is short."
+            "No cuenta: ni volumen, ni número de series, ni puede llevarse un "
+            "récord. El descanso después es corto."
         ),
     ),
     SetType.NORMAL: SetTypeHelp(
         what=(
-            "The sets the plan asks for. This is the default: leave the letter "
-            "alone and the set is stored as normal work."
+            "Las series que pide el plan. Es el valor por defecto: deja la letra "
+            "en paz y la serie se guarda como trabajo normal."
         ),
         consequence=(
-            "Counts for volume, set counts and records. Everything the Telegram "
-            "coach logs arrives as this."
+            "Cuenta para volumen, series y récords. Todo lo que apunta el coach "
+            "de Telegram llega así."
         ),
     ),
     SetType.DROPSET: SetTypeHelp(
         what=(
-            "You hit the target reps, cut about 20–30 % of the weight and keep "
-            "going with no rest. Log the drop as its own set."
+            "Llegas a las repeticiones objetivo, quitas un 20–30 % del peso y "
+            "sigues sin descansar. Apunta el drop como una serie propia."
         ),
         consequence=(
-            "Counts in full, like any working set. The label is what explains "
-            "why the weight fell mid-exercise."
+            "Cuenta entera, como cualquier serie efectiva. La etiqueta es lo que "
+            "explica por qué bajó el peso a mitad de ejercicio."
         ),
     ),
     SetType.FAILURE: SetTypeHelp(
         what=(
-            "Taken until one more clean rep is not there — RIR 0. Worth saving "
-            "for the last set of an exercise."
+            "Llevada hasta que no sale ni una repetición limpia más — RIR 0. "
+            "Resérvala para la última serie de un ejercicio."
         ),
         consequence=(
-            "Counts in full, like any working set. It costs recovery, so it is "
-            "a choice, not a default."
+            "Cuenta entera, como cualquier serie efectiva. Cuesta recuperación, "
+            "así que es una elección, no un valor por defecto."
         ),
     ),
 }

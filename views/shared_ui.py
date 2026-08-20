@@ -135,7 +135,7 @@ def is_db_error(exc: BaseException) -> bool:
 def describe_db_error(exc: BaseException) -> tuple[str, str]:
     """(headline, body) for a failure that reached a `build()`.
 
-    Two different sentences on purpose. "Cannot reach the database" is a fact
+    Two different sentences on purpose. "No se llega a la base de datos" is a fact
     Alex can act on — the container is down, the phone is off the network — and
     it comes with the reassurance that matters: nothing he logged is gone. A
     non-database exception is a bug in the app, and saying "database" about it
@@ -143,14 +143,14 @@ def describe_db_error(exc: BaseException) -> tuple[str, str]:
     """
     if is_db_error(exc):
         return (
-            "Can't reach the database",
-            "Your training and food are stored in the database, and it is not "
-            "answering right now. Nothing you logged is lost — check that the "
-            "server is up and try again.",
+            "No se llega a la base de datos",
+            "Tu entreno y tu comida viven en la base de datos, y ahora mismo no "
+            "responde. Nada de lo que apuntaste se ha perdido — comprueba que el "
+            "servidor esté levantado y reintenta.",
         )
     return (
-        "This screen could not load",
-        "Something went wrong building this screen. The details are below; your data is untouched.",
+        "Esta pantalla no pudo cargar",
+        "Algo falló montando esta pantalla. El detalle está abajo; tus datos están intactos.",
     )
 
 
@@ -183,7 +183,7 @@ def db_error_card(exc: BaseException, on_retry: Callable[[], None] | None = None
     if on_retry is not None:
         children += [
             ft.Container(height=Space.x2),
-            ghost_button("Try again", on_click=lambda _: on_retry(), expand=True),
+            ghost_button("Reintentar", on_click=lambda _: on_retry(), expand=True),
         ]
     children += [
         ft.Container(height=Space.x2),

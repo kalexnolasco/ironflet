@@ -145,8 +145,8 @@ def test_volume_tile_carries_the_real_figure(home):
 def test_volume_tooltip_names_the_window_and_the_arithmetic(home):
     view = home(FakeStore())
     tips = " | ".join(tooltips(view.build()))
-    assert "Weight × reps" in tips
-    assert "last 7 days" in tips.lower()
+    assert "Peso × reps" in tips
+    assert "últimos 7 días" in tips.lower()
 
 
 # ── the database is down ────────────────────────────────────────────────
@@ -162,7 +162,7 @@ _DriverError.__module__ = "sqlalchemy.exc"
 def test_a_dead_database_does_not_open_the_app_on_nothing(home):
     view = home(FakeStore(fail=_DriverError("could not connect to server")))
     rendered = " | ".join(texts(view.build()))
-    assert "Can't reach the database" in rendered
+    assert "No se llega a la base de datos" in rendered
     assert "could not connect to server" in rendered
 
 

@@ -156,11 +156,11 @@ def clean_key(raw: str | None) -> str:
     """
     text = (raw or "").strip()
     if not text:
-        raise ValueError("The key is empty.")
+        raise ValueError("La clave está vacía.")
     if re.search(r"\s", text):
-        raise ValueError("That has a space in it — it looks like a partial paste.")
+        raise ValueError("Lleva un espacio — parece un pegado a medias.")
     if len(text) < 20:
-        raise ValueError("That is too short to be an API key.")
+        raise ValueError("Demasiado corta para ser una clave API.")
     return text
 
 
@@ -569,11 +569,11 @@ def commit_proposal(store: Any, proposal: Proposal) -> str:
     if isinstance(proposal, WorkoutProposal):
         replaced = store.replace_workout(proposal.to_entry())
         if replaced:
-            return f"Replaced {proposal.exercise} on {proposal.day.isoformat()}."
-        return f"Saved {proposal.exercise} on {proposal.day.isoformat()}."
+            return f"Reemplazado {proposal.exercise} del {proposal.day.isoformat()}."
+        return f"Guardado {proposal.exercise} en {proposal.day.isoformat()}."
     if isinstance(proposal, WeightProposal):
         store.save_weight(proposal.kg, proposal.day.isoformat())
-        return f"Saved {proposal.kg:g} kg on {proposal.day.isoformat()}."
+        return f"Guardados {proposal.kg:g} kg en {proposal.day.isoformat()}."
     raise TypeError(f"Not a proposal: {type(proposal).__name__}")
 
 
@@ -1196,7 +1196,7 @@ def _post_chat(payload: dict, api_key: str, timeout: float = 90.0) -> dict:
     try:
         import httpx
     except ImportError as exc:  # pragma: no cover - the APK ships it
-        raise ApiError("The HTTP client is not installed in this build.") from exc
+        raise ApiError("Este build no lleva el cliente HTTP.") from exc
 
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -1214,7 +1214,7 @@ def _post_chat(payload: dict, api_key: str, timeout: float = 90.0) -> dict:
             )
     except Exception as exc:  # network, DNS, TLS, timeout
         raise ApiError(
-            "No connection to OpenRouter. The coach needs signal; the rest of the app does not."
+            "Sin conexión con OpenRouter. El entrenador necesita señal; el resto de la app no."
         ) from exc
 
     if response.status_code >= 400:
@@ -1223,7 +1223,7 @@ def _post_chat(payload: dict, api_key: str, timeout: float = 90.0) -> dict:
     try:
         return response.json()
     except ValueError as exc:
-        raise ApiError("OpenRouter sent something that is not JSON.") from exc
+        raise ApiError("OpenRouter devolvió algo que no es JSON.") from exc
 
 
 def _explain_status(response: Any) -> str:
@@ -1248,25 +1248,25 @@ def _explain_status(response: Any) -> str:
 
     codigo = response.status_code
     if codigo == 401:
-        return "That OpenRouter key was rejected. Check it in Settings."
+        return "Esa clave de OpenRouter fue rechazada. Revísala en Ajustes."
     if codigo == 402:
-        return "Out of OpenRouter credit. Top it up at openrouter.ai."
+        return "Sin crédito en OpenRouter. Recárgalo en openrouter.ai."
     if codigo == 403:
-        return detalle or "OpenRouter refused that request."
+        return detalle or "OpenRouter rechazó la petición."
     if codigo == 404:
-        return "That model id does not exist on OpenRouter. Pick another in Settings."
+        return "Ese modelo no existe en OpenRouter. Elige otro en Ajustes."
     if codigo == 429:
-        return "Rate limited — wait a moment and ask again."
+        return "Límite de peticiones — espera un momento y repite."
     if codigo >= 500:
-        return "OpenRouter is having trouble. Try again in a minute."
-    return detalle or f"OpenRouter refused the request ({codigo})."
+        return "OpenRouter está teniendo problemas. Prueba en un minuto."
+    return detalle or f"OpenRouter rechazó la petición ({codigo})."
 
 
 def _friendly_error(exc: Exception) -> str:
     """One sentence. Never a stack trace, never a bare exception class name."""
     if isinstance(exc, AgentError):
         return str(exc)
-    return f"Something went wrong: {exc}"
+    return f"Algo ha fallado: {exc}"
 
 
 class Coach:
@@ -1312,13 +1312,13 @@ class Coach:
         """One user turn in, one `Reply` out. Never raises."""
         message = (text or "").strip()
         if not message:
-            return Reply(text="", error="Nothing to send.")
+            return Reply(text="", error="Nada que enviar.")
 
         key = read_key(self.store)
         if not key:
             return Reply(
                 text="",
-                error="No OpenRouter key yet. Settings \u2192 Coach, paste your key there once.",
+                error="Aún no hay clave de OpenRouter. Ajustes → Entrenador: pégala una vez.",
             )
 
         ctx = self._context()
@@ -1376,7 +1376,7 @@ class Coach:
             if not opciones:
                 del self.messages[watermark:]
                 return Reply(
-                    text="", error="OpenRouter returned no answer.", tool_calls=tuple(used)
+                    text="", error="OpenRouter no devolvió respuesta.", tool_calls=tuple(used)
                 )
             eleccion = opciones[0] or {}
             respuesta = eleccion.get("message") or {}
@@ -1396,12 +1396,12 @@ class Coach:
             if not llamadas:
                 answer = (respuesta.get("content") or "").strip()
                 if motivo == "length" and answer:
-                    answer += " …(cut off)"
+                    answer += " …(cortado)"
                 if motivo == "content_filter":
                     del self.messages[watermark:]
                     return Reply(
                         text="",
-                        error="The model declined to answer that one.",
+                        error="El modelo no quiso responder a eso.",
                         tool_calls=tuple(used),
                     )
                 return Reply(
@@ -1461,7 +1461,7 @@ class Coach:
         return Reply(
             text="",
             proposal=proposal,
-            error="Gave up after too many tool calls. Try asking something narrower.",
+            error="Demasiadas vueltas de herramientas. Prueba una pregunta más concreta.",
             tool_calls=tuple(used),
             input_tokens=tokens_in,
             output_tokens=tokens_out,

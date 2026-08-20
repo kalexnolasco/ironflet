@@ -109,7 +109,7 @@ class AgentView:
         try:
             reply = await asyncio.to_thread(self.coach.ask, text)
         except Exception as exc:  # pragma: no cover - `ask` is already total
-            reply = agent.Reply(text="", error=f"Something went wrong: {exc}")
+            reply = agent.Reply(text="", error=f"Algo ha fallado: {exc}")
 
         self.busy = False
         if reply.error:
@@ -117,7 +117,7 @@ class AgentView:
         elif reply.text:
             self.bubbles.append(Bubble("coach", reply.text))
         else:
-            self.bubbles.append(Bubble("error", "The coach had nothing to say."))
+            self.bubbles.append(Bubble("error", "El entrenador no dijo nada."))
 
         self.pending = reply.proposal
         # `priced_model` rather than the id: `estimate_cost` prefers the number
@@ -142,7 +142,7 @@ class AgentView:
         try:
             said = agent.commit_proposal(self.store, proposal)
         except Exception as exc:
-            self.bubbles.append(Bubble("error", f"Could not save it: {exc}"))
+            self.bubbles.append(Bubble("error", f"No se pudo guardar: {exc}"))
             self._render()
             return
         self.pending = None
@@ -151,7 +151,7 @@ class AgentView:
 
     def _discard(self, _=None):
         self.pending = None
-        self.bubbles.append(Bubble("coach", "Discarded — nothing was written."))
+        self.bubbles.append(Bubble("coach", "Descartado — no se escribió nada."))
         self._render()
 
     def _clear(self, _=None):
@@ -197,31 +197,29 @@ class AgentView:
             title = p.exercise
             when = p.day
             body = p.summary()
-            detail = plural(len(p.sets), "set")
+            detail = plural(len(p.sets), "serie")
             warn = (
-                f"{p.exercise} is already logged on that date — saving replaces it."
+                f"{p.exercise} ya está registrado ese día — guardar lo reemplaza."
                 if p.replaces
                 else ""
             )
             note = p.note or ""
         else:
-            title = "Body weight"
+            title = "Peso corporal"
             when = p.day
             body = p.summary()
             detail = ""
-            warn = (
-                "There is already a weigh-in that day — saving corrects it." if p.replaces else ""
-            )
+            warn = "Ya hay un pesaje ese día — guardar lo corrige." if p.replaces else ""
             note = ""
 
-        when_text = "today" if when == date.today() else when.strftime("%a %d %b %Y")
+        when_text = "hoy" if when == date.today() else when.strftime("%d/%m/%Y")
 
         rows: list[ft.Control] = [
             ft.Row(
                 [
                     ft.Icon(ft.Icons.EDIT_NOTE_ROUNDED, size=16, color=C.accent),
                     ft.Text(
-                        "Nothing saved yet — check this",
+                        "Nada guardado aún — revísalo",
                         size=11,
                         weight=ft.FontWeight.W_800,
                         color=C.accent,
@@ -241,7 +239,7 @@ class AgentView:
             ),
         ]
         if note:
-            rows.append(ft.Text(f"Note: {note}", size=11, color=C.text_secondary))
+            rows.append(ft.Text(f"Nota: {note}", size=11, color=C.text_secondary))
         if warn:
             rows.append(
                 ft.Row(
@@ -256,9 +254,9 @@ class AgentView:
         rows.append(
             ft.Row(
                 [
-                    ghost_button("Discard", on_click=self._discard),
+                    ghost_button("Descartar", on_click=self._discard),
                     primary_button(
-                        "Replace it" if warn else "Save it",
+                        "Reemplazar" if warn else "Guardar",
                         on_click=self._accept,
                         expand=True,
                     ),
@@ -270,17 +268,22 @@ class AgentView:
 
     def _no_key_card(self) -> ft.Control:
         return card(
-            ft.Text("The coach is not set up", size=14, weight=ft.FontWeight.W_900, color=C.text),
             ft.Text(
-                "It runs on OpenRouter and needs your own key — one key, ~350 models to pick "
-                "from. Settings → Coach, paste it once. It is stored in this app's private "
-                "storage, never in the installed file and never in a backup.",
+                "El entrenador no está configurado",
+                size=14,
+                weight=ft.FontWeight.W_900,
+                color=C.text,
+            ),
+            ft.Text(
+                "Funciona con OpenRouter y necesita tu clave — una sola, ~350 modelos a elegir. "
+                "Ajustes → Entrenador: pégala una vez. Vive en el almacenamiento privado "
+                "de la app, nunca en el fichero instalado ni en una copia.",
                 size=12,
                 color=C.text_secondary,
             ),
             ft.Container(height=6),
             primary_button(
-                "Open Settings",
+                "Abrir Ajustes",
                 on_click=lambda _: self.page.data["navigate_to"](5),
                 expand=True,
             ),
@@ -298,7 +301,7 @@ class AgentView:
         return ft.Column(
             [
                 ft.Text(
-                    "Ask about your training, or just say what you did.",
+                    "Pregunta por tu entreno, o cuenta qué has hecho.",
                     size=12,
                     color=C.text_secondary,
                 ),
@@ -323,7 +326,7 @@ class AgentView:
         try:
             ready = agent.has_key(self.store)
         except Exception as exc:
-            return db_error_screen("Coach", exc, on_retry=self._render)
+            return db_error_screen("Entrenador", exc, on_retry=self._render)
 
         header = ft.Row(
             [
@@ -331,7 +334,7 @@ class AgentView:
                     content=ft.Row(
                         [
                             ft.Icon(ft.Icons.ARROW_BACK, color=C.accent, size=16),
-                            ft.Text("Home", color=C.accent, size=12, weight=ft.FontWeight.W_700),
+                            ft.Text("Inicio", color=C.accent, size=12, weight=ft.FontWeight.W_700),
                         ],
                         spacing=4,
                         tight=True,
@@ -340,13 +343,13 @@ class AgentView:
                     padding=ft.padding.symmetric(vertical=6),
                     ink=True,
                 ),
-                ft.Text("Coach", size=18, weight=ft.FontWeight.W_900, color=C.text),
+                ft.Text("Entrenador", size=18, weight=ft.FontWeight.W_900, color=C.text),
                 ft.Container(
                     content=ft.Icon(ft.Icons.REFRESH_ROUNDED, size=18, color=C.text_secondary),
                     on_click=self._clear,
                     padding=6,
                     ink=True,
-                    tooltip="Start a new conversation",
+                    tooltip="Empezar conversación nueva",
                 ),
             ],
             alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
@@ -372,14 +375,14 @@ class AgentView:
                 ft.Row(
                     [
                         ft.ProgressRing(width=14, height=14, stroke_width=2, color=C.accent),
-                        ft.Text("Thinking…", size=12, color=C.text_secondary),
+                        ft.Text("Pensando…", size=12, color=C.text_secondary),
                     ],
                     spacing=8,
                 )
             )
 
         self._input = ft.TextField(
-            hint_text="Ask, or tell me what you did",
+            hint_text="Pregunta, o dime qué has hecho",
             dense=True,
             expand=True,
             multiline=False,
@@ -414,7 +417,7 @@ class AgentView:
             # separately from any subscription, and a running cost nobody can
             # see is one discovered on a statement.
             below.append(
-                ft.Text(f"Last answer ≈ ${self.last_cost:.3f}", size=10, color=C.text_muted)
+                ft.Text(f"Última respuesta ≈ ${self.last_cost:.3f}", size=10, color=C.text_muted)
             )
 
         return ft.Column(

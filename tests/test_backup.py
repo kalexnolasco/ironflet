@@ -362,14 +362,14 @@ def test_summary_line_is_showable(store, other):
     counts = import_all(other, export_all(store))
 
     assert summary_line(counts) == (
-        "2 workouts, 2 weigh-ins, 1 session note, 1 session time, "
-        "3 food entries, 2 foods, 1 routine"
+        "2 entrenos, 2 pesajes, 1 nota de sesión, 1 tiempo de sesión, "
+        "3 apuntes de comida, 2 alimentos, 1 rutina"
     )
-    assert summary_line({}) == "nothing"
-    assert summary_line({"workouts": 1}) == "1 workout"
-    assert summary_line({"session_notes": 4}) == "4 session notes"
-    assert summary_line({"session_durations": 1}) == "1 session time"
-    assert summary_line({"session_durations": 9}) == "9 session times"
+    assert summary_line({}) == "nada"
+    assert summary_line({"workouts": 1}) == "1 entreno"
+    assert summary_line({"session_notes": 4}) == "4 notas de sesión"
+    assert summary_line({"session_durations": 1}) == "1 tiempo de sesión"
+    assert summary_line({"session_durations": 9}) == "9 tiempos de sesión"
 
 
 def test_export_carries_provenance(store):
@@ -538,16 +538,16 @@ def test_future_version_is_refused_with_a_clear_message(store):
     doc = export_all(store)
     doc["version"] = BACKUP_VERSION + 1
 
-    with pytest.raises(BackupError, match="newer than this app supports"):
+    with pytest.raises(BackupError, match="más nueva de lo que esta app admite"):
         import_all(store, doc)
 
 
 def test_a_foreign_document_is_refused(store):
-    with pytest.raises(BackupError, match="Not an IronFlet backup"):
+    with pytest.raises(BackupError, match="No es una copia de IronFlet"):
         import_all(store, {"app": "strava", "version": 3})
-    with pytest.raises(BackupError, match="no version number"):
+    with pytest.raises(BackupError, match="sin número de versión"):
         import_all(store, {"app": "ironflet"})
-    with pytest.raises(BackupError, match="Not an IronFlet backup"):
+    with pytest.raises(BackupError, match="No es una copia de IronFlet"):
         import_all(store, ["not", "an", "object"])
 
 
@@ -721,7 +721,7 @@ def test_truncated_file_fails_cleanly(store, tmp_path):
     truncated = tmp_path / "truncated.json"
     truncated.write_text(good.read_text(encoding="utf-8")[: len(good.read_text()) // 2])
 
-    with pytest.raises(BackupError, match="not valid JSON"):
+    with pytest.raises(BackupError, match="no es JSON válido"):
         backup.import_from_file(store, truncated, wipe=True)
 
     assert counts_of(store) == before
@@ -729,7 +729,7 @@ def test_truncated_file_fails_cleanly(store, tmp_path):
 
 def test_missing_file_fails_cleanly(store, tmp_path):
     populate(store)
-    with pytest.raises(BackupError, match="Cannot read the backup file"):
+    with pytest.raises(BackupError, match="No se puede leer el archivo de copia"):
         backup.import_from_file(store, tmp_path / "nope.json")
     assert counts_of(store)["workouts"] == 2
 
