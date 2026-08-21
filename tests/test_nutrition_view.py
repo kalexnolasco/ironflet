@@ -628,14 +628,14 @@ def test_removing_a_real_entry_empties_the_day(real_view):
 def test_a_real_portion_is_logged_by_name(real_view):
     view, nutrition, store = real_view
     day = view.day.isoformat()
-    oats = next(f for f in nutrition.search_foods(store, "rolled") if f["id"] == "oats")
+    oats = next(f for f in nutrition.search_foods(store, "avena") if f["id"] == "oats")
     assert oats["portions"], "the picker needs named portions, not grams"
     # A portion that is *not* the default, so the assertion cannot pass by
     # accident when the tap falls through to the one-tap path.
     alt = next(p for p in oats["portions"] if p["grams"] != oats["grams"])
 
     view._open_search("breakfast")
-    view._on_query(MagicMock(control=MagicMock(value="rolled")))
+    view._on_query(MagicMock(control=MagicMock(value="avena")))
     clickable_with_tooltip(view._results, "Otras raciones").on_click(None)
     clickable_with(view._results, alt["label"]).on_click(None)
 

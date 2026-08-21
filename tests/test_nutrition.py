@@ -111,9 +111,9 @@ def test_macros_is_immutable():
 
 # ── pure: the seed catalogue ─────────────────────────────────
 def test_seed_has_the_eighteen_plan_foods():
-    assert len(SEED_FOODS) == 18
-    assert len({f.slug for f in SEED_FOODS}) == 18
-    assert len({f.name for f in SEED_FOODS}) == 18
+    assert len(SEED_FOODS) == 50
+    assert len({f.slug for f in SEED_FOODS}) == 50
+    assert len({f.name for f in SEED_FOODS}) == 50
 
 
 def test_every_seed_food_has_at_least_one_serving():
@@ -189,11 +189,11 @@ def test_menu_by_meal_sums_to_the_whole():
 # ── database: catalogue ──────────────────────────────────────
 def test_seed_runs_on_construction(nut):
     foods = nut.list_foods()
-    assert len(foods) == 18
+    assert len(foods) == 50
     banana = nut.get_food("banana")
-    assert banana["name"] == "Banana"
+    assert banana["name"] == "Plátano"
     assert banana["per_100g"].kcal == 89.0
-    assert any(s["name"] == "1 medium banana" and s["grams"] == 120.0 for s in banana["servings"])
+    assert any(s["name"] == "1 plátano mediano" and s["grams"] == 120.0 for s in banana["servings"])
 
 
 def test_seed_is_idempotent(nut):
@@ -212,10 +212,10 @@ def test_seed_does_not_clobber_user_corrections(nut):
 
 
 def test_search_by_name(nut):
-    assert [f["slug"] for f in nut.search_foods("chick")] == ["chicken_breast"]
-    assert {f["slug"] for f in nut.search_foods("BREAD")} == {"bread_wholemeal"}
+    assert [f["slug"] for f in nut.search_foods("pollo")] == ["chicken_breast"]
+    assert {f["slug"] for f in nut.search_foods("PAN INTEGRAL")} == {"bread_wholemeal"}
     assert nut.search_foods("zzz") == []
-    assert len(nut.search_foods("")) == 18
+    assert len(nut.search_foods("", limit=100)) == 50
 
 
 def test_search_puts_favourites_first(nut):
@@ -251,7 +251,7 @@ def test_log_by_grams_freezes_macros(nut):
     entry_id = nut.log_food("chicken_breast", 150.0, meal="lunch", day=TODAY)
     entry = nut.day_entries(TODAY)[0]
     assert entry["id"] == entry_id
-    assert entry["food_name"] == "Chicken breast, raw"
+    assert entry["food_name"] == "Pechuga de pollo (cruda)"
     assert entry["grams"] == 150.0
     # 120 kcal / 22.5 g protein per 100 g × 1.5
     assert entry["macros"].kcal == pytest.approx(180.0)
@@ -259,14 +259,14 @@ def test_log_by_grams_freezes_macros(nut):
 
 
 def test_log_by_serving(nut):
-    nut.log_food("banana", meal="breakfast", day=TODAY, serving="1 medium banana")
+    nut.log_food("banana", meal="breakfast", day=TODAY, serving="1 plátano mediano")
     entry = nut.day_entries(TODAY)[0]
     assert entry["grams"] == 120.0
     assert entry["macros"].kcal == pytest.approx(106.8)
 
 
 def test_log_by_serving_with_quantity(nut):
-    nut.log_food("egg", meal="dinner", day=TODAY, serving="1 medium egg (53 g)", quantity=4)
+    nut.log_food("egg", meal="dinner", day=TODAY, serving="1 huevo M (53 g)", quantity=4)
     assert nut.day_entries(TODAY)[0]["grams"] == pytest.approx(212.0)
 
 
@@ -310,12 +310,12 @@ def test_frozen_macros_survive_renaming_and_deleting_the_food(nut):
     nut.log_food("salmon", 150.0, meal="dinner", day=TODAY)
     nut.update_food("salmon", name="Wild salmon")
     entry = nut.day_entries(TODAY)[0]
-    assert entry["food_name"] == "Salmon, raw", "the logged name is a copy, not a lookup"
+    assert entry["food_name"] == "Salmón (crudo)", "the logged name is a copy, not a lookup"
 
     nut.delete_food("salmon")
     entry = nut.day_entries(TODAY)[0]
     assert entry["food_id"] is None
-    assert entry["food_name"] == "Salmon, raw"
+    assert entry["food_name"] == "Salmón (crudo)"
     assert entry["macros"].kcal == pytest.approx(312.0)
 
 
@@ -456,7 +456,7 @@ def test_copy_appends_by_default_and_can_replace(nut):
 
     nut.copy_previous_day(TODAY, replace_target=True)
     assert len(nut.day_entries(TODAY)) == 1
-    assert nut.day_entries(TODAY)[0]["food_name"] == "Rolled oats"
+    assert nut.day_entries(TODAY)[0]["food_name"] == "Copos de avena"
 
 
 def test_copy_revalues_with_todays_catalogue(nut):
@@ -475,7 +475,7 @@ def test_copy_of_a_deleted_food_falls_back_to_frozen_values(nut):
     assert nut.copy_previous_day(TODAY) == 1
     entry = nut.day_entries(TODAY)[0]
     assert entry["food_id"] is None
-    assert entry["food_name"] == "Tuna, canned in water"
+    assert entry["food_name"] == "Atún en lata (al natural)"
     assert entry["macros"].kcal == pytest.approx(116.0)
 
 
@@ -501,20 +501,20 @@ def test_macros_per_100g_matches_what_the_db_returns(nut):
 # them with the Storage first. Its own tests run against a stub, so nothing else
 # checks that the real ones match the contract. These do.
 def test_facade_search_returns_picker_shaped_dicts(nut):
-    results = nutrition.search_foods(nut, "banana")
+    results = nutrition.search_foods(nut, "plátano")
     assert len(results) == 1
     banana = results[0]
     assert banana["id"] == "banana"
-    assert banana["name"] == "Banana"
-    assert banana["serving"] == "1 medium banana"
+    assert banana["name"] == "Plátano"
+    assert banana["serving"] == "1 plátano mediano"
     # Per *serving*, not per 100 g: 89 kcal/100 g × 120 g = 107.
     assert banana["kcal"] == 107.0
-    assert {p["label"] for p in banana["portions"]} == {"1 medium banana", "1 large banana"}
+    assert {p["label"] for p in banana["portions"]} == {"1 plátano mediano", "1 plátano grande"}
 
 
 def test_facade_log_and_totals(nut):
     entry = nutrition.log_food(nut, TODAY.isoformat(), "breakfast", {"id": "banana"})
-    assert entry["name"] == "Banana"
+    assert entry["name"] == "Plátano"
     assert entry["serving"] == "120 g"
     assert entry["kcal"] == 107.0
 
@@ -527,7 +527,7 @@ def test_facade_log_and_totals(nut):
 
 def test_facade_log_with_portion_and_qty(nut):
     entry = nutrition.log_food(
-        nut, TODAY.isoformat(), "dinner", {"id": "egg"}, qty=4, portion="1 medium egg (53 g)"
+        nut, TODAY.isoformat(), "dinner", {"id": "egg"}, qty=4, portion="1 huevo M (53 g)"
     )
     assert entry["grams"] == pytest.approx(212.0)
     assert nutrition.day_totals(nut, TODAY.isoformat())["protein"] == pytest.approx(26.7, abs=0.1)
@@ -580,7 +580,7 @@ def test_facade_delete_and_copy(nut):
 
 def test_facade_accepts_a_bare_slug_as_the_food(nut):
     entry = nutrition.log_food(nut, TODAY.isoformat(), "lunch", "chicken_breast")
-    assert entry["name"] == "Chicken breast, raw"
+    assert entry["name"] == "Pechuga de pollo (cruda)"
     assert entry["grams"] == 150.0
 
 
