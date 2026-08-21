@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import contextlib
 import os
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
 import flet as ft
@@ -47,7 +47,7 @@ from views.shared_ui import plural
 # rendered — `ordered_counts()` appends them under "Other" — so a table added to
 # backup.py appears on screen even before anyone updates this tuple.
 TABLE_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("Entreno", ("workouts", "weights", "profile", "prefs")),
+    ("Entreno", ("workouts", "weights", "photos", "profile", "prefs")),
     ("Nutrición", ("foods", "servings", "food_log", "nutrition_targets")),
     ("Rutinas", ("routines", "routine_phases", "routine_days", "routine_exercises")),
 )
@@ -55,6 +55,7 @@ TABLE_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
 TABLE_LABELS = {
     "workouts": "Entrenos",
     "weights": "Peso corporal",
+    "photos": "Fotos (metadatos)",
     "profile": "Perfil",
     "prefs": "Preferencias",
     "foods": "Alimentos",
@@ -264,6 +265,8 @@ class DataView:
         # `on_result` from a cancelled save be read as an open.
         self._save_picker = ft.FilePicker(on_result=self._on_save_result)
         self._open_picker = ft.FilePicker(on_result=self._on_open_result)
+        self._zip_save_picker = ft.FilePicker(on_result=self._on_zip_save_result)
+        self._zip_open_picker = ft.FilePicker(on_result=self._on_zip_open_result)
 
     # ── view contract ────────────────────────────────────────
     def on_show(self):
@@ -291,6 +294,8 @@ class DataView:
             self._export_card(),
             ft.Container(height=10),
             self._import_card(),
+            ft.Container(height=10),
+            self._photos_zip_card(),
             ft.Container(height=10),
             self._images_card(),
             ft.Container(height=16),
@@ -324,7 +329,12 @@ class DataView:
             return
         added = False
         try:
-            for picker in (self._save_picker, self._open_picker):
+            for picker in (
+                self._save_picker,
+                self._open_picker,
+                self._zip_save_picker,
+                self._zip_open_picker,
+            ):
                 if picker not in overlay:
                     overlay.append(picker)
                     added = True
@@ -401,7 +411,7 @@ class DataView:
         else:
             self._set_status(
                 "success",
-                f"{rows} rows · {format_size(len(payload))} saved to {self._last_export}. "
+                f"{rows} filas · {format_size(len(payload))} guardado en {self._last_export}. "
                 "Elige un destino para guardar una segunda copia.",
             )
         self._refresh()
@@ -986,6 +996,106 @@ class DataView:
             ft.Container(height=8),
             ghost_button("Elegir archivo de copia…", on_click=self._pick_import, expand=True),
         )
+
+    def _photos_zip_card(self) -> ft.Control:
+        """Los BYTES de las fotos de progreso, aparte del backup de texto.
+
+        La copia JSON lleva solo los metadatos (fecha → nombre de fichero):
+        meses de JPEG en base64 la dejarían inenviable por chat, que es como
+        estas copias viajan. Este zip es la otra mitad; en un móvil nuevo se
+        restaura la copia y luego este zip, y la galería vuelve entera.
+        """
+        try:
+            import fotos as _fotos
+
+            total = len([f for f in _fotos.listar(self.store) if f["path"]])
+        except Exception:
+            total = 0
+        return card(
+            section_title("Fotos de progreso"),
+            ft.Text(
+                "La copia de arriba guarda las fechas; los archivos JPEG van en "
+                "un zip aparte. Expórtalo de vez en cuando y guárdalo con la copia.",
+                size=11,
+                color=C.text_secondary,
+            ),
+            ft.Container(height=4),
+            muted_text(f"{plural(total, 'foto')} en este dispositivo", size=10),
+            ft.Container(height=8),
+            ft.Row(
+                [
+                    ghost_button(
+                        "Exportar fotos (zip)", on_click=self._export_photos_zip, expand=True
+                    ),
+                    ghost_button(
+                        "Importar fotos (zip)", on_click=self._import_photos_zip, expand=True
+                    ),
+                ],
+                spacing=8,
+            ),
+        )
+
+    def _export_photos_zip(self, _):
+        """Igual que el backup: primero al almacenamiento de la app, luego elige."""
+        import fotos as _fotos
+
+        nombre = f"ironflet-fotos-{date.today().isoformat()}.zip"
+        destino = backup_dir() / nombre
+        try:
+            contadas = _fotos.exportar_zip(self.store, destino)
+        except Exception as exc:
+            self._set_status("error", f"No se pudo crear el zip: {exc}")
+            self._refresh()
+            return
+        self._last_photos_zip = destino
+        self._set_status(
+            "success",
+            f"{plural(contadas, 'foto')} en {destino}. Elige un destino para una segunda copia.",
+        )
+        self._refresh()
+        with contextlib.suppress(Exception):
+            self._zip_save_picker.save_file(
+                dialog_title="Guardar fotos de IronFlet",
+                file_name=nombre,
+                file_type=ft.FilePickerFileType.CUSTOM,
+                allowed_extensions=["zip"],
+            )
+
+    def _on_zip_save_result(self, e: ft.FilePickerResultEvent):
+        origen = getattr(self, "_last_photos_zip", None)
+        if not e.path or origen is None:
+            return
+        try:
+            Path(e.path).write_bytes(Path(origen).read_bytes())
+            self._set_status("success", f"Fotos guardadas en {e.path}")
+        except OSError as exc:
+            self._set_status("error", f"No se pudo escribir {e.path}: {exc}")
+        self._refresh()
+
+    def _import_photos_zip(self, _):
+        try:
+            self._zip_open_picker.pick_files(
+                dialog_title="Abrir zip de fotos de IronFlet",
+                allow_multiple=False,
+                file_type=ft.FilePickerFileType.CUSTOM,
+                allowed_extensions=["zip"],
+            )
+        except Exception as exc:
+            self._set_status("error", f"No se pudo abrir el selector de archivos: {exc}")
+            self._refresh()
+
+    def _on_zip_open_result(self, e: ft.FilePickerResultEvent):
+        import fotos as _fotos
+
+        if not e.files or not e.files[0].path:
+            return
+        try:
+            contadas = _fotos.importar_zip(self.store, e.files[0].path)
+            self._set_status("success", f"{plural(contadas, 'foto')} restauradas del zip.")
+        except Exception as exc:
+            self._set_status("error", f"No se pudo importar el zip: {exc}")
+        self._load_counts()
+        self._refresh()
 
     def _images_card(self) -> ft.Control:
         installed = asset_manager.is_installed()

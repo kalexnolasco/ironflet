@@ -18,6 +18,7 @@ from views.data_view import DataView
 from views.history import HistoryView
 from views.home import HomeView
 from views.nutrition_view import NutritionView
+from views.photos_view import PhotosView
 from views.plan import PlanView
 from views.profile import ProfileView
 from views.routine_editor import RoutineEditorView
@@ -127,6 +128,7 @@ def main(page: ft.Page):
     routines_view = RoutineEditorView(page, store)
     data_view = DataView(page, store)
     agent_view = AgentView(page, store)
+    photos_view = PhotosView(page, store)
     view_list = [
         home_view,
         plan_view,
@@ -140,6 +142,7 @@ def main(page: ft.Page):
         # Appended, never inserted: `home.py` navigates by number and the
         # indices above are frozen. See trap #1 in CLAUDE.md.
         agent_view,
+        photos_view,
     ]
     # The bar shows five of them. This indirection exists because home.py calls
     # navigate_to(2) and navigate_to(5) by number, so view indices are frozen —
@@ -203,6 +206,9 @@ def main(page: ft.Page):
 
     page.data = {
         "navigate_to": navigate_to,
+        # Home's photo tile opens the system picker THROUGH the gallery view,
+        # so the picker object and its overlay wiring live in exactly one place.
+        "photos_view": photos_view,
         "store": store,
         "refresh_current": lambda: navigate_to(current_tab["idx"]),
         "set_routine": set_routine,

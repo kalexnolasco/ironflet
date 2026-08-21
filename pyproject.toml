@@ -1,6 +1,6 @@
 [project]
 name = "ironflet"
-version = "0.11.0"
+version = "0.12.0"
 description = "Registro de entrenos en español construido con Flet — corre en Android, escritorio y web desde una sola base Python."
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -86,6 +86,11 @@ dependencies = [
     "flet>=0.25,<0.30",
     "sqlalchemy>=2.0",
     "httpx>=0.27,<1",
+    # Trampa 25 (compiled code en la APK): pin EXACTO porque pypi.flet.dev
+    # publica pillow-11.1.0 con wheels cp312 android_24 para las cuatro ABIs
+    # (verificado 2026-08-21). Un rango dejaría al resolver elegir una versión
+    # sin wheel Android y el build fallaría con "no version satisfies".
+    "pillow==11.1.0",
 ]
 
 [project.optional-dependencies]
@@ -125,41 +130,6 @@ Releases = "https://github.com/kalexnolasco/ironflet/releases"
 
 [tool.flet]
 app.module = "main"
-
-# The name under the launcher icon. It has to live HERE, not under
-# `[tool.flet.android]`: build.py:892 reads `tool.flet.product` and has no
-# per-platform variant, so the `product_name` that used to sit in the android
-# section was read by nothing and the icon was labelled "ironflet" — the
-# slug of `[project] name`, lower-case and all. Verified in the built APK's
-# manifest, not assumed; see the note in [tool.flet.android].
-product = "IronFlet"
-
-# THE FORKED FLUTTER BUILD TEMPLATE, AND WHY THIS REPO CARRIES ONE.
-#
-# `flet build` normally clones flet-dev/flet-build-template. `build_template/`
-# is that template with three lines added to `lib/main.dart`, and it exists for
-# one reason: **keeping the screen on**.
-#
-# Flet 0.28.3 offers no way to ask for that from Python. Verified against the
-# installed package, not from memory: `Page` exposes nothing about the screen,
-# `flet.core.window` does not exist in this version, the Dart client answers
-# exactly nine `_invoke_method` names and none touches the display, and there
-# is no JavaScript evaluation either, so even the web build cannot reach the
-# browser's Screen Wake Lock. See the long note in views/workout.py.
-#
-# Meanwhile `wakelock_plus` was *already compiled into the APK* — flet depends
-# on it, `GeneratedPluginRegistrant.java` registers it — with nobody calling
-# it. The fork calls it. Between sets the phone lies on the floor or the bench
-# and locks, so every set cost an unlock with chalked hands before the app was
-# even back; the rest timer, the plate hint and the prescribed target are all
-# worth less behind that.
-#
-# THE PRICE, so nobody discovers it the hard way: this pins the build to a copy
-# of the template. **Raising the flet pin means re-forking it** — diff the new
-# upstream template against `build_template/` and re-apply the wakelock block.
-# `cookiecutter` takes a plain local directory, so the fork costs a copy rather
-# than a hosted repo; the changes are marked with a comment naming this note.
-template.url = "build_template"
 
 # WHAT DOES NOT GET COPIED INTO THE APK.
 #
@@ -203,6 +173,41 @@ app.exclude = [
     "tests/__pycache__",
     "views/__pycache__",
 ]
+
+# The name under the launcher icon. It has to live HERE, not under
+# `[tool.flet.android]`: build.py:892 reads `tool.flet.product` and has no
+# per-platform variant, so the `product_name` that used to sit in the android
+# section was read by nothing and the icon was labelled "ironflet" — the
+# slug of `[project] name`, lower-case and all. Verified in the built APK's
+# manifest, not assumed; see the note in [tool.flet.android].
+product = "IronFlet"
+
+# THE FORKED FLUTTER BUILD TEMPLATE, AND WHY THIS REPO CARRIES ONE.
+#
+# `flet build` normally clones flet-dev/flet-build-template. `build_template/`
+# is that template with three lines added to `lib/main.dart`, and it exists for
+# one reason: **keeping the screen on**.
+#
+# Flet 0.28.3 offers no way to ask for that from Python. Verified against the
+# installed package, not from memory: `Page` exposes nothing about the screen,
+# `flet.core.window` does not exist in this version, the Dart client answers
+# exactly nine `_invoke_method` names and none touches the display, and there
+# is no JavaScript evaluation either, so even the web build cannot reach the
+# browser's Screen Wake Lock. See the long note in views/workout.py.
+#
+# Meanwhile `wakelock_plus` was *already compiled into the APK* — flet depends
+# on it, `GeneratedPluginRegistrant.java` registers it — with nobody calling
+# it. The fork calls it. Between sets the phone lies on the floor or the bench
+# and locks, so every set cost an unlock with chalked hands before the app was
+# even back; the rest timer, the plate hint and the prescribed target are all
+# worth less behind that.
+#
+# THE PRICE, so nobody discovers it the hard way: this pins the build to a copy
+# of the template. **Raising the flet pin means re-forking it** — diff the new
+# upstream template against `build_template/` and re-apply the wakelock block.
+# `cookiecutter` takes a plain local directory, so the fork costs a copy rather
+# than a hosted repo; the changes are marked with a comment naming this note.
+template.url = "build_template"
 
 # NEVER LEAVE THE USER LOOKING AT NOTHING.
 #

@@ -124,6 +124,7 @@ from storage import (
     Base,
     DuracionSesion,
     Entreno,
+    Foto,
     NotaSesion,
     Perfil,
     Peso,
@@ -164,6 +165,7 @@ TABLES = (
     "weights",
     "session_notes",
     "session_durations",
+    "photos",
     "profile",
     "prefs",
     "foods",
@@ -251,6 +253,7 @@ def export_all(store: Storage) -> dict:
         weights = list(s.scalars(select(Peso).order_by(Peso.fecha)))
         session_notes = list(s.scalars(select(NotaSesion).order_by(NotaSesion.fecha)))
         session_durations = list(s.scalars(select(DuracionSesion).order_by(DuracionSesion.fecha)))
+        photos = list(s.scalars(select(Foto).order_by(Foto.fecha)))
         perfil = s.get(Perfil, 1)
         nutrition = _export_nutrition(s)
         routines = _export_routines(s)
@@ -304,6 +307,19 @@ def export_all(store: Storage) -> dict:
         # once per exercise. Most days have no entry at all — nothing logged
         # before the chronometer was stored has one, and neither does anything
         # the bot writes.
+        # Metadata only, on purpose: the JPEG bytes live on disk and travel in
+        # the separate photos zip (see fotos.exportar_zip). Months of photos in
+        # base64 would make this document too big to send over a chat app —
+        # which is exactly how these backups move between devices.
+        "photos": [
+            {
+                "date": f.fecha.isoformat(),
+                "file": f.archivo,
+                "note": f.nota,
+                "timestamp": f.creado.timestamp(),
+            }
+            for f in photos
+        ],
         "session_durations": [
             {
                 "date": d.fecha.isoformat(),
@@ -594,6 +610,9 @@ def _parse(data) -> dict:
         "session_notes": _parse_session_notes(data),
         # Same again for v2, v3 and v4 and `session_durations`.
         "session_durations": _parse_session_durations(data),
+        # v≤5 documents have no `photos` key; absent parses to empty, like
+        # every section added after v2.
+        "photos": _parse_photos(data),
     }
     # v2 documents simply have no "nutrition" / "routines" keys. That is the
     # entire backwards-compatibility story: absent sections parse to empty.
@@ -689,6 +708,32 @@ def _parse_session_notes(data: Mapping) -> list[dict]:
             "created": _moment(n.get("timestamp"), f"{where}.timestamp"),
         }
     return [by_day[k] for k in sorted(by_day)]
+
+
+def _parse_photos(data: Mapping) -> list[dict]:
+    """The `photos` section: one row per day, metadata only.
+
+    `file` must be a bare name — a path would let a crafted document plant
+    rows pointing outside the photos directory, and the gallery resolves
+    these names against that directory on every render. Last one wins per
+    date, like `session_durations`, and a row that cleans to nothing is
+    dropped rather than aborting the import.
+    """
+    by_day: dict[date, dict] = {}
+    for i, f in enumerate(_rows(data, "photos", "photos")):
+        where = f"photos[{i}]"
+        nombre = str(f.get("file") or "").strip()
+        if not nombre or "/" in nombre or "\\" in nombre or nombre.startswith("."):
+            continue
+        day = _day(f.get("date"), f"{where}.date")
+        nota = f.get("note")
+        by_day[day] = {
+            "date": day,
+            "file": nombre[:120],
+            "note": (str(nota)[:500] or None) if nota else None,
+            "created": _moment(f.get("timestamp"), f"{where}.timestamp"),
+        }
+    return sorted(by_day.values(), key=lambda x: x["date"])
 
 
 def _parse_session_durations(data: Mapping) -> list[dict]:
@@ -946,6 +991,7 @@ def import_all(store: Storage, data, *, wipe: bool = True) -> dict:
             routine_map = _write_routines(s, parsed["routines"], counts)
             _write_nutrition(s, parsed, counts, wipe=wipe)
             _write_training(s, parsed, counts, wipe=wipe)
+            _write_photos(s, parsed, counts, wipe=wipe)
             _write_prefs(s, parsed, counts, routine_map, wipe=wipe)
             s.commit()
         except Exception:
@@ -983,6 +1029,7 @@ def _wipe(s) -> None:
         Entreno,
         NotaSesion,
         DuracionSesion,
+        Foto,
         Peso,
         Perfil,
     ):
@@ -1246,6 +1293,19 @@ def _write_training(s, parsed: dict, counts: dict, *, wipe: bool) -> None:
         have_durations.add(d["date"])
         s.add(DuracionSesion(fecha=d["date"], segundos=d["seconds"], creado=d["created"]))
         counts["session_durations"] += 1
+
+
+def _write_photos(s, parsed: dict, counts: dict, *, wipe: bool) -> None:
+    """Photo metadata rows. The JPEGs come back via the photos zip, not here."""
+    have: set[date] = set()
+    if not wipe:
+        have = set(s.scalars(select(Foto.fecha)))
+    for f in parsed["photos"]:
+        if f["date"] in have:
+            continue
+        have.add(f["date"])
+        s.add(Foto(fecha=f["date"], archivo=f["file"], nota=f["note"], creado=f["created"]))
+        counts["photos"] += 1
 
 
 def _write_prefs(s, parsed: dict, counts: dict, routine_map: dict[int, int], *, wipe: bool) -> None:

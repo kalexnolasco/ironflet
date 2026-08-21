@@ -740,6 +740,24 @@ class Medida(Base):
     creado: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
+class Foto(Base):
+    """Una foto de progreso por día — la fecha es la clave, como en `pesos`.
+
+    La fila guarda el NOMBRE del fichero (relativo al directorio de fotos de
+    `fotos.py`), nunca una ruta absoluta: en Android el prefijo del
+    almacenamiento privado cambia entre reinstalaciones y una ruta absoluta
+    guardada hoy apuntaría a la instalación anterior. Los bytes viven en disco;
+    la copia de seguridad exporta estos metadatos y el zip de fotos va aparte.
+    """
+
+    __tablename__ = "fotos"
+
+    fecha: Mapped[date] = mapped_column(Date, primary_key=True)
+    archivo: Mapped[str] = mapped_column(String(120))
+    nota: Mapped[str | None] = mapped_column(Text, nullable=True)
+    creado: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 #: The coach's clock. `agente/entrenador/config.py` sets `TZ =
 #: ZoneInfo("Europe/Madrid")` and evaluates every cron expression in it, so any
 #: question about *its* schedule has to be asked in that zone. Resolved lazily
@@ -1206,6 +1224,52 @@ class Storage:
             if fila is not None:
                 fila.proxima = proxima
                 se.commit()
+
+    # ── fotos de progreso ───────────────────────────────────
+    #
+    # Una por día, como los pesajes: guardar otra el mismo día corrige la
+    # anterior en vez de duplicarla. Los BYTES no pasan por aquí — `fotos.py`
+    # es quien escribe el JPEG y decide el nombre; esta capa solo persiste el
+    # hecho "el día D tiene la foto F".
+
+    def save_photo(self, on_date: date | str, archivo: str, nota: str | None = None) -> None:
+        """Upsert por fecha. `archivo` es un nombre relativo, nunca una ruta."""
+        dia = date.fromisoformat(on_date) if isinstance(on_date, str) else on_date
+        with self._Session() as s:
+            fila = s.get(Foto, dia)
+            if fila is None:
+                fila = Foto(fecha=dia, archivo=archivo, creado=datetime.now(timezone.utc))
+                s.add(fila)
+            else:
+                fila.archivo = archivo
+            if nota is not None:
+                fila.nota = nota[:500] or None
+            s.commit()
+
+    def get_photos(self) -> list[dict]:
+        """Todas, de más nueva a más vieja — el orden en que una galería se lee."""
+        with self._Session() as s:
+            filas = list(s.scalars(select(Foto).order_by(Foto.fecha.desc())))
+        return [{"date": f.fecha.isoformat(), "file": f.archivo, "note": f.nota} for f in filas]
+
+    def get_photo(self, on_date: date | str) -> dict | None:
+        dia = date.fromisoformat(on_date) if isinstance(on_date, str) else on_date
+        with self._Session() as s:
+            f = s.get(Foto, dia)
+        if f is None:
+            return None
+        return {"date": f.fecha.isoformat(), "file": f.archivo, "note": f.nota}
+
+    def delete_photo(self, on_date: date | str) -> bool:
+        """Borra la fila; el fichero lo borra `fotos.py`, que sabe dónde vive."""
+        dia = date.fromisoformat(on_date) if isinstance(on_date, str) else on_date
+        with self._Session() as s:
+            fila = s.get(Foto, dia)
+            if fila is None:
+                return False
+            s.delete(fila)
+            s.commit()
+            return True
 
     # ── notes ───────────────────────────────────────────────
     def get_session_note(self, on_date: str | date | None = None) -> str | None:
