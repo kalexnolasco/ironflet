@@ -8,6 +8,7 @@ import flet as ft
 
 import flet_reconnect
 import notificaciones
+import widget
 from data import set_active_routine
 from routine_builder import ensure_tables, sync_user_routines
 from storage import THEME_PREF, Storage
@@ -115,6 +116,10 @@ def main(page: ft.Page):
     # avisos, no la app.
     with contextlib.suppress(Exception):
         notificaciones.sync(store)
+    # El widget de la pantalla de inicio, por el mismo criterio: un fichero que
+    # no se pudo escribir cuesta un widget desactualizado, no el arranque.
+    with contextlib.suppress(Exception):
+        widget.sync(store)
 
     current_tab = {"idx": 0}
 
@@ -297,6 +302,13 @@ def main(page: ft.Page):
         flet_reconnect.record("lifecycle", state or "unknown")
         if state in ("PAUSE", "HIDE", "INACTIVE", "DETACH"):
             flush_workout_draft()
+            # Y aquí se refresca el widget, que es exactamente cuando importa:
+            # se mira con la app cerrada, así que el momento de ponerlo al día
+            # es el de salir de ella. Hacerlo en `refresh_current()` habría
+            # sido reescribir el fichero con cada tecla del buscador de
+            # alimentos para un dato que nadie está mirando todavía.
+            with contextlib.suppress(Exception):
+                widget.sync(store)
             return
         if state == "RESUME":
             navigate_to(current_tab["idx"])

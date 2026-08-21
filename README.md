@@ -6,7 +6,7 @@
 ![Android](https://img.shields.io/badge/APK-84%20MB%20·%20SQLite-3DDC84?style=for-the-badge&logo=android&logoColor=white)
 ![Flet](https://img.shields.io/badge/Flet-0.28.3-7F52FF?style=for-the-badge)
 ![Idioma](https://img.shields.io/badge/interfaz-español-E4312b?style=for-the-badge)
-![Tests](https://img.shields.io/badge/tests-1787-2f9e44?style=for-the-badge)
+![Tests](https://img.shields.io/badge/tests-1812-2f9e44?style=for-the-badge)
 
 **Donde apuntas lo que levantas y lo que comes, con un entrenador dentro que
 mira tus fotos y te propone la semana. Una app de móvil y nada más: sin
@@ -46,7 +46,10 @@ de esta app depende ya de él.
    racha de semanas y evolución del peso.
 4. **Verte cambiar** — una foto al día, galería y comparador A/B con la
    diferencia real de peso y cintura entre las dos fechas.
-5. **Que te entrenen** — un coach dentro de la app que lee tu historial, mira
+5. **Verlo sin abrir la app** — un widget en la pantalla de inicio con lo de
+   hoy: qué toca entrenar (con un ✓ cuando la sesión ya está), tu peso y cómo
+   vas de calorías y proteína. Se añade desde Ajustes → Widget.
+6. **Que te entrenen** — un coach dentro de la app que lee tu historial, mira
    tus fotos y **propone**: registrar una sesión, ajustar los objetivos de la
    semana, crear un aviso, bloquear un hueco en tu Google Calendar. Nada se
    guarda hasta que tocas Guardar.
@@ -58,7 +61,7 @@ clave con la que se guarda el historial y traducirlos lo partiría en dos.
 
 ```bash
 make deps      # dependencias de desarrollo
-make check     # lint + los 1787 tests (sin Docker, sin saltarse nada)
+make check     # lint + los 1812 tests (sin Docker, sin saltarse nada)
 make apk       # el APK, con las tres ABIs
 make install   # adb install al móvil o al emulador conectado
 ```

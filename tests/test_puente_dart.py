@@ -123,3 +123,64 @@ def test_el_drawable_del_icono_existe_y_es_monocromo():
         f"un icono de notificación se recorta a su silueta; estos colores no "
         f"aportan nada y engañan a quien lo edite: {sorted(colores)}"
     )
+
+
+# ── los XML de la plantilla, validados antes de gastar 7 minutos ────────
+
+
+def _xml_de_la_plantilla() -> list[Path]:
+    base = RAIZ / "build_template" / "{{cookiecutter.out_dir}}" / "android"
+    return sorted(base.rglob("*.xml")) if base.exists() else []
+
+
+def test_los_xml_de_la_plantilla_estan_bien_formados():
+    """Un XML roto aquí no se ve hasta que Gradle lleva dos minutos corriendo.
+
+    Y el mensaje que da no señala al fichero: «La cadena "--" no está
+    permitida en los comentarios» salió de la tarea `shrinkReleaseRes`, sin
+    nombrar el `keep.xml` donde estaba el fallo. Siete minutos de build para
+    un error de una línea que `ExpatError` caza en milisegundos.
+    """
+    from xml.dom.minidom import parseString
+    from xml.parsers.expat import ExpatError
+
+    ficheros = _xml_de_la_plantilla()
+    if not ficheros:
+        pytest.skip("sin plantilla forkeada")
+
+    rotos = []
+    for f in ficheros:
+        texto = f.read_text(encoding="utf-8")
+        # Estos ficheros son plantillas Jinja: además de `{{ variables }}`
+        # llevan bloques `{% if %}` / `{% for %}`. Ninguna de las dos cosas es
+        # XML, así que se neutralizan antes de parsear — las variables por un
+        # valor cualquiera (para que `android:{{ k }}="{{ v }}"` siga siendo un
+        # atributo) y los bloques por nada. Lo que se comprueba es la
+        # ESTRUCTURA del XML, que es lo que rompe el build.
+        texto = re.sub(r"\{%[^%]*%\}", "", texto)
+        texto = re.sub(r"\{\{[^}]*\}\}", "x", texto)
+        try:
+            parseString(texto)
+        except ExpatError as exc:
+            rotos.append(f"{f.relative_to(RAIZ)}: {exc}")
+    assert not rotos, "XML mal formados en la plantilla:\n" + "\n".join(rotos)
+
+
+def test_ningun_comentario_xml_lleva_dos_guiones():
+    """La regla concreta que se saltó, dicha por su nombre.
+
+    El test de arriba ya lo caza, pero su mensaje es el de expat. Este dice
+    cuál es la regla, que es lo que hace falta para arreglarlo.
+    """
+    ficheros = _xml_de_la_plantilla()
+    if not ficheros:
+        pytest.skip("sin plantilla forkeada")
+
+    culpables = []
+    for f in ficheros:
+        for comentario in re.findall(r"<!--(.*?)-->", f.read_text(encoding="utf-8"), re.S):
+            if "--" in comentario:
+                culpables.append(f"{f.relative_to(RAIZ)}: {comentario.strip()[:70]}")
+    assert not culpables, "un comentario XML no puede contener dos guiones seguidos:\n" + "\n".join(
+        culpables
+    )

@@ -74,6 +74,61 @@ final FlutterLocalNotificationsPlugin _notifPlugin =
 String _notifJsonPath = "";
 DateTime? _notifMtime;
 
+// ── el widget de la pantalla de inicio ───────────────────────────────────
+//
+// Mismo puente y misma forma que los avisos: Python escribe `widget.json` en
+// el almacenamiento de la app y aquí se sondea su mtime. La diferencia es que
+// Dart no pinta nada — solo le dice al `IronFletWidget` de Kotlin que relea el
+// fichero, porque el widget vive en un proceso al que Flutter no llega.
+//
+// Sin este aviso el widget seguiría funcionando, pero con el
+// `updatePeriodMillis` de 30 minutos como único refresco: apuntas una comida,
+// sales a la pantalla de inicio y ves los datos de hace media hora. Es
+// justo el caso en que se mira.
+const MethodChannel _widgetChannel = MethodChannel("ironflet/widget");
+String _widgetJsonPath = "";
+DateTime? _widgetMtime;
+
+Future<void> _syncWidget() async {
+  if (_widgetJsonPath.isEmpty) return;
+  try {
+    final f = File(_widgetJsonPath);
+    if (!await f.exists()) return;
+    final mtime = (await f.stat()).modified;
+    if (_widgetMtime != null && !mtime.isAfter(_widgetMtime!)) return;
+    _widgetMtime = mtime;
+    await _widgetChannel.invokeMethod("refresh");
+  } catch (e) {
+    // Un widget que no se refresca no es motivo para molestar a nadie: el
+    // periodo de 30 min lo acabará poniendo al día.
+    debugPrint("widget refresh failed: $e");
+  }
+}
+
+/// Petición de Python para que el lanzador ofrezca colocar el widget.
+///
+/// Otro fichero, y no otro canal, porque **Flet no expone `MethodChannel` a
+/// Python**: la única forma que tiene `views/profile.py` de pedirle algo a
+/// Kotlin es dejar una nota en el disco, igual que con los avisos. Python crea
+/// `widget_pin.request`, esto lo ve en el mismo sondeo de tres segundos, lo
+/// borra y llama al canal.
+///
+/// Se borra ANTES de llamar, no después: si la llamada lanza, un fichero que
+/// se quedara puesto pediría colocar el widget cada tres segundos para
+/// siempre.
+Future<void> _checkWidgetPinRequest() async {
+  if (_widgetJsonPath.isEmpty) return;
+  try {
+    final f = File(
+        path.join(File(_widgetJsonPath).parent.path, "widget_pin.request"));
+    if (!await f.exists()) return;
+    await f.delete();
+    await _widgetChannel.invokeMethod("pin");
+  } catch (e) {
+    debugPrint("widget pin request failed: $e");
+  }
+}
+
 Future<void> _writeNotifStatus(
     AndroidFlutterLocalNotificationsPlugin? android, bool exact) async {
   // Report both permissions back to the Python side, which cannot see them.
@@ -382,12 +437,20 @@ Future prepareApp() async {
 
       // FUERA del try de arriba, y ese es el punto: el poll es lo que entrega
       // los avisos, y no puede depender de que el icono haya resuelto.
+      _widgetJsonPath = path.join(appDataPath, "widget.json");
       try {
         await _syncNotifications();
       } catch (e) {
         debugPrint("first notification sync failed: $e");
       }
-      Timer.periodic(const Duration(seconds: 3), (_) => _syncNotifications());
+      // Un solo temporizador para los dos puentes: ya se estaba despertando
+      // cada tres segundos, y el widget mira un fichero del mismo directorio.
+      // Cada `_sync` se traga lo suyo, así que uno que falle no calla al otro.
+      Timer.periodic(const Duration(seconds: 3), (_) {
+        _syncNotifications();
+        _syncWidget();
+        _checkWidgetPinRequest();
+      });
     }
 
     if (defaultTargetPlatform == TargetPlatform.windows) {

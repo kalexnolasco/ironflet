@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Recursos que el *resource shrinker* de AGP no puede ver y borraría.
+
+  Flutter enciende `shrinkResources` en toda compilación de release, y el
+  shrinker quita cualquier recurso que nada referencie. Referenciar significa
+  desde el DEX o desde otro recurso: un `<receiver>` del manifiesto, un
+  `<meta-data android:resource=…>`, un layout nombrado por `initialLayout`, un
+  drawable usado dentro de ese layout, un `R.layout.x` en Kotlin. Todo eso se
+  ancla solo y no hace falta listarlo aquí.
+
+  `ic_stat_ironflet` es el único caso de esta app que no puede anclarse: se
+  nombra desde Dart, en `main.dart`, como la cadena
+  `'@drawable/ic_stat_ironflet'` que flutter_local_notifications resuelve por
+  nombre en tiempo de ejecución. El shrinker tiene una heurística para eso —
+  buscar el nombre en el pool de cadenas — pero escanea las constantes del
+  DEX, y una const de Dart vive en el snapshot AOT (`libapp.so`). El informe
+  `build/app/outputs/mapping/release/resources.txt` lo dejaba como
+  `reachable=false` y el icono desaparecía del APK.
+
+  Cuando eso pasó, `initialize()` lanzaba `Resources$NotFoundException` y se
+  llevó por delante TODAS las notificaciones (trampa 29). El fallback a
+  `@mipmap/ic_launcher` sigue en `main.dart` y ahí se queda: este fichero hace
+  que no haga falta, no que sobre.
+
+  Ojo: el flag `no-shrink` de `flutter build` (con sus dos guiones delante) es
+  un no-op documentado en Flutter 3.29 y parecería el arreglo sin cambiar nada.
+
+  Y ojo también con escribirlo tal cual aquí: un comentario XML no puede
+  contener dos guiones seguidos, y `shrinkReleaseRes` parsea este fichero.
+  Poner el flag literal en este comentario tumbó el build con un error de
+  parseo que hablaba de guiones sin nombrar el fichero — y en una tarea
+  llamada «shrink», dentro de un fichero llamado keep.xml, eso se lee como
+  cualquier cosa menos como una errata. `tests/test_puente_dart.py` lo caza
+  ahora en milisegundos en vez de en los siete minutos del build.
+-->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@drawable/ic_stat_ironflet" />

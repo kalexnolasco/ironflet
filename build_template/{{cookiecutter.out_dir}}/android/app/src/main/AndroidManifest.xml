@@ -85,5 +85,24 @@
                 <action android:name="android.intent.action.QUICKBOOT_POWERON" />
             </intent-filter>
         </receiver>
+        <!-- El widget de la pantalla de inicio. Este `<receiver>` es además lo
+             que lo salva del *resource shrinker* (trampa 30): AGP genera desde
+             él una keep rule para la clase, el `<meta-data>` es raíz para
+             `@xml/ironflet_widget_info`, ese XML alcanza su `initialLayout`, y
+             el layout alcanza sus ids. Ninguna pieza necesita `keep.xml`.
+
+             `exported="true"` es obligatorio: quien manda los broadcasts de
+             actualización es el sistema, no la app. -->
+        <receiver
+            android:name=".IronFletWidget"
+            android:exported="true"
+            android:label="IronFlet">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/ironflet_widget_info" />
+        </receiver>
     </application>
 </manifest>

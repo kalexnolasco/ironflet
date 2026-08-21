@@ -116,3 +116,100 @@ def test_un_campo_vacio_sigue_vacio():
     assert _texto_de_campo(None) == ""
     assert _texto_de_campo("") == ""
     assert _texto_de_campo(0) == ""
+
+
+# ── la sección del widget, que solo existe en Android ───────────────────
+
+
+def _ajustes(monkeypatch, tmp_path):
+    """Un `ProfileView` con el entorno de Android fingido.
+
+    Sin `FLET_APP_STORAGE_DATA`, `widget.disponible()` es False y la sección
+    entera devuelve `[]` — así que en el escritorio NADIE la construye, y así
+    es como un `ghost_button(icon=...)` llegó a la APK y tumbó la pantalla de
+    Ajustes con un `TypeError`. Fingir el entorno es lo que hace que esta rama
+    se ejecute en CI.
+    """
+    from unittest.mock import MagicMock
+
+    import views.profile as pf
+
+    monkeypatch.setenv("FLET_APP_STORAGE_DATA", str(tmp_path))
+    page = MagicMock()
+    page.width = 400
+    page.height = 800
+    page.data = {"refresh_current": lambda: None, "navigate_to": lambda i, **k: None}
+    vista = pf.ProfileView(page, MagicMock())
+    vista._form_values = {}
+    return vista
+
+
+def test_la_seccion_del_widget_se_construye_en_android(monkeypatch, tmp_path):
+    """Construirla es la mitad del test: un kwarg de más aquí revienta."""
+    vista = _ajustes(monkeypatch, tmp_path)
+    trozos = vista._widget_section()
+    assert trozos, "en Android la sección tiene que existir"
+
+
+def test_fuera_de_android_no_hay_seccion_del_widget(monkeypatch):
+    """Un botón que no puede hacer nada es peor que la ausencia del botón."""
+    from unittest.mock import MagicMock
+
+    import views.profile as pf
+
+    monkeypatch.delenv("FLET_APP_STORAGE_DATA", raising=False)
+    page = MagicMock()
+    page.data = {"refresh_current": lambda: None}
+    vista = pf.ProfileView(page, MagicMock())
+    assert vista._widget_section() == []
+
+
+def test_el_boton_del_widget_deja_la_nota_y_lo_dice(monkeypatch, tmp_path):
+    """El camino entero: tocar el botón escribe la petición y avisa."""
+    import widget
+
+    vista = _ajustes(monkeypatch, tmp_path)
+    trozos = vista._widget_section()
+
+    botones = [c for c in _todos(trozos) if getattr(c, "on_click", None)]
+    assert botones, "la sección tiene que traer un botón"
+    botones[0].on_click(None)
+
+    assert (tmp_path / widget.FICHERO_PIN).exists(), "la nota para Dart"
+    nivel, texto = vista._widget_msg
+    assert nivel == "success"
+    assert "preguntar" in texto, "no se promete que esté hecho: lo decide el lanzador"
+
+
+def test_si_no_se_puede_pedir_explica_la_via_manual(monkeypatch, tmp_path):
+    """Con `false`, el botón no puede quedarse mudo."""
+    import widget
+
+    vista = _ajustes(monkeypatch, tmp_path)
+    monkeypatch.setattr(widget, "pedir_colocacion", lambda *a, **k: False)
+
+    botones = [c for c in _todos(vista._widget_section()) if getattr(c, "on_click", None)]
+    botones[0].on_click(None)
+
+    nivel, texto = vista._widget_msg
+    assert nivel == "error"
+    assert "Widgets" in texto, "hay que decir dónde está el selector"
+
+
+def _todos(raiz):
+    """Recorrido en profundidad de un árbol de controles."""
+    vistos: set[int] = set()
+    pila = list(raiz) if isinstance(raiz, list) else [raiz]
+    while pila:
+        nodo = pila.pop()
+        if nodo is None or id(nodo) in vistos:
+            continue
+        vistos.add(id(nodo))
+        yield nodo
+        if isinstance(nodo, (list, tuple)):
+            pila.extend(nodo)
+            continue
+        for attr in ("content", "controls", "actions", "title"):
+            hijo = getattr(nodo, attr, None)
+            if hijo is not None:
+                pila.append(hijo)

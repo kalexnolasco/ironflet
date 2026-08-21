@@ -4,6 +4,49 @@ Todos los cambios notables de IronFlet.
 El formato sigue [Keep a Changelog](https://keepachangelog.com/) y el proyecto
 usa [SemVer](https://semver.org/).
 
+## [0.14.0] — 2026-08-21
+
+**Un widget en la pantalla de inicio y gráficas de verdad.**
+
+### Añadido
+
+- **Widget de la pantalla de inicio.** Lo de hoy sin abrir la app: qué toca
+  entrenar —con un ✓ cuando la sesión ya está hecha—, tu peso, y cómo vas de
+  calorías y proteína. Cuatro líneas y nada más: un widget se mira de refilón,
+  y lo único que lo justifica frente a abrir la app es contestar «¿qué me
+  toca?» y «¿cómo voy?» sin un solo toque.
+
+  Mismo puente de fichero que los avisos: `widget.py` escribe `widget.json` y
+  `IronFletWidget.kt` lo lee (los dos procesos comparten UID). **El JSON viaja
+  ya formateado** —«82,4 kg», no `82.4`— así que Kotlin no repite ni una
+  decisión de formato y todo lo que decide algo tiene tests en Python.
+
+  Se añade desde **Ajustes → Widget**, que le pide al lanzador que lo ofrezca,
+  en vez de tener que saber que existe y buscarlo en el selector.
+- `tests/test_widget.py` (23) y los dos de `test_puente_dart.py` que validan
+  los XML de la plantilla — un comentario XML con dos guiones seguidos tumbó
+  un build entero con un error que no nombraba el fichero.
+
+### Cambiado
+
+- **Las gráficas las dibuja Flet, no `ft.Container` apilados.** El módulo
+  presumía de no tener dependencias; no las tenía porque Flet trae `BarChart`
+  y `LineChart` desde la 0.22 y esto los reimplementaba peor.
+- **El peso es una línea, con su media móvil de 7 días punteada encima.** Siete
+  barras sueltas escondían justo la tendencia que se mira, y el peso de un día
+  se mueve un kilo con la sal — varias veces los ±0,3 kg/semana del plan.
+- **Fundido de 180 ms al cambiar de pantalla**, y solo al cambiar de pantalla:
+  `refresh_current()` se llama con cada serie confirmada y cada tecla del
+  buscador, y fundir en esas es la pantalla parpadeando mientras entrenas.
+
+### Arreglado
+
+- **El icono de las notificaciones ya es la mancuerna.** El *resource shrinker*
+  se lo llevaba por delante porque solo lo nombra una constante de Dart, que
+  vive en el snapshot AOT y no en el DEX; `res/raw/keep.xml` lo ancla.
+- «1 Sesiones» en Inicio, «178.0» en la altura y el chip «Los 350…», que
+  parecía un botón al que no le cabe el texto.
+
 ## [0.13.2] — 2026-08-21
 
 **Segunda vuelta al emulador**, con la APK reinstalada y verificando en pantalla

@@ -10,6 +10,7 @@ import agent
 import asset_manager
 import exercise_images
 import openrouter
+import widget
 from analytics import MEASUREMENT_EVERY_DAYS, moving_average, waist_summary, weight_trend
 from components.charts import axis_note, line_chart
 from health import (
@@ -590,6 +591,75 @@ class ProfileView:
                 )
             )
         return card(estado, ft.Container(height=8), *filas_botones)
+
+    def _widget_section(self) -> list[ft.Control]:
+        """La sección del widget, o nada fuera de Android.
+
+        Devuelve una lista para poder no devolver nada: en el escritorio no hay
+        pantalla de inicio a la que añadirlo, y un botón que no puede hacer
+        nada es peor que la ausencia del botón.
+        """
+        if not widget.disponible():
+            return []
+
+        estado = ft.Text(
+            "Lo de hoy en la pantalla de inicio: qué toca entrenar, tu peso y "
+            "cómo vas de calorías y proteína.",
+            size=11,
+            color=C.text_secondary,
+        )
+
+        def _colocar(_):
+            # `pedir_colocacion` solo deja la nota; quien enseña el diálogo es
+            # el lanzador y quien decide es Alex. Por eso el mensaje dice que
+            # «te lo va a ofrecer» y no «hecho»: prometer lo segundo y que el
+            # lanzador no lo soporte sería mentir en la única frase que ve.
+            if widget.pedir_colocacion():
+                self._set_widget_msg("success", "Tu móvil te va a preguntar dónde ponerlo.")
+            else:
+                self._set_widget_msg(
+                    "error",
+                    "No se pudo pedir. Añádelo a mano: mantén pulsada la "
+                    "pantalla de inicio → Widgets → IronFlet.",
+                )
+            self.page.data["refresh_current"]()
+
+        cuerpo: list[ft.Control] = [estado, ft.Container(height=8)]
+        aviso = getattr(self, "_widget_msg", None)
+        if aviso:
+            nivel, texto = aviso
+            cuerpo.append(
+                ft.Text(
+                    texto,
+                    size=11,
+                    color=C.success if nivel == "success" else C.warning,
+                )
+            )
+            cuerpo.append(ft.Container(height=8))
+        cuerpo.append(
+            ft.Row(
+                [
+                    # Sin `icon=`: `ghost_button` pasa sus kwargs sobrantes a
+                    # `ft.Container`, que no tiene ese parámetro, y el
+                    # `TypeError` se lleva la pantalla de Ajustes entera.
+                    # `primary_button` sí lo acepta; este no.
+                    ghost_button(
+                        "Añadir a la pantalla de inicio",
+                        on_click=_colocar,
+                        expand=True,
+                    )
+                ]
+            )
+        )
+        return [
+            section_title("Widget"),
+            ft.Container(height=4),
+            card(*cuerpo),
+            ft.Container(height=14),
+        ]
+
+    def _set_widget_msg(self, nivel: str, texto: str):
+        self._widget_msg = (nivel, texto)
 
     def _backup_section(self) -> ft.Control:
         return ft.Row(
@@ -1634,6 +1704,7 @@ class ProfileView:
                 ft.Container(height=4),
                 self._gcal_section(),
                 ft.Container(height=14),
+                *self._widget_section(),
                 section_title("Copia de seguridad"),
                 ft.Container(height=4),
                 self._backup_section(),
