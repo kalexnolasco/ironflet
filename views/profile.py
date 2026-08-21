@@ -1200,12 +1200,19 @@ class ProfileView:
         )
 
     # ── form widgets ──────────────────────────────────────────
-    def _text_input(self, label: str, key: str, keyboard=ft.KeyboardType.TEXT) -> ft.TextField:
+    def _text_input(
+        self,
+        label: str,
+        key: str,
+        keyboard=ft.KeyboardType.TEXT,
+        hint: str | None = None,
+    ) -> ft.TextField:
         def on_change(e, k=key):
             self._form_values[k] = e.control.value
 
         return ft.TextField(
             label=label,
+            hint_text=hint,
             value=str(self._form_values.get(key, "") or ""),
             keyboard_type=keyboard,
             bgcolor=C.bg_page,
@@ -1509,9 +1516,16 @@ class ProfileView:
         activity_options = [(k, etiquetas_actividad.get(k, k)) for k in ACTIVITY_KEYS]
 
         name_field = self._text_input("Nombre", "name")
+        # El formato va de `hint_text`, no en el label. Este campo ocupa media
+        # fila, y "Nacimiento (AAAA-MM-DD)" no cabe en ese ancho: el label
+        # flotante envolvía a dos líneas y la primera se pintaba ENCIMA del
+        # borde inferior del campo Nombre, que queda justo arriba. El formato
+        # solo hace falta mientras el campo está vacío, que es exactamente
+        # cuando se ve el hint.
         dob_field = self._text_input(
-            "Nacimiento (AAAA-MM-DD)",
+            "Nacimiento",
             "birthdate",
+            hint="AAAA-MM-DD",
         )
         height_field = self._text_input(
             "Altura (cm)",

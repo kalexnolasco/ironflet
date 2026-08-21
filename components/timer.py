@@ -520,9 +520,19 @@ class RestTimer:
         )
 
     def build(self) -> ft.Control:
+        """La fila compacta: dial a la izquierda, controles a la derecha.
+
+        `expand=True` en los controles no es cosmético. `_controls_row` lleva
+        `wrap=True`, y envolver necesita saber dónde acaba la línea: dentro de
+        una `Column` (que es donde vive en `build_large`) el ancho está acotado
+        y funciona, pero dentro de esta `Row` el hijo recibe ancho infinito, no
+        envuelve nunca y la fila se sale de la pantalla. En el emulador eso se
+        veía como un botón «Parar» cortado por el borde derecho — con los siete
+        controles sumando más de 1080 px, el último se caía fuera.
+        """
         self._restyle(ring_px=RING_PX, display_pt=DISPLAY_PT, stroke=4)
         return ft.Row(
-            [self._dial(RING_PX), self._controls_row()],
+            [self._dial(RING_PX), self._controls_row(expand=True)],
             spacing=10,
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
         )

@@ -19,6 +19,7 @@ Two failure modes this layout is shaped around:
 from __future__ import annotations
 
 import asyncio
+import re
 from dataclasses import dataclass
 from datetime import date
 
@@ -28,6 +29,43 @@ import agent
 from storage import Storage
 from theme import C, card, ghost_button, primary_button
 from views.shared_ui import db_error_screen, plural
+
+#: `**negrita**`, `*cursiva*`, y una almohadilla de encabezado al principio de
+#: línea. Nada más: el resto del markdown (tablas, enlaces, bloques de código)
+#: no aparece en una respuesta de tres frases sobre press banca, y un
+#: renderizador completo aquí sería más superficie de la que este chat necesita.
+_MD = re.compile(r"\*\*(?P<fuerte>.+?)\*\*|(?<!\*)\*(?P<enfasis>[^*\n]+?)\*(?!\*)", re.S)
+_MD_ENCABEZADO = re.compile(r"^\s{0,3}#{1,6}\s+", re.M)
+
+
+def spans_markdown(texto: str) -> list[ft.TextSpan]:
+    """El markdown ligero del modelo, como spans con estilo.
+
+    El chat pintaba `ft.Text(b.text)` a pelo y el modelo responde en markdown,
+    así que en el móvil se leía literalmente «Hoy toca **Pecho-Bíceps + Abs**»,
+    asteriscos incluidos. Pedirle texto plano en el prompt ayuda pero no
+    garantiza nada — un modelo distinto en el desplegable vuelve a formatear —,
+    así que la burbuja aprende a leerlo en vez de confiar en que no llegue.
+
+    Devuelve la lista de spans en orden; el llamante pone color y tamaño en el
+    `ft.Text` que los contiene, que es lo que mantiene el tema al mando.
+    """
+    limpio = _MD_ENCABEZADO.sub("", texto or "")
+    spans: list[ft.TextSpan] = []
+    fin = 0
+    for m in _MD.finditer(limpio):
+        if m.start() > fin:
+            spans.append(ft.TextSpan(limpio[fin : m.start()]))
+        fuerte = m.group("fuerte")
+        if fuerte is not None:
+            spans.append(ft.TextSpan(fuerte, ft.TextStyle(weight=ft.FontWeight.W_700)))
+        else:
+            spans.append(ft.TextSpan(m.group("enfasis"), ft.TextStyle(italic=True)))
+        fin = m.end()
+    if fin < len(limpio):
+        spans.append(ft.TextSpan(limpio[fin:]))
+    return spans
+
 
 #: What the empty screen offers. Written in Spanish because these are things
 #: *he* would say, and he says them in Spanish — unlike the app's own chrome,
@@ -224,8 +262,12 @@ class AgentView:
         return ft.Row(
             [
                 ft.Container(
+                    # `spans`, no `value`: lo que escribe Alex es texto plano y
+                    # lo que responde el modelo es markdown. Un solo camino
+                    # sirve para los dos — sin marcas, `spans_markdown` devuelve
+                    # un único span con el texto tal cual.
                     content=ft.Text(
-                        b.text,
+                        spans=spans_markdown(b.text),
                         size=13,
                         color=C.on_accent if mine else (C.danger if bad else C.text),
                         selectable=True,

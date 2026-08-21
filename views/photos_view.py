@@ -238,7 +238,14 @@ class PhotosView:
             controls=celdas,
             runs_count=_COLUMNAS,
             max_extent=_THUMB_PX + 22,
-            child_aspect_ratio=0.82,
+            # 0.74, no 0.82. Con tres columnas en los ~393 px lógicos de un
+            # móvil la celda sale de unos 127 de ancho, y a 0.82 eso son 155 de
+            # alto para un contenido que necesita 132 de miniatura + 2 de hueco
+            # + la línea de la fecha + 4 de padding. Sobraban unos 10 px, que es
+            # menos de lo que ocupa de verdad un texto de 9 pt con su
+            # interlineado: en el emulador la fecha salía cortada por la mitad,
+            # justo lo bastante para leerse y parecer un fallo de fuente.
+            child_aspect_ratio=0.74,
             spacing=6,
             run_spacing=6,
             expand=True,
