@@ -4,6 +4,53 @@ Todos los cambios notables de IronFlet.
 El formato sigue [Keep a Changelog](https://keepachangelog.com/) y el proyecto
 usa [SemVer](https://semver.org/).
 
+## [0.13.2] — 2026-08-21
+
+**Segunda vuelta al emulador**, con la APK reinstalada y verificando en pantalla
+cada arreglo de la 0.13.1. Encontró una regresión de la propia 0.13.1 y dos
+fallos que no se habían tocado nunca.
+
+### Arreglado
+
+- **Los avisos dejaron de entregarse, y el culpable era su icono.** En 0.13.1
+  se le puso a las notificaciones un icono monocromo. El recurso llegó al
+  proyecto Android generado pero **no al APK** (trampa 30), así que
+  `_notifPlugin.initialize()` lanzaba — y como el `Timer.periodic` que lee el
+  puente estaba **en el mismo `try`**, el temporizador no llegaba a
+  registrarse. Sin poll no se programa nada: cero avisos, sin un solo error a
+  la vista. El aviso recién creado se quedaba tan tranquilo en su lista.
+  Ahora el temporizador vive fuera de ese `try` y el icono se degrada al del
+  lanzador si no resuelve. Un icono es cosmética; el aviso es la función.
+- **Exportar la copia no escribía nada en Android.** El diálogo del sistema
+  devuelve un URI del Storage Access Framework (`/document/12`) que Flet pasa
+  como si fuera una ruta, así que `write_bytes` fallaba y quedaba un `.json`
+  de **0 bytes** en Descargas con el nombre correcto — peor que ningún fichero,
+  porque parece una copia. La copia interna sí estaba completa (28 KB de JSON
+  válido), pero el mensaje de error pisaba al de éxito y se leía como «te has
+  quedado sin copia». Ahora nombra las tres cosas: que Android se negó, que ese
+  fichero está vacío, y dónde está la copia buena.
+- **La pantalla de copia contaba tres de sus tablas como cero.** `photos`,
+  `session_notes` y `session_durations` van en la copia desde la v4 y el
+  contador no las buscaba. Con una foto guardada y 7 minutos cronometrados, la
+  pantalla decía 0.
+- **Un fallo de red del entrenador ya dice cuál.** Cinco causas distintas
+  caían en «Sin conexión con OpenRouter» — cierto para una y engañoso para las
+  otras cuatro, que mandan a mirar la cobertura. Ahora se distinguen TLS, DNS,
+  proxy, corte y desconexión, leyendo la cadena de causas (httpx envuelve el
+  fallo de certificado dentro de un `ConnectError`).
+- **«1 Sesiones».** La etiqueta ya concuerda con el número que tiene encima.
+- **Las prescripciones se dicen en español** sin tocar el dato: Plan mostraba
+  «Descanso: 1' sets / 2-3' exercises» y la lista de fases «Ascending
+  Pyramid». `set_types.describir_esquema/descanso` traducen para mostrar.
+
+### Añadido
+
+- `tests/test_puente_dart.py` — lee `main.dart` como texto y falla si algún
+  `try` vuelve a juntar el `initialize` del plugin con el temporizador del
+  poll. No hay tests de Dart en este repo y esta propiedad no puede volver a
+  quedar sin vigilancia.
+- Trampas 29 y 30 en `CLAUDE.md`.
+
 ## [0.13.1] — 2026-08-21
 
 **Un recorrido entero por la APK instalada**, pantalla por pantalla y con datos

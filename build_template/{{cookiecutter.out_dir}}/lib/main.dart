@@ -340,21 +340,54 @@ Future prepareApp() async {
     // only: on the desktop the coach's Telegram bot owns delivery, and on web
     // there is no OS scheduler to hand anything to.
     if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+      _notifJsonPath = path.join(appDataPath, "notifications.json");
       try {
-        _notifJsonPath = path.join(appDataPath, "notifications.json");
         tzdata.initializeTimeZones();
-        // `@drawable/ic_stat_ironflet`, no `@mipmap/ic_launcher`: Android
-        // descarta el color de un icono de notificación y pinta solo la
-        // silueta del canal alfa, así que el icono adaptativo de la app salía
-        // como un círculo hueco en cada aviso. Ver el comentario del drawable.
-        await _notifPlugin.initialize(const InitializationSettings(
-            android: AndroidInitializationSettings('@drawable/ic_stat_ironflet')));
-        await _syncNotifications();
-        Timer.periodic(
-            const Duration(seconds: 3), (_) => _syncNotifications());
       } catch (e) {
-        debugPrint("notifications setup failed: $e");
+        debugPrint("timezone init failed: $e");
       }
+
+      // El icono se intenta, no se exige. `@drawable/ic_stat_ironflet` es
+      // monocromo y es el que debe salir (Android descarta el color de un
+      // icono de notificación y pinta solo la silueta del canal alfa, así que
+      // el adaptativo de la app sale como un círculo hueco). Pero si el
+      // recurso no resuelve, `initialize` LANZA — y con el `Timer.periodic`
+      // dentro del mismo `try`, eso se llevaba por delante todas las
+      // notificaciones, en silencio y hasta la siguiente reinstalación.
+      //
+      // Pasó: el drawable llegó al proyecto Android generado y no al APK,
+      // Gradle no dijo nada, `initialize` lanzó, el temporizador no llegó a
+      // registrarse y los avisos dejaron de programarse. En pantalla se veía
+      // un aviso perfectamente creado en su lista, y nada más.
+      //
+      // Un icono es cosmética. El aviso es la función. Así que se prueba el
+      // bonito, y si no resuelve se cae al del lanzador.
+      var iconoOk = false;
+      for (final icono in const [
+        '@drawable/ic_stat_ironflet',
+        '@mipmap/ic_launcher',
+      ]) {
+        try {
+          await _notifPlugin.initialize(
+              InitializationSettings(android: AndroidInitializationSettings(icono)));
+          iconoOk = true;
+          break;
+        } catch (e) {
+          debugPrint("notification icon $icono unusable: $e");
+        }
+      }
+      if (!iconoOk) {
+        debugPrint("notification plugin would not initialise with any icon");
+      }
+
+      // FUERA del try de arriba, y ese es el punto: el poll es lo que entrega
+      // los avisos, y no puede depender de que el icono haya resuelto.
+      try {
+        await _syncNotifications();
+      } catch (e) {
+        debugPrint("first notification sync failed: $e");
+      }
+      Timer.periodic(const Duration(seconds: 3), (_) => _syncNotifications());
     }
 
     if (defaultTargetPlatform == TargetPlatform.windows) {
