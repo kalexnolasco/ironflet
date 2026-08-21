@@ -4,6 +4,44 @@ Todos los cambios notables de IronFlet.
 El formato sigue [Keep a Changelog](https://keepachangelog.com/) y el proyecto
 usa [SemVer](https://semver.org/).
 
+## [0.12.0] — 2026-08-21
+
+**Fotos de progreso, el coach que las ve, y los permisos que faltaban.**
+
+### Añadido
+
+- **Foto de progreso diaria** con la semántica de los pesajes: una por día y
+  la segunda corrige la primera. Se eligen con el selector del sistema, se
+  comprimen en el móvil (Pillow con wheel Android; lado mayor 1600 px, JPEG 85,
+  orientación EXIF corregida) y viven en el almacenamiento privado de la app.
+- **Galería** (tarjeta FOTO en Inicio): rejilla por fechas, detalle con las
+  medidas tomadas cerca de ese día, y **comparador A/B** — dos fotos lado a
+  lado con la diferencia real de peso y cintura entre sus fechas. Esa resta es
+  la "detección de mejoras" honesta; la opinión con ojos la da el coach.
+- **El coach ve tus fotos**: botón 📷 en el chat que adjunta la última foto de
+  progreso (viaja una sola vez; en el historial queda una marca, no los bytes,
+  para no re-pagarla en cada turno). El desplegable marca con 📷 los ~220
+  modelos de OpenRouter que aceptan imágenes, y la app rehúsa adjuntar a uno
+  que no las vea. Herramienta nueva `progress_photos` (solo fechas y medidas —
+  jamás bytes a demanda del modelo).
+- **El coach ajusta las comidas semanales**: propone objetivos diarios nuevos
+  (kcal y macros, normalmente desde el lunes) con el mismo modelo de seguridad
+  de siempre — tarjeta de confirmación, y nada se escribe hasta tocar Guardar.
+  Al guardar, los objetivos se versionan por fecha de inicio: los días ya
+  vividos no se reescriben.
+- **Copia de seguridad**: los metadatos de las fotos entran en el JSON, y los
+  JPEG van en un **zip aparte** (exportar/importar en Copia y datos) — meses de
+  fotos en base64 harían la copia inenviable por chat.
+
+### Arreglado
+
+- **"No suena" en el móvil real**: la APK ahora lleva `USE_EXACT_ALARM`
+  (autoconcedido; esta app va por sideload, no por Play), pide el permiso de
+  notificaciones al crear el primer aviso, abre una única vez el ajuste de
+  «Alarmas y recordatorios» si sigue apagado, y **escribe el estado de ambos
+  permisos** en `notif_status.json`. El diálogo de Avisos lo lee y dice
+  exactamente qué interruptor del sistema falta, en vez de parecer rota.
+
 ## [0.11.0] — 2026-08-20
 
 **Los avisos suenan en el móvil, y toda la app habla español.**

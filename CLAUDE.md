@@ -56,7 +56,7 @@ CI (`.github/workflows/ci.yml`) runs, on Python 3.12:
 uv sync --group dev
 uv run ruff check .
 uv run ruff format --check .
-uv run pytest -q          # 1707 tests
+uv run pytest -q          # 1724 tests
 ```
 
 ## Architecture
@@ -79,6 +79,7 @@ View indices are frozen — `views/home.py` calls `navigate_to(2)` and `navigate
 | 7 | Routines | `RoutineEditorView` | no |
 | 8 | Backup & data | `DataView` | no |
 | 9 | Coach | `AgentView` | no |
+| 10 | Fotos | `PhotosView` | no |
 
 ```python
 NAV_TABS = (0, 1, 2, 6, 4)
@@ -110,13 +111,14 @@ Every one of the ten view classes implements:
 cd .. && docker compose up -d
 ```
 
-Views never touch the ORM; they go through `Storage` methods and the module-level facades in `nutrition.py` / `routine_builder.py`. Tables are created via `Base.metadata.create_all` on every `Storage()` instantiation. **Twelve tables are declared on this repo's side**, spread over three modules that all share `storage.Base`:
+Views never touch the ORM; they go through `Storage` methods and the module-level facades in `nutrition.py` / `routine_builder.py`. Tables are created via `Base.metadata.create_all` on every `Storage()` instantiation. **Thirteen tables are declared on this repo's side**, spread over three modules that all share `storage.Base`:
 
 `storage.py`
 - `entrenos` — one row per exercise and date. `series` is JSON: a `list[dict]` with `{"weight": float, "reps": int}` plus **optional** `"rir"` (reps in reserve) and **optional** `"type"` (see `set_types.py`). Neither key is guaranteed — read with `.get()`, never assume presence.
 - `pesos` — body weight, one row per day (the date is the primary key, so a second weigh-in corrects the first instead of duplicating it).
 - `perfil` — single row (id = 1) with name, birthdate, height, sex, activity level.
 - `preferencias` — key-value store (`get_pref`, `set_pref`). Holds `routine`, the workout draft, and the coach's settings.
+- `fotos` — one progress photo per day (date PK). The row stores a bare FILENAME resolved against `fotos.directorio()`; the JPEG bytes live on disk, compressed by `fotos.guardar()` (Pillow, ≤1600 px). Backups carry the metadata; the bytes travel in the separate photos zip (`fotos.exportar_zip`). Mirrored in the bot's `modelos.py` like every shared table.
 
 ##### `SECRET_PREF_KEYS` — the prefs that must never leave the device
 
@@ -221,6 +223,12 @@ Three more rules that are not obvious:
 
 Adding a tool means adding it to `_READ_TOOLS` **or** `_PROPOSE_TOOLS` and to `tool_schemas()`; `test_las_herramientas_declaradas_existen_todas` fails if the two drift.
 
+Vision and the weekly meal plan (0.12.0):
+
+- `Coach.ask(text, image_path=None)` attaches ONE photo as an OpenAI-shape multipart turn (base64 data URL). After a successful reply the multipart turn is **collapsed to a text marker** (`_collapse_image`) so later turns do not re-upload — and re-bill — the same image. `openrouter.Model.vision` (from `architecture.input_modalities`) is snapshotted into the `agent_model_vision` pref by `save_model`; `model_sees_images()` returns None for pre-0.12 choices and the UI then lets the provider decide.
+- `progress_photos` is a READ tool returning dates + nearby measurements, never bytes or paths — a tool that read JPEGs on the model's demand would turn every turn into an upload the user did not choose.
+- `propose_week_targets` is a PROPOSE tool: the card writes versioned `nutrition_targets` via `commit_proposal` on Save, defaulting to next Monday. Same structural guarantee as ever: no tool writes.
+
 ### Reminders → Android notifications — `notificaciones.py`
 
 Flet 0.28.3 exposes no notification API to Python, so the bridge is a file:
@@ -243,7 +251,15 @@ list. The app only *writes* two cron shapes — `M H * * *` and `M H * * d,d`
 via Telegram and owns `proxima` — `sync()` must not touch it there (it checks
 `is_sqlite_url`). Phone SQLite: Android delivers and the app refreshes
 `proxima` via `touch_reminder()` so a fired daily reminder doesn't read
-"¡ya!" forever on Home. `bot_delivers_reminders()` (né `reminders_available()`)
+"¡ya!" forever on Home. Dart also writes `notif_status.json` (`{granted, exact}`) back after every
+sync — the only window Python has onto system permissions. `notificaciones.
+estado_android()` reads it and Home's reminders dialog turns a missing
+permission into instructions instead of silence. The manifest carries
+`USE_EXACT_ALARM` (auto-granted; sideload-only app) so exact alarms work
+without a settings trip on Android 14+; `exact_alarm_asked.flag` keeps the
+one-time `requestExactAlarmsPermission()` fallback from looping.
+
+`bot_delivers_reminders()` (né `reminders_available()`)
 answers *who delivers*; it is no longer a gate — the reminders card renders on
 both backends, and `Storage` grew the user CRUD (`add_reminder`,
 `delete_reminder`, `set_reminder_active`, `get_all_reminders`), which refuses
@@ -359,11 +375,11 @@ Pinned to `flet[all]>=0.25,<0.30` — `flet[all]`, not plain `flet`, because web
 
 ## Tests
 
-`.venv/bin/python -m pytest -q` — **1707 tests**, `testpaths = ["tests"]`, `asyncio_mode = "auto"`:
+`.venv/bin/python -m pytest -q` — **1724 tests**, `testpaths = ["tests"]`, `asyncio_mode = "auto"`:
 
-`test_agent.py`, `test_analytics.py`, `test_asset_manager.py`, `test_backup.py`, `test_chart_baseline.py`, `test_column_migration.py`, `test_dialog_layout.py`, `test_draft_dates.py`, `test_draft_substitution.py`, `test_exercise_images.py`, `test_exercise_key.py`, `test_flet_reconnect.py`, `test_gym_tools.py`, `test_health.py`, `test_help_dialog.py`, `test_history_notes.py`, `test_history_view.py`, `test_home_view.py`, `test_image_delivery.py`, `test_notificaciones.py`, `test_nutrition.py`, `test_nutrition_view.py`, `test_percent_table.py`, `test_prefill_por_fecha.py`, `test_profile_db_down.py`, `test_program_week.py`, `test_progression.py`, `test_routine_builder.py`, `test_session_duration.py`, `test_session_plan.py`, `test_set_types.py`, `test_shared_ui.py`, `test_smoke.py`, `test_sqlite_backend.py`, `test_storage_metrics.py`, `test_substitutions.py`, `test_theme.py`, `test_timer_sound.py`, `test_weight_trend.py`, `test_workout_date.py`, `test_workout_draft.py`, `test_workout_exercise_date.py`, `test_workout_notes.py`, `test_workout_notes_swap.py`, `test_workout_plan_rows.py`, `test_workout_resume.py`, `test_workout_session_time.py`, `test_workout_tools.py`, `test_workout_zen.py`.
+`test_agent.py`, `test_analytics.py`, `test_asset_manager.py`, `test_backup.py`, `test_chart_baseline.py`, `test_column_migration.py`, `test_dialog_layout.py`, `test_draft_dates.py`, `test_draft_substitution.py`, `test_exercise_images.py`, `test_exercise_key.py`, `test_flet_reconnect.py`, `test_fotos.py`, `test_gym_tools.py`, `test_health.py`, `test_help_dialog.py`, `test_history_notes.py`, `test_history_view.py`, `test_home_view.py`, `test_image_delivery.py`, `test_notificaciones.py`, `test_nutrition.py`, `test_nutrition_view.py`, `test_percent_table.py`, `test_prefill_por_fecha.py`, `test_profile_db_down.py`, `test_program_week.py`, `test_progression.py`, `test_routine_builder.py`, `test_session_duration.py`, `test_session_plan.py`, `test_set_types.py`, `test_shared_ui.py`, `test_smoke.py`, `test_sqlite_backend.py`, `test_storage_metrics.py`, `test_substitutions.py`, `test_theme.py`, `test_timer_sound.py`, `test_weight_trend.py`, `test_workout_date.py`, `test_workout_draft.py`, `test_workout_exercise_date.py`, `test_workout_notes.py`, `test_workout_notes_swap.py`, `test_workout_plan_rows.py`, `test_workout_resume.py`, `test_workout_session_time.py`, `test_workout_tools.py`, `test_workout_zen.py`.
 
-Without `DATABASE_URL` the run is `1496 passed, 211 skipped`: the skips are every test that needs PostgreSQL. Judge a run by the skip count, not the pass count — a green suite that skipped 211 tests has verified nothing about storage. With the database up it is `1706 passed, 1 skipped`.
+Without `DATABASE_URL` the run is `1513 passed, 211 skipped`: the skips are every test that needs PostgreSQL. Judge a run by the skip count, not the pass count — a green suite that skipped 211 tests has verified nothing about storage. With the database up it is `1723 passed, 1 skipped`.
 
 `tests/conftest.py` gives each pytest process its own database (`ironflet_test_<pid>`), created and dropped per run, because the fixtures wipe rows and two concurrent runs used to delete each other's data mid-query — red runs with a different set of failures each time, in files unrelated to whatever was being changed.
 
