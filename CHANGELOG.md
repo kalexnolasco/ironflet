@@ -4,6 +4,50 @@ Todos los cambios notables de IronFlet.
 El formato sigue [Keep a Changelog](https://keepachangelog.com/) y el proyecto
 usa [SemVer](https://semver.org/).
 
+## [0.13.1] — 2026-08-21
+
+**Un recorrido entero por la APK instalada**, pantalla por pantalla y con datos
+de verdad dentro. Casi todo lo que salió era idioma; una cosa era un fallo
+disfrazado de idioma.
+
+### Arreglado
+
+- **Inicio decía «Proteína 0 g» con 42 g apuntados.** El pase al español había
+  renombrado la CLAVE del diccionario (`totals.get("proteína")`), y como
+  `.get()` de una clave que no existe devuelve `None` en vez de fallar, la
+  tarjeta pintaba un cero perfectamente creíble. `nutrition` habla en inglés
+  porque es contrato de datos: la trampa 22 en su forma más silenciosa.
+- **Unos 80 literales seguían en inglés**, ninguno visible sin estar en la
+  pantalla exacta: el campo de fecha de los diálogos de peso y cintura, la
+  categoría del IMC, el pie de la gráfica de peso, las cuatro descripciones de
+  rutina, `LAST SESSION`, `Confirm all`, `Next exercise`, todos los motivos y
+  avisos de `session_plan`, los nombres por defecto del editor de rutinas y el
+  resumen de pesos montables.
+- **`plural()` pluralizaba en inglés.** `singular + "s"` colaba de milagro con
+  *serie*, *día* y *fase*, y daba «2 sesións» en cuanto la palabra acababa en
+  consonante. Ahora es `-s` tras vocal, `-es` tras consonante, más una tabla
+  corta para las que mueven la tilde.
+- **La grasa es G, no F.** «Grasa» en la etiqueta y `F` en la línea de macros
+  era la abreviatura inglesa sobreviviendo a su propia palabra. Unificado entre
+  la pantalla de Comida y la tarjeta de objetivos del entrenador.
+- **Un tiempo agotado no es falta de cobertura.** El entrenador decía «Sin
+  conexión con OpenRouter» con la red viva y 499 ms de ida y vuelta: todas las
+  excepciones caían en el mismo mensaje, y ese manda a mirar el sitio
+  equivocado.
+- **Cuatro cosas que solo se ven en un móvil.** El botón «Parar» del descanso
+  salía cortado por el borde derecho (`wrap=True` dentro de una `Row` sin ancho
+  acotado nunca envuelve); la fecha bajo las miniaturas de la galería salía
+  partida por la mitad; «Nacimiento (AAAA-MM-DD)» no cabía en media fila y su
+  label pisaba el campo de arriba; y el markdown del entrenador se leía con los
+  asteriscos puestos.
+
+### Añadido
+
+- `tests/test_layout_movil.py` — los cuatro fallos de arriba, congelados. Cada
+  arreglo se revirtió en su sitio para comprobar que su test se pone rojo.
+- Trampas 26, 27 y 28 en `CLAUDE.md`: la clave traducida, el `wrap` sin acotar
+  y el markdown crudo.
+
 ## [0.13.0] — 2026-08-21
 
 **Solo el móvil.** Se jubilan la versión de PC, el modo web y el bot de
