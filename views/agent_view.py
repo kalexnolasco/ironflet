@@ -256,6 +256,13 @@ class AgentView:
                 else ""
             )
             note = p.note or ""
+        elif isinstance(p, agent.CalendarEventProposal):
+            title = "Evento en Google Calendar"
+            when = p.day
+            body = p.title
+            detail = p.summary()
+            warn = ""
+            note = p.description or ""
         elif isinstance(p, agent.ReminderProposal):
             title = "Aviso nuevo"
             when = date.today()

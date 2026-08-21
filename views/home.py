@@ -29,7 +29,7 @@ the bar is read off the active routine rather than fixed.
 
 from __future__ import annotations
 
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime, time, timedelta, timezone
 
 import flet as ft
 
@@ -269,6 +269,75 @@ class HomeView:
         else:
             pie = "pesado hoy"
         return self._day_tile("PESO", valor, pie, tone=tono, on_click=lambda _: nav(VIEW_PROFILE))
+
+    def _agenda_card(self) -> ft.Control | None:
+        """Hoy y mañana del Google Calendar, si está conectado.
+
+        None cuando no lo está: una tarjeta "conecta tu calendario" permanente
+        sería ruido para una función opcional — la puerta vive en Ajustes. Un
+        calendario conectado pero inalcanzable (sin señal) tampoco rompe Home:
+        la tarjeta dice que no pudo leer, y ya.
+        """
+        import gcal
+
+        try:
+            if not gcal.conectado(self.store):
+                return None
+            eventos = gcal.eventos(self.store, days=2)
+            error = None
+        except Exception as exc:
+            eventos, error = [], str(exc)
+
+        hoy = date.today().isoformat()
+        manana = (date.today() + timedelta(days=1)).isoformat()
+        filas: list[ft.Control] = [
+            ft.Row(
+                [
+                    ft.Text("AGENDA", size=10, weight=ft.FontWeight.W_800, color=C.text_secondary),
+                ]
+            )
+        ]
+        if error:
+            filas.append(
+                ft.Text(f"No se pudo leer el calendario: {error}", size=10, color=C.warning)
+            )
+        elif not eventos:
+            filas.append(muted_text("Nada en la agenda hoy ni mañana."))
+        else:
+            for ev in eventos[:5]:
+                etiqueta_dia = (
+                    "hoy" if ev["day"] == hoy else ("mañana" if ev["day"] == manana else ev["day"])
+                )
+                hora = "todo el día" if ev["all_day"] else ev["start"][11:16]
+                filas.append(
+                    ft.Row(
+                        [
+                            ft.Text(
+                                f"{etiqueta_dia} {hora}",
+                                size=11,
+                                color=C.accent,
+                                weight=ft.FontWeight.W_700,
+                                width=110,
+                            ),
+                            ft.Text(
+                                ev["title"],
+                                size=12,
+                                color=C.text,
+                                expand=True,
+                                max_lines=1,
+                                overflow=ft.TextOverflow.ELLIPSIS,
+                            ),
+                        ],
+                        spacing=8,
+                    )
+                )
+        return ft.Container(
+            content=ft.Column(filas, spacing=4, tight=True),
+            bgcolor=C.bg_surface,
+            border=ft.border.all(1, C.border),
+            border_radius=Radius.lg,
+            padding=12,
+        )
 
     def _photo_tile(self) -> ft.Control:
         """La foto de progreso de hoy — hecha o pendiente, y la puerta a la galería.
@@ -1242,6 +1311,10 @@ class HomeView:
         if avisos is not None:
             dia.append(ft.Container(height=Space.x1))
             dia.append(avisos)
+        agenda = self._agenda_card()
+        if agenda is not None:
+            dia.append(ft.Container(height=Space.x1))
+            dia.append(agenda)
 
         return ft.Column(
             [

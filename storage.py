@@ -669,7 +669,16 @@ class Preferencia(Base):
 #: that: an install that still carries the row must not quietly start putting it
 #: in backup files just because the code stopped caring about it. Removing a name
 #: from here is a decision about a credential, never tidying.
-SECRET_PREF_KEYS: tuple[str, ...] = ("agent_openrouter_key", "agent_api_key")
+SECRET_PREF_KEYS: tuple[str, ...] = (
+    "agent_openrouter_key",
+    "agent_api_key",
+    # Las credenciales del calendario de Google (gcal.py). El refresh token da
+    # acceso al calendario entero de la cuenta: exactamente la clase de cosa
+    # que jamás debe viajar dentro de un JSON que se manda por un chat.
+    "gcal_client_id",
+    "gcal_client_secret",
+    "gcal_refresh_token",
+)
 
 #: Which palette to paint in. Read before the first frame in `main.py`; an
 #: unknown or missing value falls back to the default rather than raising, so a

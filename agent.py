@@ -635,7 +635,38 @@ class ReminderProposal:
         return f"una vez, el {cuando} a las {hora}"
 
 
-Proposal = WorkoutProposal | WeightProposal | MealTargetsProposal | ReminderProposal
+@dataclass(frozen=True)
+class CalendarEventProposal:
+    """Un evento de Google Calendar que el modelo propone. Nada creado aún.
+
+    La lectura del calendario es libre (`calendar_events`); ESCRIBIR en la
+    agenda de la cuenta de Google pasa por la tarjeta como todo lo demás. El
+    commit llama a `gcal.crear_evento`, que es tan inalcanzable para el modelo
+    como `commit_proposal` mismo.
+    """
+
+    title: str
+    day: date
+    #: None = evento de día completo.
+    hhmm: str | None = None
+    duration_min: int = 60
+    description: str = ""
+
+    kind: str = "calendar_event"
+
+    def summary(self) -> str:
+        if not self.hhmm:
+            return f"{self.day.isoformat()} · todo el día"
+        return f"{self.day.isoformat()} · {self.hhmm} ({self.duration_min} min)"
+
+
+Proposal = (
+    WorkoutProposal
+    | WeightProposal
+    | MealTargetsProposal
+    | ReminderProposal
+    | CalendarEventProposal
+)
 
 
 def commit_proposal(store: Any, proposal: Proposal) -> str:
@@ -652,6 +683,18 @@ def commit_proposal(store: Any, proposal: Proposal) -> str:
     if isinstance(proposal, WeightProposal):
         store.save_weight(proposal.kg, proposal.day.isoformat())
         return f"Guardados {proposal.kg:g} kg en {proposal.day.isoformat()}."
+    if isinstance(proposal, CalendarEventProposal):
+        import gcal
+
+        gcal.crear_evento(
+            store,
+            proposal.title,
+            proposal.day,
+            proposal.hhmm,
+            proposal.duration_min,
+            proposal.description,
+        )
+        return f"Evento creado en Google Calendar: {proposal.title} — {proposal.summary()}."
     if isinstance(proposal, ReminderProposal):
         import notificaciones
         from storage import _madrid
@@ -1169,7 +1212,7 @@ def _tool_propose_reminder(
     cuando: date | None = None
     if tipo == "once":
         try:
-            cuando = _parse_day(day or None, ctx.today)
+            cuando = _parse_future_day(day or None, ctx.today)
         except ValueError as exc:
             return (f"Refused: {exc}", None)
 
@@ -1180,6 +1223,101 @@ def _tool_propose_reminder(
         f"Shown to the user as a confirmation card: reminder '{limpio[:60]}' — "
         f"{propuesta.summary()}. NOT created. He has to tap Save. Times are Madrid "
         "wall-clock; on the phone Android delivers it, on the PC the Telegram bot does."
+    )
+    return (told, propuesta)
+
+
+def _parse_future_day(raw: str | None, today: date) -> date:
+    """Fecha de hoy en adelante (hasta un año). El espejo de `_parse_day`.
+
+    Los registros rechazan el futuro porque nadie ha entrenado mañana; una
+    agenda y un aviso son exactamente lo contrario — el pasado es lo que no
+    tiene sentido programar.
+    """
+    if not raw:
+        return today
+    dia = date.fromisoformat(str(raw).strip())
+    if dia < today:
+        raise ValueError(f"{dia.isoformat()} ya pasó — un evento se programa hacia delante.")
+    if dia > today + timedelta(days=365):
+        raise ValueError(f"{dia.isoformat()} queda a más de un año.")
+    return dia
+
+
+def _tool_calendar_events(ctx: _Context, days: Any = 7, **_) -> str:
+    """La agenda de Google, si está conectada. Solo lectura, siempre."""
+    import gcal
+
+    if not gcal.conectado(ctx.store):
+        return (
+            "Google Calendar is not connected. He can connect it in Ajustes → "
+            "Calendario de Google (one tap on the PC; on the phone it opens the browser)."
+        )
+    try:
+        ventana = max(1, min(30, int(days)))
+    except (TypeError, ValueError):
+        ventana = 7
+    try:
+        filas = gcal.eventos(ctx.store, days=ventana)
+    except gcal.GcalError as exc:
+        return f"Calendar unreachable: {exc}"
+    if not filas:
+        return f"No events in the next {ventana} days."
+    lineas = [f"{len(filas)} events in the next {ventana} days:"]
+    for f in filas[:25]:
+        hora = "all day" if f["all_day"] else f["start"][11:16]
+        lineas.append(f"{f['day']} {hora} — {f['title']}")
+    return "\n".join(lineas)
+
+
+def _tool_propose_calendar_event(
+    ctx: _Context,
+    title: str = "",
+    day: str = "",
+    time_hhmm: str = "",
+    duration_min: Any = 60,
+    description: str = "",
+    **_,
+) -> tuple[str, CalendarEventProposal | None]:
+    import gcal
+
+    limpio = (title or "").strip()
+    if not limpio:
+        return ("Refused: the event needs a title.", None)
+    if not gcal.conectado(ctx.store):
+        return (
+            "Refused: Google Calendar is not connected (Ajustes → Calendario de Google).",
+            None,
+        )
+    try:
+        cuando = _parse_future_day(day or None, ctx.today)
+    except ValueError as exc:
+        return (f"Refused: {exc}", None)
+    hhmm = (time_hhmm or "").strip() or None
+    if hhmm:
+        try:
+            hh, mm = (int(p) for p in hhmm.split(":")[:2])
+        except ValueError:
+            return ("Refused: time_hhmm must be HH:MM.", None)
+        if not (0 <= hh <= 23 and 0 <= mm <= 59):
+            return (f"Refused: {hhmm!r} is not a wall-clock time.", None)
+        hhmm = f"{hh:02d}:{mm:02d}"
+    try:
+        minutos = max(5, min(600, int(duration_min)))
+    except (TypeError, ValueError):
+        minutos = 60
+
+    propuesta = CalendarEventProposal(
+        title=limpio[:200],
+        day=cuando,
+        hhmm=hhmm,
+        duration_min=minutos,
+        description=(description or "").strip()[:1000],
+    )
+    told = (
+        f"Shown to the user as a confirmation card: Google Calendar event "
+        f"'{limpio[:60]}' — {propuesta.summary()}. NOT saved. He has to tap Save; "
+        "only then is it created in his Google account."
     )
     return (told, propuesta)
 
@@ -1196,6 +1334,7 @@ _READ_TOOLS: dict[str, Callable[..., str]] = {
     "nutrition": _tool_nutrition,
     "list_exercises": _tool_list_exercises,
     "progress_photos": _tool_progress_photos,
+    "calendar_events": _tool_calendar_events,
 }
 
 _PROPOSE_TOOLS: dict[str, Callable[..., tuple[str, Proposal | None]]] = {
@@ -1203,6 +1342,7 @@ _PROPOSE_TOOLS: dict[str, Callable[..., tuple[str, Proposal | None]]] = {
     "propose_body_weight": _tool_propose_weight,
     "propose_week_targets": _tool_propose_week_targets,
     "propose_reminder": _tool_propose_reminder,
+    "propose_calendar_event": _tool_propose_calendar_event,
 }
 
 
@@ -1428,6 +1568,39 @@ def _tool_declarations() -> list[dict]:
                 "required": ["text", "time_hhmm"],
             },
         },
+        {
+            "name": "calendar_events",
+            "description": (
+                "His Google Calendar agenda for the next N days, if connected. Call this "
+                "before planning sessions, groceries or prep around his real schedule."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {"days": {"type": "integer", "description": "1-30, default 7."}},
+            },
+        },
+        {
+            "name": "propose_calendar_event",
+            "description": (
+                "Show the user a confirmation card for a NEW Google Calendar event. Does NOT "
+                "save it; he taps Save and only then it is created in his Google account. Use "
+                "it to block time: training, Saturday groceries, Sunday meal prep."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string"},
+                    "day": {"type": "string", "description": "ISO date; blank = today."},
+                    "time_hhmm": {
+                        "type": "string",
+                        "description": "HH:MM Madrid time; blank = all-day event.",
+                    },
+                    "duration_min": {"type": "integer", "description": "5-600, default 60."},
+                    "description": {"type": "string"},
+                },
+                "required": ["title"],
+            },
+        },
     ]
 
 
@@ -1481,7 +1654,9 @@ def build_system_prompt(store: Any, today: date | None = None) -> str:
         "adjustment — review body_weight, nutrition, progress_photos and recent_training, "
         "then propose_week_targets with the reasoning AND a concrete shopping/prep note, "
         "and offer propose_reminder cards for Saturday groceries, Sunday prep, or habits "
-        "like drinking water. One card at a time; he saves each one himself."
+        "like drinking water. One card at a time; he saves each one himself. When his "
+        "Google Calendar is connected, check calendar_events before proposing times, and "
+        "offer propose_calendar_event to block real slots for training and prep."
     )
 
 

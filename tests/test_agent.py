@@ -1192,3 +1192,40 @@ def test_commit_de_aviso_una_vez_calcula_madrid(store):
         proxima = proxima.replace(tzinfo=_tz.utc)
     # 17:00 de Madrid en agosto (CEST, +2) son las 15:00Z.
     assert proxima.hour == 15 and proxima.date().isoformat() == "2026-08-23"
+
+
+def test_calendario_sin_conectar_lee_y_propone_con_gracia(store):
+    ctx = agent._Context(store=store, today=HOY)
+    texto = agent._tool_calendar_events(ctx)
+    assert "not connected" in texto
+    told, p = agent._tool_propose_calendar_event(ctx, title="Meal prep", day="2026-08-23")
+    assert p is None and "not connected" in told
+
+
+def test_propose_calendar_event_valida_y_el_commit_crea(store, monkeypatch):
+    import gcal
+
+    store.set_pref(gcal.CLIENT_ID_PREF, "id")
+    store.set_pref(gcal.CLIENT_SECRET_PREF, "sec")
+    store.set_pref(gcal.REFRESH_PREF, "ref")
+    ctx = agent._Context(store=store, today=date(2026, 8, 21))
+
+    assert agent._tool_propose_calendar_event(ctx, title="")[1] is None
+    assert agent._tool_propose_calendar_event(ctx, title="X", time_hhmm="25:99")[1] is None
+
+    told, p = agent._tool_propose_calendar_event(
+        ctx, title="Meal prep", day="2026-08-23", time_hhmm="17:00", duration_min=90
+    )
+    assert p is not None and p.summary() == "2026-08-23 · 17:00 (90 min)"
+    assert "NOT saved" in told
+
+    creado = {}
+
+    def crear_falso(s, title, day, hhmm, duration, description):
+        creado.update(title=title, day=day, hhmm=hhmm)
+        return "ev-nuevo"
+
+    monkeypatch.setattr(gcal, "crear_evento", crear_falso)
+    mensaje = agent.commit_proposal(store, p)
+    assert "Evento creado" in mensaje
+    assert creado == {"title": "Meal prep", "day": date(2026, 8, 23), "hhmm": "17:00"}

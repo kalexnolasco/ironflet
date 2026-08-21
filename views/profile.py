@@ -357,6 +357,92 @@ class ProfileView:
         """
         self.page.data["navigate_to"](8)
 
+    def _toast(self, message: str):
+        """El aviso corto de esta pantalla. Solo la sección del calendario lo
+        usa hoy; el resto de Ajustes comunica re-renderizando el estado."""
+        self.page.open(
+            ft.SnackBar(
+                content=ft.Text(message, size=12, color=C.text, weight=ft.FontWeight.W_700),
+                bgcolor=C.bg_sunken,
+            )
+        )
+
+    def _gcal_section(self) -> ft.Control:
+        """Conectar la agenda: del bot en el PC, por navegador en el móvil.
+
+        El refresh token es un secreto de verdad (SECRET_PREF_KEYS): no viaja
+        en las copias, así que cada dispositivo se conecta una vez. En el PC
+        basta importar el OAuth que el bot ya hizo; en el móvil el botón abre
+        el navegador y un servidor de un solo uso en 127.0.0.1 recoge el
+        código — el flujo estándar de app instalada de Google.
+        """
+        import gcal
+
+        esta = gcal.conectado(self.store)
+
+        def _importar(_):
+            if gcal.conectar_desde_bot(self.store):
+                self._toast("Calendario conectado con las credenciales del bot.")
+            else:
+                self._toast("No se encontró el token del bot (¿estás en el PC?).")
+            self.page.data["refresh_current"]()
+
+        def _conectar(_):
+            try:
+                gcal.iniciar_oauth(self.store, self.page.launch_url)
+                self._toast(
+                    "Se abrió el navegador: elige tu cuenta y acepta. "
+                    "Al volver, toca «Comprobar conexión»."
+                )
+            except gcal.GcalError as exc:
+                self._toast(str(exc))
+
+        def _desconectar(_):
+            gcal.desconectar(self.store)
+            self._toast("Calendario desconectado de este dispositivo.")
+            self.page.data["refresh_current"]()
+
+        def _comprobar(_):
+            try:
+                cuantos = len(gcal.eventos(self.store, days=7))
+                self._toast(f"Conectado — {cuantos} eventos en los próximos 7 días.")
+            except Exception as exc:
+                self._toast(f"Aún no: {exc}")
+            self.page.data["refresh_current"]()
+
+        estado = ft.Row(
+            [
+                ft.Icon(
+                    ft.Icons.EVENT_AVAILABLE if esta else ft.Icons.EVENT_BUSY,
+                    color=C.success if esta else C.text_muted,
+                    size=16,
+                ),
+                ft.Text(
+                    "Conectado — el coach ve tu agenda y puede proponer eventos"
+                    if esta
+                    else "Sin conectar — la agenda y los eventos del coach se activan aquí",
+                    size=11,
+                    color=C.text_secondary,
+                    expand=True,
+                ),
+            ],
+            spacing=6,
+        )
+        botones: list[ft.Control] = []
+        if esta:
+            botones = [
+                ghost_button("Comprobar conexión", on_click=_comprobar, expand=True),
+                ft.Container(width=8),
+                ghost_button("Desconectar", on_click=_desconectar, expand=True),
+            ]
+        else:
+            botones = [
+                ghost_button("Importar del bot (PC)", on_click=_importar, expand=True),
+                ft.Container(width=8),
+                primary_button("Conectar con Google", on_click=_conectar, expand=True),
+            ]
+        return card(estado, ft.Container(height=8), ft.Row(botones))
+
     def _backup_section(self) -> ft.Control:
         return ft.Row(
             [
@@ -1370,6 +1456,10 @@ class ProfileView:
                 section_title("Entrenador"),
                 ft.Container(height=4),
                 self._coach_section(),
+                ft.Container(height=14),
+                section_title("Calendario de Google"),
+                ft.Container(height=4),
+                self._gcal_section(),
                 ft.Container(height=14),
                 section_title("Copia de seguridad"),
                 ft.Container(height=4),
