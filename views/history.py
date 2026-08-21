@@ -252,7 +252,7 @@ class HistoryView:
                 spacing=6,
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
             ),
-            tooltip=f"{name}: {plural(sets, 'set')} this week",
+            tooltip=f"{name}: {plural(sets, 'serie')} esta semana",
         )
 
     def _muscle_card(self, entries) -> ft.Control:
@@ -540,7 +540,7 @@ class HistoryView:
             subtitle = f"{_sessions_label(ex['count'])} · {ex['last_date']}"
             if ex["max_weight"]:
                 # Bodyweight exercises are stored at 0 kg; "max 0kg" is noise.
-                subtitle += f" · max {ex['max_weight']:g}kg"
+                subtitle += f" · máx {ex['max_weight']:g} kg"
             items.append(
                 ft.Container(
                     content=ft.Row(
@@ -860,12 +860,12 @@ class HistoryView:
         # `_kg`, not `_fmt`: this is a full-width line with room for the real
         # figure, so there is no reason to print `12.3k` and make the reader
         # guess at both the scale and the unit.
-        summary = f"{plural(len(working), 'set')} · {_kg(session_volume)}"
+        summary = f"{plural(len(working), 'serie')} · {_kg(session_volume)}"
         # Counted, not subtracted: `working_sets` also drops malformed rows,
         # which are not warm-ups.
         warmups = len(warmup_sets(h.sets))
         if warmups:
-            summary += f" · {plural(warmups, 'warm-up')}"
+            summary += f" · {plural(warmups, 'calentamiento')}"
 
         # `getattr`, not `h.note`: `WorkoutEntry.note` is new and defaulted, and
         # this method is also handed rows by anything holding an older entry.

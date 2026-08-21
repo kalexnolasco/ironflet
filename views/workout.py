@@ -984,9 +984,9 @@ class WorkoutView:
             and chosen < start.day
         ):
             out.append(
-                f"Earlier than your first logged session ({start.day.isoformat()}), which is "
-                "where the program start is being guessed from — this moves the program back "
-                "and can change the week Plan shows."
+                f"Anterior a tu primera sesión registrada ({start.day.isoformat()}), que es "
+                "de donde se deduce el inicio del programa — esto lo retrasa y puede cambiar "
+                "la semana que muestra Plan."
             )
         return out
 
@@ -1355,7 +1355,7 @@ class WorkoutView:
         self._forget_exercise(idx)
         self._toast(
             f"Sustituido por {exercise_key(performed)} — "
-            f"{'today only' if scope is Scope.TODAY else 'for the rest of this phase'}.",
+            f"{'solo hoy' if scope is Scope.TODAY else 'el resto de esta fase'}.",
             ft.Icons.SWAP_HORIZ,
             C.accent_2,
         )
@@ -1742,12 +1742,12 @@ class WorkoutView:
             return ""
         if options.exact is not None:
             if options.exact.bar_only:
-                return f"empty {_num_text(options.exact.bar)} kg bar"
+                return f"barra de {_num_text(options.exact.bar)} kg, sin discos"
             return f"{options.exact.label()} por lado"
         if options.under_bar:
             if options.above is None:
                 return ""
-            return f"under the bar · {_num_text(options.above.total)} kg is the lightest"
+            return f"por debajo de la barra · {_num_text(options.above.total)} kg es lo más ligero"
         near = [o for o in (options.below, options.above) if o is not None]
         if not near:
             return ""
@@ -1831,11 +1831,11 @@ class WorkoutView:
         #
         # The subtlety that made this wrong twice: when a phase says *only*
         # "failure on the last set" and states no general RIR — CambiaTuFísico
-        # phases 2 and 3 — `RirTarget.label()` itself returns "last set to
-        # failure". Printing that on row 1 reads as an instruction to take set
+        # phases 2 and 3 — `RirTarget.label()` itself returns "última al
+        # fallo". Printing that on row 1 reads as an instruction to take set
         # one to failure, which is the opposite of the plan; and appending the
         # clause on the last row on top of it produced the literal
-        # "8-10 @ last set to failure · last to failure" seen on the phone.
+        # "8-10 @ última al fallo · la última al fallo" seen on the phone.
         #
         # So a last-set-only prescription is not an RIR for the other rows.
         # They get none, and only the final working set carries the clause.
@@ -1864,7 +1864,7 @@ class WorkoutView:
         # A phase that states both a general RIR and a different last-set one
         # still needs the tail, and only on that row.
         if rir is not None and not solo_ultima and rir.last_set == (0, 0) and es_la_ultima:
-            text += " · last to failure"
+            text += " · la última al fallo"
         return text
 
     def _has_confirmed_work(self) -> bool:
@@ -2484,7 +2484,7 @@ class WorkoutView:
             # zero in this box means "not timed" — so opening the dialog on a
             # short session and saving would silently delete it.
             value=str(max(1, round(current / 60))) if current else "",
-            hint_text="e.g. 72",
+            hint_text="p. ej. 72",
             keyboard_type=ft.KeyboardType.NUMBER,
             # Digits, not a value cap: `clean_duration` is what refuses a real
             # number that is too big, and it does it with a sentence. This only
@@ -2991,7 +2991,7 @@ class WorkoutView:
         try:
             stored = self.store.set_session_note(cleaned, self._session_note_day())
         except Exception:
-            self._toast("Could not save the note.", ft.Icons.ERROR_OUTLINE, C.danger)
+            self._toast("No se pudo guardar la nota.", ft.Icons.ERROR_OUTLINE, C.danger)
             return
         self._session_note_cache = stored or ""
 
@@ -3199,14 +3199,14 @@ class WorkoutView:
             # the fields are full of numbers reads as a bug and silently loses
             # the exercise, so say what is missing.
             self._toast(
-                "Nothing confirmed yet — tap a set number, or Confirm all.",
+                "Aún no has confirmado nada — toca el número de una serie, o Confirmar todas.",
                 ft.Icons.INFO_OUTLINE,
                 C.warning,
             )
             return
         if status == "empty":
             self._toast(
-                "Nothing to save yet — fill in a set first.",
+                "Todavía no hay nada que guardar — rellena una serie primero.",
                 ft.Icons.INFO_OUTLINE,
                 C.warning,
             )
@@ -3215,7 +3215,7 @@ class WorkoutView:
             # Reached by tapping the "Guardado" pill. A dead control that eats the
             # tap is worse than one that explains itself.
             self._toast(
-                "Already saved in this session — it cannot be logged twice.",
+                "Ya guardado en esta sesión — no se puede registrar dos veces.",
                 ft.Icons.CHECK_CIRCLE,
                 C.success,
             )
@@ -3397,7 +3397,7 @@ class WorkoutView:
             # lose the rest, so the session stays exactly where it is and the
             # user can try Finish again.
             self._toast(
-                "Could not save everything — the session stays open.",
+                "No se pudo guardar todo — la sesión sigue abierta.",
                 ft.Icons.ERROR_OUTLINE,
                 C.danger,
             )
@@ -4021,7 +4021,7 @@ class WorkoutView:
             else:
                 target = ""
             return f"SERIE {i + 1} DE {total}{target}"
-        return "ALL SETS IN — SAVE THIS EXERCISE"
+        return "TODAS LAS SERIES HECHAS — GUARDA ESTE EJERCICIO"
 
     def _zen_toggle(self) -> ft.Control:
         """The way out of zen mode, and back in. Always on screen, one tap.
@@ -4107,14 +4107,14 @@ class WorkoutView:
         # palette at attribute-access time and a module-level table would
         # freeze whichever theme was loaded at import.
         looks = {
-            Action.ADD_WEIGHT: ("Go up", ft.Icons.TRENDING_UP, C.success),
+            Action.ADD_WEIGHT: ("Sube", ft.Icons.TRENDING_UP, C.success),
             Action.REPEAT: ("Mismo peso", ft.Icons.REPLAY, C.accent),
-            Action.BACK_OFF: ("Back off", ft.Icons.TRENDING_DOWN, C.warning),
-            Action.HOLD_STALE: ("Hold", ft.Icons.PAUSE_CIRCLE_OUTLINE, C.warning),
-            Action.HOLD_DELOAD: ("Deload — hold", ft.Icons.SPA_OUTLINED, C.accent_2),
+            Action.BACK_OFF: ("Baja", ft.Icons.TRENDING_DOWN, C.warning),
+            Action.HOLD_STALE: ("Mantén", ft.Icons.PAUSE_CIRCLE_OUTLINE, C.warning),
+            Action.HOLD_DELOAD: ("Descarga — mantén", ft.Icons.SPA_OUTLINED, C.accent_2),
             Action.BASELINE: ("Primera vez", ft.Icons.HELP_OUTLINE, C.text_secondary),
         }
-        verb, icon, tint = looks.get(rec.action, ("Today", ft.Icons.FITNESS_CENTER, C.accent))
+        verb, icon, tint = looks.get(rec.action, ("Hoy", ft.Icons.FITNESS_CENTER, C.accent))
         headline = rec.headline()
         line = f"{verb} · {headline}" if headline else verb
 
@@ -4269,7 +4269,7 @@ class WorkoutView:
                                         expand=True,
                                     ),
                                     ft.Text(
-                                        plural(len(working_sets(sets)), "set"),
+                                        plural(len(working_sets(sets)), "serie"),
                                         size=10,
                                         color=C.text_muted,
                                     ),
@@ -4305,7 +4305,12 @@ class WorkoutView:
                 [
                     ft.Icon(ft.Icons.HISTORY, size=14, color=C.accent),
                     ft.Text(
-                        f"Last {plural(len(recent), 'session')}",
+                        # "Últimas 1 sesión" is the "1 sets" bug in Spanish, so
+                        # the adjective drops the count instead of disagreeing
+                        # with it; `plural` handles every other number.
+                        "Última sesión"
+                        if len(recent) == 1
+                        else f"Últimas {plural(len(recent), 'sesión')}",
                         size=11,
                         color=C.accent,
                         weight=ft.FontWeight.W_700,
@@ -4338,7 +4343,9 @@ class WorkoutView:
           plan — the routine is periodized over 24 weeks and copying last
           session's set count copies the previous phase's prescription — and it
           reports both numbers precisely so the other one is not lost. "Plan · 5
-          sets · last session 4 sets" is the whole disagreement, on one line.
+          sets · última sesión 4 series" is the whole disagreement, on one line.
+          (The "5 sets" half is `SessionPlan.label()`, still English: it lives in
+          `session_plan.py`, which no translation pass has reached yet.)
 
         Neither of these is noise during a set, so both survive zen mode. The
         plain "3 sets" case does not: it is reference material, and zen exists to
@@ -4357,7 +4364,7 @@ class WorkoutView:
 
         text = f"Plan · {plan.label()}"
         if disagrees:
-            text += f" · last session {plural(plan.history_set_count, 'set')}"
+            text += f" · última sesión {plural(plan.history_set_count, 'serie')}"
         tint = C.accent_2 if plan.has_drop() else C.text_secondary
         return ft.Container(
             content=ft.Row(
@@ -4473,7 +4480,7 @@ class WorkoutView:
             tooltip=(
                 "Sustituido — toca para cambiarlo o quitarlo"
                 if active
-                else "Machine busy? Swap this exercise"
+                else "¿Máquina ocupada? Cambia este ejercicio"
             ),
             on_click=self._open_swap_dialog,
             ink=True,
@@ -4590,8 +4597,8 @@ class WorkoutView:
                 max_lines=2,
             ),
             ft.Text(
-                "Everything you log here is written under the exercise you "
-                "actually do, so your history stays true to what happened.",
+                "Todo lo que apuntes aquí se guarda bajo el ejercicio que de "
+                "verdad haces, así tu historial refleja lo que pasó.",
                 size=10,
                 color=C.text_muted,
                 max_lines=3,
@@ -4603,7 +4610,7 @@ class WorkoutView:
         if current is not None:
             body.append(
                 ft.Text(
-                    f"Currently doing {current.performed}.",
+                    f"Ahora mismo haces {current.performed}.",
                     size=11,
                     color=C.accent_2,
                     weight=ft.FontWeight.W_700,
@@ -4618,8 +4625,8 @@ class WorkoutView:
             # of them is something the user can fix from here.
             body.append(
                 ft.Text(
-                    "No equivalent exercise for this one. Nothing in the "
-                    "catalogue trains the same pattern with different equipment.",
+                    "No hay ejercicio equivalente para este. Nada del catálogo "
+                    "entrena el mismo patrón con otro material.",
                     size=11,
                     color=C.text_muted,
                     max_lines=4,
@@ -4636,7 +4643,7 @@ class WorkoutView:
         )
         dlg.actions = [
             ghost_button("Cancelar", on_click=lambda _: self.page.close(dlg)),
-            *([ghost_button("Do the prescribed one", on_click=clear)] if current else []),
+            *([ghost_button("Hacer el prescrito", on_click=clear)] if current else []),
         ]
         dlg.actions_alignment = ft.MainAxisAlignment.END
         dlg.bgcolor = C.bg_surface
@@ -4992,7 +4999,7 @@ class WorkoutView:
             border=ft.border.all(1, C.border if set_type is SetType.NORMAL else type_color),
             border_radius=Radius.sm,
             alignment=ft.alignment.center,
-            tooltip=f"{label_for(set_type)} — tap to change",
+            tooltip=f"{label_for(set_type)} — toca para cambiar",
             on_click=lambda _, idx=i: self._cycle_set_type(idx),
             ink=True,
         )
@@ -5143,7 +5150,10 @@ class WorkoutView:
                 content=ft.Column(
                     [
                         ft.Text(
-                            "LAST SESSION", size=10, color=C.text_muted, weight=ft.FontWeight.W_700
+                            "ÚLTIMA SESIÓN",
+                            size=10,
+                            color=C.text_muted,
+                            weight=ft.FontWeight.W_700,
                         ),
                         ft.Row(
                             [self._set_chip(s) for s in last_sets],
@@ -5181,9 +5191,14 @@ class WorkoutView:
 
         # Widths mirror `_set_row`; the phone is 420 px wide and the columns
         # have to line up with the fields below them.
+        #
+        # "Nº", not "SERIE": that column is 20 px because the set-number badge
+        # under it is 20 px, and widening the head to fit a five-letter word
+        # would slide KG/REPS/RIR off the fields they label. "SERIE" wrapped to
+        # "SERI"/"E" on the phone; the column holds 1, 2, 3 — a number.
         header_row = ft.Row(
             [
-                column_head("SERIE", 20),
+                column_head("Nº", 20),
                 column_head("TIPO", 30),
                 column_head("KG"),
                 column_head("REPS"),
@@ -5217,7 +5232,7 @@ class WorkoutView:
                         [
                             ft.Icon(ft.Icons.DONE_ALL, size=14, color=C.accent),
                             ft.Text(
-                                f"Confirm all ({pending})",
+                                f"Confirmar todas ({pending})",
                                 size=11,
                                 color=C.accent,
                                 weight=ft.FontWeight.W_700,
@@ -5255,7 +5270,7 @@ class WorkoutView:
                         ft.Text(
                             "Toca el número de la serie al terminarla"
                             if ramped
-                            else "From your last session — tap the set number to confirm",
+                            else "De tu última sesión — toca el número de la serie para confirmar",
                             size=10,
                             color=C.text_secondary,
                             weight=ft.FontWeight.W_700,
@@ -5542,7 +5557,7 @@ class WorkoutView:
                 save_slot,
                 self._step_button(
                     ft.Icons.CHEVRON_RIGHT,
-                    "Next exercise",
+                    "Ejercicio siguiente",
                     lambda _: self._go_next_exercise(),
                     enabled=self.ex_idx + 1 < total,
                 ),

@@ -218,7 +218,7 @@ def test_zen_drops_the_last_session_chips(view):
 
     view._toggle_zen()
     normal_screen = view.build()
-    assert "LAST SESSION" in _texts(normal_screen)
+    assert "ÚLTIMA SESIÓN" in _texts(normal_screen)
 
 
 def test_zen_keeps_the_form_photo(view):
@@ -299,7 +299,7 @@ def test_next_set_hint_stops_guessing_when_the_work_is_done(view):
         # The plan can open more rows than last session had numbers for, and an
         # empty row is not claimable — typing in it is what claims it.
         view._update_set(i, "reps", "8")
-    assert view._next_set_hint() == "ALL SETS IN — SAVE THIS EXERCISE"
+    assert view._next_set_hint() == "TODAS LAS SERIES HECHAS — GUARDA ESTE EJERCICIO"
 
 
 def test_next_set_hint_says_nothing_it_does_not_know(view):

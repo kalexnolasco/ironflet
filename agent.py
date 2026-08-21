@@ -596,7 +596,7 @@ class MealTargetsProposal:
     kind: str = "meal_targets"
 
     def summary(self) -> str:
-        return f"{self.kcal:g} kcal · {self.protein:g}P / {self.fat:g}F / {self.carbs:g}C"
+        return f"{self.kcal:g} kcal · {self.protein:g}P / {self.fat:g}G / {self.carbs:g}C"
 
 
 @dataclass(frozen=True)
@@ -1754,7 +1754,17 @@ def _post_chat(payload: dict, api_key: str, timeout: float = 90.0) -> dict:
             response = client.post(
                 f"{openrouter.BASE_URL}/chat/completions", headers=headers, json=payload
             )
-    except Exception as exc:  # network, DNS, TLS, timeout
+    except httpx.TimeoutException as exc:
+        # Un tiempo agotado NO es falta de cobertura, y decirlo así manda a
+        # mirar el sitio equivocado: se cazó en el emulador con la red
+        # perfectamente viva (499 ms de ida y vuelta a openrouter.ai) y el
+        # mensaje decía "sin conexión". Un modelo grande con varias vueltas de
+        # herramientas tarda, y en 4G tarda más.
+        raise ApiError(
+            f"El modelo tardó más de {int(timeout)} s en responder. "
+            "Vuelve a intentarlo, o elige un modelo más rápido en Ajustes."
+        ) from exc
+    except Exception as exc:  # red, DNS, TLS
         raise ApiError(
             "Sin conexión con OpenRouter. El entrenador necesita señal; el resto de la app no."
         ) from exc

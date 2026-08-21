@@ -271,8 +271,8 @@ class ProposedSet:
         return self.reps_low is not None
 
     def label(self) -> str:
-        """`"Set 2 · 10 reps"`, `"Drop · 12 reps"`, `"Set 1 · max reps"`."""
-        head = "Drop" if self.is_drop() else f"Set {self.set_number}"
+        """`"Serie 2 · 10 reps"`, `"Drop · 12 reps"`, `"Serie 1 · max reps"`."""
+        head = "Drop" if self.is_drop() else f"Serie {self.set_number}"
         return f"{head} · {self.reps_label} reps" if self.reps_label else head
 
 
@@ -329,15 +329,15 @@ class SessionPlan:
         return self.plan_set_count != self.history_set_count
 
     def label(self) -> str:
-        """`"4 sets + 1 drop"`, `"3 sets"`, `"1 set"` — for a header line.
+        """`"4 series + 1 drop"`, `"3 series"`, `"1 serie"` — para una cabecera.
 
-        Plurals are spelled here rather than through `views/shared_ui.plural`
-        because that helper lives in the view layer and this module imports no
-        views; the rule it encodes (never "1 sets") is what matters and is
-        applied.
+        Los plurales se escriben aquí y no con `views/shared_ui.plural` porque
+        ese ayudante vive en la capa de vista y este módulo no importa vistas;
+        lo que importa es la regla que codifica (nunca "1 series"), y se
+        aplica igual.
         """
         sets = self.working_count()
-        text = f"{sets} set" if sets == 1 else f"{sets} sets"
+        text = f"{sets} serie" if sets == 1 else f"{sets} series"
         drops = self.drop_count()
         if drops:
             text += f" + {drops} drop" if drops == 1 else f" + {drops} drops"
@@ -422,7 +422,7 @@ class _Builder:
                 reps_high=reps,
                 reps_label=label,
                 drop_of=of,
-                note=note or f"Drop set off set {of}",
+                note=note or f"Drop set de la serie {of}",
             )
         )
 
@@ -441,21 +441,21 @@ def _build_range_or_fixed(b: _Builder, scheme: Scheme, count: int) -> None:
         # `[3×8↓]` — a drop marked on a scheme that names no tail. The row is
         # opened because the plan asked for a drop set; the target is left unset
         # because the plan never said how many reps it wants on it.
-        b.drop(last, None, "", note="Drop set off the last set")
-        b.warn("The scheme marks a drop set but names no reps for it.")
+        b.drop(last, None, "", note="Drop set de la última serie")
+        b.warn("El esquema marca un drop set pero no dice sus reps.")
 
 
 def _build_pyramid(b: _Builder, scheme: Scheme, count: int) -> None:
     segments = _pyramid_segments(scheme)
     if not segments:  # pragma: no cover - `per_set` non-empty implies segments
-        b.warn("Pyramid scheme with no readable segments.")
+        b.warn("Esquema en pirámide sin tramos legibles.")
         return
 
     if count > len(segments):
         # More sets than targets: repeat the last one. An ascending pyramid ends
         # at its working weight, so continuing at the final target is the only
         # reading that does not invent a number.
-        b.warn(f"Scheme names {len(segments)} targets for {count} sets; repeating the last.")
+        b.warn(f"El esquema da {len(segments)} objetivos para {count} series; se repite el último.")
 
     truncating = count < len(segments)
     for i in range(count):
@@ -480,7 +480,7 @@ def _build_pyramid(b: _Builder, scheme: Scheme, count: int) -> None:
         if _DROP_MARK in tail and _DROP_MARK not in emitted and b.rows:
             last_number = max((r.set_number for r in b.rows if r.set_number), default=0)
             _attach_drops(b, last_number, tail, tail.split("+")[1:])
-            b.warn("Fewer sets than the plan prescribes; its drop set moved to the last one.")
+            b.warn("Menos series de las que prescribe el plan; su drop set pasa a la última.")
 
 
 def _attach_drops(b: _Builder, set_number: int, segment: str, extras: list[str]) -> None:
@@ -491,7 +491,7 @@ def _attach_drops(b: _Builder, set_number: int, segment: str, extras: list[str])
             # drop, not a documented notation, and not something to guess at: the
             # row is *not* opened, because an invented row can be filled in and
             # saved as history while a missing one costs one tap.
-            b.warn(f"Ignored an unrecognised segment tail: {segment!r}.")
+            b.warn(f"Se ignoró un final de tramo que no se reconoce: {segment!r}.")
             continue
         b.drop(set_number, _reps_of(extra), extra.replace(_DROP_MARK, ""))
 
@@ -504,13 +504,13 @@ def _build_amrap(b: _Builder, scheme: Scheme, count: int) -> None:
         # nothing to progress and a made-up number would be worse than none.
         last = b.working(SetType.FAILURE, label=label)
     if scheme.has_drop and last:
-        b.drop(last, None, "", note="Drop set off the last set")
+        b.drop(last, None, "", note="Drop set de la última serie")
 
 
 def _build_cluster(b: _Builder, scheme: Scheme, exercise: str, count: int) -> None:
     segments = scheme.segments or ()
     if not segments:  # pragma: no cover - CLUSTER implies at least two segments
-        b.warn("Cluster scheme with no readable segments.")
+        b.warn("Esquema por clústeres sin tramos legibles.")
         return
 
     if not is_drop_cluster(exercise):
@@ -609,10 +609,10 @@ def plan_sets(
     else:
         count = plan_count or FALLBACK_ROWS
         if count_source is SetCountSource.LAST_SESSION:
-            b.warn("No usable history; fell back to the plan's set count.")
+            b.warn("Sin historial utilizable; se usa el número de series del plan.")
 
     if not scheme.is_known():
-        b.warn("No readable scheme; opening one set and assuming nothing.")
+        b.warn("Esquema ilegible; se abre una serie y no se supone nada.")
         b.working()
     elif scheme.kind in (SchemeKind.RANGE, SchemeKind.FIXED):
         _build_range_or_fixed(b, scheme, count)
@@ -625,7 +625,7 @@ def plan_sets(
 
     rows = b.rows
     if len(rows) > MAX_PROPOSED_ROWS:
-        b.warn(f"Capped at {MAX_PROPOSED_ROWS} rows; the scheme asked for {len(rows)}.")
+        b.warn(f"Cortado en {MAX_PROPOSED_ROWS} filas; el esquema pedía {len(rows)}.")
         rows = rows[:MAX_PROPOSED_ROWS]
     if not rows:  # pragma: no cover - every branch above emits at least one row
         rows = [ProposedSet(position=1, set_number=1, set_type=SetType.NORMAL)]
@@ -657,25 +657,27 @@ def _reason(
     of being reverse-engineered from the row count.
     """
     if not scheme.is_known():
-        return "No readable scheme — one set, nothing assumed."
+        return "Esquema ilegible — una serie, sin suponer nada."
 
     where = {
-        "bracket": f"The exercise prescribes {scheme.label()}",
-        "phase": f"The phase prescribes {scheme.label()}",
-        "phase-star": f"The phase's starred scheme prescribes {scheme.label()}",
-    }.get(scheme.source, f"Prescribed {scheme.label()}")
+        "bracket": f"El ejercicio prescribe {scheme.label()}",
+        "phase": f"La fase prescribe {scheme.label()}",
+        "phase-star": f"El esquema destacado de la fase prescribe {scheme.label()}",
+    }.get(scheme.source, f"Prescrito {scheme.label()}")
 
     working = sum(1 for r in rows if not r.is_drop())
     drops = len(rows) - working
-    tail = f"{working} set" if working == 1 else f"{working} sets"
+    tail = f"{working} serie" if working == 1 else f"{working} series"
     if drops:
-        tail += f" plus {drops} drop set" if drops == 1 else f" plus {drops} drop sets"
+        # "drop set" se dice así en el gimnasio en español; lo que cambia es
+        # el conector.
+        tail += f" más {drops} drop set" if drops == 1 else f" más {drops} drop sets"
 
     if count_source is SetCountSource.LAST_SESSION and hist_count:
-        return f"{where}; opening {tail} to match last session."
+        return f"{where}; se abren {tail} para igualar la última sesión."
     if hist_count and plan_count and hist_count != plan_count:
-        return f"{where} — opening {tail}. Last session had {hist_count}."
-    return f"{where} — opening {tail}."
+        return f"{where} — se abren {tail}. La última sesión tuvo {hist_count}."
+    return f"{where} — se abren {tail}."
 
 
 # ─────────────────────────────────────────────────────────────────────────

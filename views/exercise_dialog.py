@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import flet as ft
 
+from exercise_details import ES_META as _ES_META
+from exercise_details import ES_MUSCULO as _ES_MUSCULO
 from exercise_details import details_for
 from exercise_images import image_props
 from theme import C
@@ -28,37 +30,10 @@ _IMAGE_H = 180
 
 # Presentación en español de los metadatos del Free Exercise DB. Solo capa de
 # pantalla: las claves de los datos siguen en inglés (vienen del catálogo), y
-# un valor que no esté aquí se muestra tal cual en vez de romper nada.
-_ES_MUSCULO = {
-    "abdominals": "abdominales",
-    "biceps": "bíceps",
-    "calves": "gemelos",
-    "chest": "pecho",
-    "forearms": "antebrazos",
-    "glutes": "glúteos",
-    "hamstrings": "femorales",
-    "lats": "dorsales",
-    "lower back": "lumbar",
-    "middle back": "espalda media",
-    "quadriceps": "cuádriceps",
-    "shoulders": "hombros",
-    "traps": "trapecios",
-    "triceps": "tríceps",
-}
-_ES_META = {
-    "barbell": "barra",
-    "body only": "peso corporal",
-    "cable": "polea",
-    "dumbbell": "mancuerna",
-    "e-z curl bar": "barra EZ",
-    "machine": "máquina",
-    "other": "otro",
-    "beginner": "principiante",
-    "intermediate": "intermedio",
-    "expert": "avanzado",
-    "compound": "compuesto",
-    "isolation": "aislamiento",
-}
+# un valor que no esté aquí se muestra tal cual en vez de romper nada. Las dos
+# tablas viven en `exercise_details.py`, junto al vocabulario que traducen,
+# porque `substitutions.py` escribe las mismas palabras en sus frases y es
+# lógica pura: no puede importar de `views/`.
 
 
 def build_exercise_detail(page, key: str) -> ft.AlertDialog | None:

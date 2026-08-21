@@ -494,7 +494,7 @@ def test_the_dialog_warns_when_it_would_move_the_program_start(page):
     v._set_log_date(first_ever - timedelta(days=1))
 
     v._open_date_dialog()
-    assert _said(_last_dialog(page), "moves the program back")
+    assert _said(_last_dialog(page), "lo retrasa")
 
 
 def test_no_warning_when_the_start_date_is_pinned(page):
@@ -520,7 +520,7 @@ def test_no_warning_when_the_start_date_is_pinned(page):
     v._set_log_date(first_ever - timedelta(days=1))
 
     v._open_date_dialog()
-    assert not _said(_last_dialog(page), "moves the program back")
+    assert not _said(_last_dialog(page), "lo retrasa")
 
 
 def test_an_unreachable_database_still_lets_him_pick(page):

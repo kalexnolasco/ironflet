@@ -56,7 +56,7 @@ def bar_chart(
         # Reached by the default route — the detail view opens on "Est. 1RM",
         # which is empty for bodyweight or warm-up-only exercises.
         empty = ft.Container(
-            content=ft.Text("No data", color=C.text_muted, size=11, italic=True),
+            content=ft.Text("Sin datos", color=C.text_muted, size=11, italic=True),
             alignment=ft.alignment.center,
             height=height,
         )
@@ -105,7 +105,7 @@ def bar_chart(
 
 
 def axis_note(chart: ft.Control) -> str | None:
-    """ "Scale starts at 82 kg" — or None when the chart starts at zero.
+    """ "La escala empieza en 82, no en 0" — or None when the chart starts at zero.
 
     Small helper rather than each caller reaching for `chart_floor`: the note
     is the other half of `baseline="auto"`, and the half that gets forgotten.
@@ -116,4 +116,4 @@ def axis_note(chart: ft.Control) -> str | None:
     # One decimal, trailing zeros dropped: the floor is a computed number and
     # "81.67" in a caption reads like a measurement rather than an axis label.
     texto = f"{floor:.1f}".rstrip("0").rstrip(".")
-    return f"Scale starts at {texto}, not 0"
+    return f"La escala empieza en {texto}, no en 0"

@@ -139,26 +139,26 @@ def blob(control) -> str:
 
 @pytest.mark.parametrize(
     ("warmups", "expected"),
-    [(1, "1 warm-up"), (3, "3 warm-ups")],
+    [(1, "1 calentamiento"), (3, "3 calentamientos")],
 )
 def test_the_session_card_pluralises_its_warmups(warmups, expected):
-    """`3 warm-up` is the exact string the audit found on screen."""
+    """`3 calentamiento` es justo lo que el barrido encontró en pantalla."""
     sets = [warmup(60, 5) for _ in range(warmups)] + [work(100, 5)]
     view = make_view([entry("2026-08-10", sets)])
     view.selected = "Squat"
     rendered = blob(view.build())
     assert expected in rendered
-    assert "3 warm-up |" not in rendered  # i.e. no unpluralised leftover
+    assert "3 calentamiento |" not in rendered  # o sea, sin singular colado
 
 
 def test_the_session_card_pluralises_its_working_sets():
     one = make_view([entry("2026-08-10", [work(100, 5)])])
     one.selected = "Squat"
-    assert "1 set ·" in blob(one.build())
+    assert "1 serie ·" in blob(one.build())
 
     many = make_view([entry("2026-08-10", [work(100, 5), work(100, 5)])])
     many.selected = "Squat"
-    assert "2 sets ·" in blob(many.build())
+    assert "2 series ·" in blob(many.build())
 
 
 def test_a_single_unattributed_exercise_is_not_reported_as_plural():
@@ -222,8 +222,8 @@ def test_the_session_summary_prints_kilos_not_a_bare_k():
     view = make_view([entry("2026-08-10", sets)])
     view.selected = "Squat"
     tree = view.build()
-    summary = [t for t in texts(tree) if t.startswith("20 sets")]
-    assert summary == ["20 sets · 20,000 kg"]
+    summary = [t for t in texts(tree) if t.startswith("20 series")]
+    assert summary == ["20 series · 20,000 kg"]
     assert any("20,000 kg" in t for t in tooltips(tree)), "the shortened tile explains itself"
 
 

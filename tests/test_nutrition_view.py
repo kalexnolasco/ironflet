@@ -332,7 +332,7 @@ def test_empty_state_does_not_invent_targets(view, monkeypatch):
 
     Nothing in this app writes `nutrition_targets` — they come from the coach's
     side of the shared database — so "not set yet" is an ordinary first-run
-    state. It used to render as "Today's plan: 0 kcal · 0P / 0F / 0C", which is
+    state. It used to render as "Today's plan: 0 kcal · 0P / 0G / 0C", which is
     a plan nobody wrote.
     """
     monkeypatch.setattr(view.test_module, "targets_for", lambda *a, **k: None)
@@ -383,7 +383,7 @@ def test_expanding_a_meal_lists_its_entries(view):
     # Exact matches: "+ Chicken breast · 150 g" is the favourites chip, a
     # different control that must not be mistaken for the logged row.
     assert "Chicken breast" in labels
-    assert "150 g · P46 F5 C0" in labels
+    assert "150 g · P46 G5 C0" in labels
 
 
 def test_quick_add_logs_in_one_tap(view):

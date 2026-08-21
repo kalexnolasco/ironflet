@@ -149,7 +149,7 @@ def open_start_date_dialog(
         try:
             chosen = date.fromisoformat((field.value or "").strip())
         except ValueError:
-            err.value = "Use YYYY-MM-DD"
+            err.value = "Usa AAAA-MM-DD"
             page.update()
             return
         # A future date is not refused — program_week reports it as SCHEDULED
@@ -324,7 +324,7 @@ class PlanView:
             header.append(
                 ft.Container(
                     content=ft.Text(
-                        "YOU ARE HERE", size=9, weight=ft.FontWeight.W_900, color=C.on_accent
+                        "ESTÁS AQUÍ", size=9, weight=ft.FontWeight.W_900, color=C.on_accent
                     ),
                     bgcolor=C.accent,
                     border_radius=Radius.sm,
@@ -519,7 +519,10 @@ class PlanView:
             return card(
                 ft.Text(week_headline(pw), size=10, weight=ft.FontWeight.W_900, color=C.accent),
                 ft.Text(
-                    "No phase covers this week", size=16, weight=ft.FontWeight.W_900, color=C.text
+                    "Ninguna fase cubre esta semana",
+                    size=16,
+                    weight=ft.FontWeight.W_900,
+                    color=C.text,
                 ),
                 muted_text(
                     "Las fases de esta rutina dejan aquí un hueco. Revisa sus rangos de semanas."

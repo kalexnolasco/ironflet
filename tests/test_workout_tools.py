@@ -268,7 +268,7 @@ def test_the_jump_is_offered_before_the_first_set(trained):
     rec = view._recommendation(0)
     assert rec.action is Action.ADD_WEIGHT
     assert rec.weight == 82.5
-    assert "Go up · 82.5 kg × 5-8" in _visible_texts(view.build())
+    assert "Sube · 82.5 kg × 5-8" in _visible_texts(view.build())
 
 
 def test_the_reason_is_folded_away_and_never_a_dialog(trained, page):
@@ -276,7 +276,7 @@ def test_the_reason_is_folded_away_and_never_a_dialog(trained, page):
     not worth a modal: one tap unfolds it in place."""
     view, _ = trained
     tree = view.build()
-    assert "Go up · 82.5 kg × 5-8" in _visible_texts(tree)
+    assert "Sube · 82.5 kg × 5-8" in _visible_texts(tree)
     assert view._reason_text.visible is False
     view._toggle_reason()
     assert view._reason_text.visible is True
@@ -303,10 +303,10 @@ def test_the_banner_leaves_once_the_first_working_set_is_in(trained):
     """It is a planning surface. After set one it would be occupying the screen
     to answer a question that has been answered."""
     view, _ = trained
-    assert any(t.startswith("Go up") for t in _visible_texts(view.build()))
+    assert any(t.startswith("Sube") for t in _visible_texts(view.build()))
     view._update_set(0, "reps", "8")  # typing claims the row
     assert view._has_confirmed_work() is True
-    assert not any(t.startswith("Go up") for t in _visible_texts(view.build()))
+    assert not any(t.startswith("Sube") for t in _visible_texts(view.build()))
 
 
 def test_a_dead_database_still_renders_the_exercise(page):
@@ -338,12 +338,12 @@ def test_an_impossible_weight_names_both_neighbours(trained):
 
 def test_a_weight_under_the_bar_says_so(trained):
     view, _ = trained
-    assert view._plate_hint("12") == "under the bar · 20 kg is the lightest"
+    assert view._plate_hint("12") == "por debajo de la barra · 20 kg es lo más ligero"
 
 
 def test_the_bare_bar_is_named_not_left_blank(trained):
     view, _ = trained
-    assert view._plate_hint("20") == "empty 20 kg bar"
+    assert view._plate_hint("20") == "barra de 20 kg, sin discos"
 
 
 def test_dumbbells_and_cables_get_no_plate_maths(page):
@@ -576,10 +576,10 @@ def test_a_ramp_survives_a_killed_process_without_forging_a_set(page):
 def test_the_last_sessions_are_one_tap_away(trained):
     view, _ = trained
     tree = view.build()
-    assert "Last 3 sessions" in _visible_texts(tree)
+    assert "Últimas 3 sesiones" in _visible_texts(tree)
     # Folded: mounted, so it can be unfolded in place, but not on screen.
-    assert "4 sets" not in _visible_texts(tree)
-    assert "4 sets" in _texts(tree)
+    assert "4 series" not in _visible_texts(tree)
+    assert "4 series" in _texts(tree)
 
 
 def test_unfolding_costs_nothing_that_was_typed(trained, page):
@@ -604,7 +604,7 @@ def test_it_shows_at_most_five_sessions(page):
     view = make_view(page, store)
     view._show_history = True
     shown = _visible_texts(view.build())
-    assert shown.count("4 sets") == HISTORY_SESSIONS
+    assert shown.count("4 series") == HISTORY_SESSIONS
 
 
 def test_a_first_time_exercise_offers_no_panel(page):

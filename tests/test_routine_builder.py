@@ -418,7 +418,7 @@ def test_duplicate_a_user_routine(store):
     pk = duplicate_builtin(store, "upper-lower", "Base")
     copy_pk = duplicate_user_routine(store, pk)
     assert copy_pk != pk
-    assert load_draft(store, copy_pk).name == "Base (copy)"
+    assert load_draft(store, copy_pk).name == "Base (copia)"
     assert len(list_user_routines(store)) == 2
 
 
@@ -481,7 +481,7 @@ def test_editor_view_full_flow(store, page_mock):
     assert len(stored) == 1
     assert len(stored[0].phases) == 2
     day_names = [d.name for d in stored[0].days_for_phase(1)]
-    assert day_names == ["Día 2", "Day 1"]  # the reorder stuck
+    assert day_names == ["Día 2", "Día 1"]  # el reordenado se mantuvo
     first_day = stored[0].days_for_phase(1)[1].exercises
     assert [exercise_key(e) for e in first_day] == ["Leg Press", "Squat"]
 

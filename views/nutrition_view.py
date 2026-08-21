@@ -678,7 +678,7 @@ class NutritionView:
         if self._has_targets(targets):
             plan = (
                 f"{_n(targets.get('kcal'))} kcal · "
-                f"{_n(targets.get('protein'))}P / {_n(targets.get('fat'))}F / "
+                f"{_n(targets.get('protein'))}P / {_n(targets.get('fat'))}G / "
                 f"{_n(targets.get('carbs'))}C"
             )
             whose = "Plan de hoy" if self.day == date.today() else "Plan de ese día"
@@ -829,7 +829,7 @@ class NutritionView:
 
         subtitle = meal_time_hint(meal)
         if entries:
-            subtitle = f"{subtitle} · {plural(len(entries), 'item')}"
+            subtitle = f"{subtitle} · {plural(len(entries), 'alimento')}"
 
         header = ft.Container(
             content=ft.Row(
@@ -916,7 +916,7 @@ class NutritionView:
 
         return ft.Container(
             content=ft.Text(
-                f"P {_n(total('protein'))} · F {_n(total('fat'))} · C {_n(total('carbs'))}",
+                f"P {_n(total('protein'))} · G {_n(total('fat'))} · C {_n(total('carbs'))}",
                 size=10,
                 color=C.text_muted,
                 weight=ft.FontWeight.W_700,
@@ -934,7 +934,7 @@ class NutritionView:
         if qty not in (None, "", 1, 1.0):
             caption_bits.append(f"×{qty:g}" if isinstance(qty, (int, float)) else f"×{qty}")
         caption_bits.append(
-            f"P{_n(entry.get('protein'))} F{_n(entry.get('fat'))} C{_n(entry.get('carbs'))}"
+            f"P{_n(entry.get('protein'))} G{_n(entry.get('fat'))} C{_n(entry.get('carbs'))}"
         )
 
         return ft.Container(
@@ -1107,7 +1107,7 @@ class NutritionView:
             bit
             for bit in (
                 food.get("serving") or "",
-                f"P{_n(food.get('protein'))} F{_n(food.get('fat'))} C{_n(food.get('carbs'))}",
+                f"P{_n(food.get('protein'))} G{_n(food.get('fat'))} C{_n(food.get('carbs'))}",
             )
             if bit
         )

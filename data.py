@@ -826,7 +826,7 @@ ROUTINES: list[Routine] = [
     Routine(
         id="cambiatufisico",
         name="CambiaTuFísico",
-        description="Periodized routine · 24 weeks · 7 phases",
+        description="Rutina periodizada · 24 semanas · 7 fases",
         phases=PHASES,
         days_by_phase={
             1: DAYS_PHASE_1_3,
@@ -842,7 +842,7 @@ ROUTINES: list[Routine] = [
     Routine(
         id="upper-lower",
         name="Upper / Lower",
-        description="4-day split · 12 weeks · 2 phases",
+        description="Split de 4 días · 12 semanas · 2 fases",
         phases=UL_PHASES,
         days_by_phase={1: UL_DAYS_FOUNDATION, 2: UL_DAYS_HYPERTROPHY},
         week_rotation=None,
@@ -850,7 +850,7 @@ ROUTINES: list[Routine] = [
     Routine(
         id="push-pull-legs",
         name="Push / Pull / Legs",
-        description="6-day split · 12 weeks · 2 phases",
+        description="Split de 6 días · 12 semanas · 2 fases",
         phases=PPL_PHASES,
         days_by_phase={1: PPL_DAYS_FOUNDATION, 2: PPL_DAYS_INTENSIFICATION},
         week_rotation=None,
@@ -858,7 +858,7 @@ ROUTINES: list[Routine] = [
     Routine(
         id="recomp-ppl-ul",
         name="Recomp — PPL + Upper/Lower",
-        description="5 days · 6 weeks · lean bulk",
+        description="5 días · 6 semanas · volumen limpio",
         phases=RECOMP_PHASES,
         days_by_phase={
             1: RECOMP_DAYS_BASE,

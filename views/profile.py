@@ -46,6 +46,21 @@ ACTIVITY_KEYS = list(ACTIVITY_FACTORS.keys())
 SEX_KEYS = ["M", "F", ""]
 
 
+def _antiguedad(cuando: str, dias: int) -> str:
+    """«2026-08-21 · hoy», «… · ayer», «… · hace 3 días».
+
+    El inglés se conforma con "0 days ago" y no chirría; en español "hace 0
+    días" sí, y es justo lo que se veía el día que te pesabas.
+    """
+    if dias <= 0:
+        cerca = "hoy"
+    elif dias == 1:
+        cerca = "ayer"
+    else:
+        cerca = f"hace {plural(dias, 'día')}"
+    return f"{cuando}  ·  {cerca}"
+
+
 class ProfileView:
     def __init__(self, page: ft.Page, store: Storage):
         self.page = page
@@ -294,7 +309,7 @@ class ProfileView:
                             color=C.text,
                         ),
                         ft.Text(
-                            f"{resumen.on}  ·  {plural(resumen.days_ago or 0, 'day')} ago",
+                            _antiguedad(resumen.on, resumen.days_ago or 0),
                             size=11,
                             color=C.warning if resumen.due else C.text_secondary,
                             expand=True,
@@ -316,8 +331,8 @@ class ProfileView:
                 # another; the screen shows both rather than picking.
                 cuerpo.append(
                     ft.Text(
-                        f"{resumen.vs_baseline:+.1f} cm vs {resumen.baseline_on} (start)   ·   "
-                        f"{resumen.vs_previous:+.1f} cm vs {resumen.previous_on} (previous)",
+                        f"{resumen.vs_baseline:+.1f} cm vs {resumen.baseline_on} (inicio)   ·   "
+                        f"{resumen.vs_previous:+.1f} cm vs {resumen.previous_on} (anterior)",
                         size=11,
                         color=C.text_secondary,
                     )
@@ -636,7 +651,7 @@ class ProfileView:
         status_label = ft.Text(
             "Instaladas"
             if installed
-            else (f"{st.missing} of {total} missing" if st.present else "Sin instalar  ·  ~9 MB"),
+            else (f"faltan {st.missing} de {total}" if st.present else "Sin instalar  ·  ~9 MB"),
             size=11,
             color=C.accent if installed else C.text_secondary,
             weight=ft.FontWeight.W_700,
@@ -693,7 +708,7 @@ class ProfileView:
                     [
                         ft.Text(
                             "Las fotos e instrucciones de los ejercicios se descargan "
-                            "from a public fitness database (Unlicense). "
+                            "de una base de datos pública de fitness (Unlicense). "
                             "Unos 9 MB — mejor con wifi.",
                             size=11,
                             color=C.text_secondary,
@@ -957,7 +972,7 @@ class ProfileView:
         corta = openrouter.curated(catalogo)
 
         field = ft.TextField(
-            label="OpenRouter API key" if not stored else "Cambiar la clave",
+            label="Clave de OpenRouter" if not stored else "Cambiar la clave",
             hint_text="sk-or-v1-…",
             password=True,
             can_reveal_password=True,
@@ -1108,7 +1123,7 @@ class ProfileView:
         if st.complete:
             status = f"Instaladas · las {st.total}"
         elif st.present:
-            status = f"{st.missing} of {st.total} missing"
+            status = f"faltan {st.missing} de {st.total}"
         else:
             status = "Sin descargar — las fotos no se verán"
         return ft.Container(

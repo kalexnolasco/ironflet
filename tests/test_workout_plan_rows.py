@@ -268,12 +268,12 @@ def test_the_screen_says_when_the_plan_and_last_session_differ(page):
         {"Smith Bench Press": [session("Smith Bench Press", [{"weight": 60, "reps": 10}] * 2)]}
     )
     view = make_view(page, store)
-    assert "Plan · 3 sets · last session 2 sets" in _texts(view.build())
+    assert "Plan · 3 series · última sesión 2 series" in _texts(view.build())
 
 
 def test_the_drop_set_is_announced_above_the_rows(page):
     view = make_view(page, FakeStore(), phase=DROP_PHASE)
-    assert any(t.startswith("Plan · 4 sets + 1 drop") for t in _texts(view.build()))
+    assert any(t.startswith("Plan · 4 series + 1 drop") for t in _texts(view.build()))
 
 
 def test_none_of_this_opens_a_dialog(page):

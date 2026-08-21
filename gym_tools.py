@@ -468,7 +468,7 @@ class LoadOptions:
             parts.append(f"{_trim(self.below.total)} kg ({self.below.label()})")
         if self.above is not None:
             parts.append(f"{_trim(self.above.total)} kg ({self.above.label()})")
-        return f"{_trim(self.target)} kg not loadable — " + " or ".join(parts)
+        return f"{_trim(self.target)} kg no se puede montar — " + " o ".join(parts)
 
 
 def loadable_options(

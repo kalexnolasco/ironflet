@@ -423,7 +423,7 @@ def test_no_scheme_opens_exactly_one_row_and_says_so():
     assert plan.proposals[0].set_type is SetType.NORMAL
     assert not plan.proposals[0].has_target()
     assert plan.plan_set_count is None
-    assert "nothing assumed" in plan.reason
+    assert "sin suponer nada" in plan.reason
     assert plan.warnings
 
 
@@ -447,13 +447,13 @@ def test_an_unrecognised_segment_tail_is_not_turned_into_a_row():
     plan = plan_sets("Odd [4×10,8+8]")
     assert plan.drop_count() == 0
     assert plan.working_count() == 4
-    assert any("unrecognised" in w for w in plan.warnings)
+    assert any("no se reconoce" in w for w in plan.warnings)
 
 
 def test_the_row_count_is_capped():
     plan = plan_sets("Silly [40×10+10+10]")
     assert len(plan) == MAX_PROPOSED_ROWS
-    assert any("Capped" in w for w in plan.warnings)
+    assert any("Cortado" in w for w in plan.warnings)
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -474,7 +474,7 @@ def test_the_plan_wins_by_default():
     assert plan.plan_set_count == 5
     assert plan.history_set_count == 3
     assert plan.disagrees_with_history()
-    assert "Last session had 3" in plan.reason
+    assert "La última sesión tuvo 3" in plan.reason
 
 
 def test_the_caller_can_ask_for_the_other_answer():
@@ -624,10 +624,10 @@ def test_a_proposed_set_carries_no_weight_field():
 
 
 def test_labels_never_say_one_sets():
-    assert plan_sets("Something Unknown").label() == "1 set"
-    assert plan_sets("X [3×10]").label() == "3 sets"
-    assert plan_sets("Barbell Bench Press [4×10,10,8,6+12↓]").label() == "4 sets + 1 drop"
-    assert plan_sets("Plate Front Raises [3×10,8+12↓,8+12↓]").label() == "3 sets + 2 drops"
+    assert plan_sets("Something Unknown").label() == "1 serie"
+    assert plan_sets("X [3×10]").label() == "3 series"
+    assert plan_sets("Barbell Bench Press [4×10,10,8,6+12↓]").label() == "4 series + 1 drop"
+    assert plan_sets("Plate Front Raises [3×10,8+12↓,8+12↓]").label() == "3 series + 2 drops"
 
 
 def test_every_reason_is_a_sentence_quoting_the_prescription():

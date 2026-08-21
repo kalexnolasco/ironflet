@@ -1,7 +1,65 @@
 """Auto-generated details from Free Exercise DB (Unlicense / public domain).
 Source: github.com/yuhonas/free-exercise-db
 
-Instructions are in English. ES UI shows a small "EN" note."""
+Instructions are in English. ES UI shows a small "EN" note.
+
+`EXERCISE_DETAILS` and its `details_for()` accessor are the generated half.
+`ES_MUSCULO` / `ES_META` below are hand-written and are NOT regenerated: they
+are the Spanish reading of this table's own vocabulary (`primary`/`secondary`,
+`equipment`, `level`, `mechanic`), and they live next to the vocabulary they
+translate so that two callers cannot drift apart. `views/exercise_dialog.py`
+paints them in the detail dialog and `substitutions.py` writes them into the
+sentence it puts under a swap — that module is pure logic and must not import
+from `views/`, which is why the tables are not in the dialog any more."""
+
+#: Free Exercise DB muscle → Spanish. Keys stay English: they are data coming
+#: out of the catalogue, not chrome. Anything missing falls back to the raw
+#: value (`.get(m, m)`) rather than blanking the line.
+#:
+#: The three delt heads are not in the source table — the catalogue has one
+#: `shoulders` — but `substitutions._muscles()` splits it into front/side/rear,
+#: and those are the words that reach the screen from there.
+ES_MUSCULO: dict[str, str] = {
+    "abdominals": "abdominales",
+    "biceps": "bíceps",
+    "calves": "gemelos",
+    "chest": "pecho",
+    "forearms": "antebrazos",
+    "front delts": "deltoides anterior",
+    "glutes": "glúteos",
+    "hamstrings": "femorales",
+    "lats": "dorsales",
+    "lower back": "lumbar",
+    "middle back": "espalda media",
+    "quadriceps": "cuádriceps",
+    "rear delts": "deltoides posterior",
+    "shoulders": "hombros",
+    "side delts": "deltoides lateral",
+    "traps": "trapecios",
+    "triceps": "tríceps",
+}
+
+#: Equipment, level and mechanic → Spanish, in one table because the dialog
+#: paints them in one row of chips. It carries both vocabularies on purpose:
+#: the details table's own (`body only`, `e-z curl bar`) and the normalised one
+#: `substitutions.equipment_for()` returns (`bodyweight`, `unknown`), which is
+#: `progression.Equipment`'s.
+ES_META: dict[str, str] = {
+    "barbell": "barra",
+    "body only": "peso corporal",
+    "bodyweight": "peso corporal",
+    "cable": "polea",
+    "dumbbell": "mancuerna",
+    "e-z curl bar": "barra EZ",
+    "machine": "máquina",
+    "other": "otro",
+    "unknown": "sin determinar",
+    "beginner": "principiante",
+    "intermediate": "intermedio",
+    "expert": "avanzado",
+    "compound": "compuesto",
+    "isolation": "aislamiento",
+}
 
 EXERCISE_DETAILS: dict[str, dict] = {
     "Air_Bike": {

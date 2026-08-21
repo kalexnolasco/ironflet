@@ -125,7 +125,7 @@ def test_unloadable_weight_reports_both_neighbours_and_never_fails_silently():
     assert options.above.total == 45.0
     assert options.below.delta == -1.2
     assert options.above.delta == 1.3
-    assert "not loadable" in options.summary()
+    assert "no se puede montar" in options.summary()
     assert "42.5" in options.summary() and "45" in options.summary()
 
 

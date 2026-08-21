@@ -195,7 +195,7 @@ class RoutineEditorView:
             bgcolor=C.bg_surface,
             title=ft.Text("Borrar rutina", size=16, weight=ft.FontWeight.W_900, color=C.text),
             content=ft.Text(
-                f'"{name}" and all its days will be removed. Logged workouts are not affected.',
+                f'Se borrará "{name}" y todos sus días. Los entrenos ya registrados no se tocan.',
                 size=12,
                 color=C.text_secondary,
             ),
@@ -237,9 +237,9 @@ class RoutineEditorView:
         # "exercises" between two hand-agreed neighbours — a one-exercise
         # routine read "1 phase · 1 day · 1 exercises".
         meta = muted_text(
-            f"{plural(len(draft.phases), 'phase')} · "
-            f"{plural(n_days, 'day')} · {plural(n_ex, 'exercise')}"
-            + (f" · from {draft.source}" if draft.source else "")
+            f"{plural(len(draft.phases), 'fase')} · "
+            f"{plural(n_days, 'día')} · {plural(n_ex, 'ejercicio')}"
+            + (f" · de {draft.source}" if draft.source else "")
         )
         actions = ft.Row(
             [
@@ -346,7 +346,7 @@ class RoutineEditorView:
                 muted_text("Tus rutinas propias van junto a las de serie."),
                 ft.Container(height=Space.x3),
                 primary_button(
-                    "New routine", on_click=self._open_new, icon=ft.Icons.ADD, expand=True
+                    "Rutina nueva", on_click=self._open_new, icon=ft.Icons.ADD, expand=True
                 ),
                 ft.Container(height=Space.x4),
                 section_title("Tuyas"),

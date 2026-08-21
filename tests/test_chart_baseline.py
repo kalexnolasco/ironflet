@@ -62,7 +62,7 @@ def test_el_orden_de_las_barras_sigue_el_de_los_datos():
 def test_un_eje_recortado_lo_declara():
     chart = bar_chart(PESOS, height=ALTURA, baseline="auto")
     nota = axis_note(chart)
-    assert nota and "not 0" in nota
+    assert nota and "no en 0" in nota
 
 
 def test_un_eje_desde_cero_no_dice_nada():
@@ -72,7 +72,7 @@ def test_un_eje_desde_cero_no_dice_nada():
 def test_la_nota_no_saca_decimales_feos():
     """`81.67` in a caption reads as a measurement, not as an axis label."""
     nota = axis_note(bar_chart(PESOS, height=ALTURA, baseline="auto"))
-    numero = nota.split("at ")[1].split(",")[0]
+    numero = nota.split("empieza en ")[1].split(",")[0]
     assert len(numero.split(".")[-1]) <= 1 if "." in numero else True
 
 

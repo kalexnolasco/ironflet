@@ -179,7 +179,7 @@ class BrowseView:
                 ft.Row(chips, spacing=6, wrap=True, run_spacing=6),
                 ft.Container(height=10),
                 ft.Text(
-                    plural(count, "exercise"),
+                    plural(count, "ejercicio"),
                     size=11,
                     color=C.text_secondary,
                     weight=ft.FontWeight.W_700,

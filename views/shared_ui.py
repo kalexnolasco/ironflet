@@ -46,14 +46,52 @@ def _count_str(count: float | int) -> str:
     return str(count)
 
 
-def plural(count: float | int, singular: str, plural_form: str | None = None) -> str:
-    """`1 set`, `3 sets`, `0 sets` — the number and its noun, agreed.
+#: Vocales acentuadas y sin acentuar. Una palabra que acaba en vocal hace el
+#: plural con `-s`; el resto, con `-es`. Es la regla que cubre todo lo que esta
+#: app cuenta (serie, día, fase, ejercicio, alimento, sesión, mes, semana).
+_VOCALES = "aeiouáéíóú"
 
-    Pass `plural_form` for anything English does not pluralise with a bare `s`
-    (`plural(n, "entry", "entries")`). A fractional count is never singular:
-    half a set is "0.5 sets", and only an exact 1 takes the singular.
+#: Palabras cuyo plural desplaza o pierde la tilde y por tanto no sale de la
+#: regla de arriba. Se añaden aquí en vez de obligar a cada llamada a pasar el
+#: plural a mano, que es exactamente lo que se olvida.
+_PLURALES_IRREGULARES = {
+    "sesión": "sesiones",
+    "anotación": "anotaciones",
+    "repetición": "repeticiones",
+    "medición": "mediciones",
+}
+
+
+def _pluralizar_es(singular: str) -> str:
+    """El plural español de una palabra suelta, en minúscula o mayúscula.
+
+    Mantiene la caja del original para que sirva igual en una cabecera en
+    mayúsculas que en medio de una frase.
     """
-    word = singular if count == 1 else (plural_form or f"{singular}s")
+    bajo = singular.lower()
+    irregular = _PLURALES_IRREGULARES.get(bajo)
+    if irregular is not None:
+        return irregular.upper() if singular.isupper() else irregular
+    if not bajo:
+        return singular
+    sufijo = "s" if bajo[-1] in _VOCALES else "es"
+    return singular + (sufijo.upper() if singular.isupper() else sufijo)
+
+
+def plural(count: float | int, singular: str, plural_form: str | None = None) -> str:
+    """`1 serie`, `3 series`, `0 series` — el número y su nombre, concordados.
+
+    Pluraliza **en español**: `-s` tras vocal, `-es` tras consonante, más una
+    tabla corta para las que mueven la tilde (`sesión` → `sesiones`). Antes
+    hacía `singular + "s"` y punto, que es la regla inglesa: colaba de milagro
+    con *serie*, *día* o *fase*, y producía "2 sesións" en cuanto la palabra
+    acababa en consonante. Sigue aceptando `plural_form` para forzar una forma
+    concreta.
+
+    Un recuento fraccionario nunca es singular: media serie es "0,5 series", y
+    solo el 1 exacto lleva el singular.
+    """
+    word = singular if count == 1 else (plural_form or _pluralizar_es(singular))
     return f"{_count_str(count)} {word}"
 
 

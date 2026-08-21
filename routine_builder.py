@@ -189,14 +189,24 @@ class DraftExercise:
 
 @dataclass
 class DraftDay:
-    name: str = "Day"
+    """Un día de una rutina que Alex escribe, no de las cuatro de fábrica.
+
+    `name` acaba en `entrenos.grupo`, que la trampa 22 manda dejar en inglés
+    — pero esa regla protege el vocabulario de las rutinas *de serie*
+    ("Chest-Biceps", "Push"), donde el nombre es contrato compartido con el
+    historial ya escrito. Aquí es un marcador de posición que el usuario pisa
+    en cuanto abre el editor, y dejarlo en "Day" solo garantizaba que el que
+    no lo pisara acabara con un historial medio en inglés.
+    """
+
+    name: str = "Día"
     exercises: list[DraftExercise] = field(default_factory=list)
 
 
 @dataclass
 class DraftPhase:
-    name: str = "Phase 1"
-    subtitle: str = "Custom"
+    name: str = "Fase 1"
+    subtitle: str = "Personalizada"
     weeks: str = "1-4"
     scheme: str = "3×10"
     rest: str = "90s"
@@ -207,7 +217,7 @@ class DraftPhase:
 
 @dataclass
 class DraftRoutine:
-    name: str = "My Routine"
+    name: str = "Mi rutina"
     description: str = ""
     source: str = ""
     pk: int | None = None  # None until first save
@@ -320,10 +330,10 @@ def move(items: list, idx: int, delta: int) -> bool:
 # ── drafts from the different sources ────────────────────────
 
 
-def new_draft(name: str = "My Routine") -> DraftRoutine:
+def new_draft(name: str = "Mi rutina") -> DraftRoutine:
     return DraftRoutine(
         name=name,
-        phases=[DraftPhase(days=[DraftDay(name="Day 1")])],
+        phases=[DraftPhase(days=[DraftDay(name="Día 1")])],
     )
 
 
@@ -361,7 +371,7 @@ def draft_from_builtin(routine_id: str) -> DraftRoutine:
             )
         )
     return DraftRoutine(
-        name=f"{src.name} (copy)",
+        name=f"{src.name} (copia)",
         description=src.description,
         source=src.id,
         phases=phases,
@@ -434,10 +444,10 @@ def save_draft(store: Storage, draft: DraftRoutine) -> int:
     """
     Session = _sessions(store)
     now = datetime.now().astimezone()
-    name = (draft.name or "").strip() or "Untitled routine"
+    name = (draft.name or "").strip() or "Rutina sin nombre"
     phases = [p for p in draft.phases if p.days or (p.name or "").strip()]
     if not phases:
-        phases = [DraftPhase(days=[DraftDay(name="Day 1")])]
+        phases = [DraftPhase(days=[DraftDay(name="Día 1")])]
 
     with Session() as s:
         if draft.pk is None:
@@ -466,7 +476,7 @@ def save_draft(store: Storage, draft: DraftRoutine) -> int:
                 # turns it into `Phase.id = position + 1`, which is what the
                 # views index by (phase colour, `days_for_phase`).
                 position=pos,
-                name=(p.name or "").strip() or f"Phase {pos + 1}",
+                name=(p.name or "").strip() or f"Fase {pos + 1}",
                 subtitle=(p.subtitle or "").strip(),
                 weeks=(p.weeks or "").strip(),
                 scheme=(p.scheme or "").strip(),
@@ -480,7 +490,7 @@ def save_draft(store: Storage, draft: DraftRoutine) -> int:
                 day_row = UserRoutineDay(
                     phase_id=phase_row.id,
                     position=d_pos,
-                    name=(d.name or "").strip() or f"Day {d_pos + 1}",
+                    name=(d.name or "").strip() or f"Día {d_pos + 1}",
                 )
                 s.add(day_row)
                 s.flush()
@@ -569,7 +579,7 @@ def duplicate_user_routine(store: Storage, pk: int, new_name: str | None = None)
     if draft is None:
         raise KeyError(f"routine {pk} does not exist")
     draft.pk = None  # forces an insert
-    draft.name = new_name or f"{draft.name} (copy)"
+    draft.name = new_name or f"{draft.name} (copia)"
     return save_draft(store, draft)
 
 
@@ -622,7 +632,9 @@ def _materialize(draft: DraftRoutine) -> Routine:
 def _summary(draft: DraftRoutine) -> str:
     n_phases = len(draft.phases)
     n_days = draft.day_count()
-    return f"Custom · {n_days} day{'s' if n_days != 1 else ''} · {n_phases} phase{'s' if n_phases != 1 else ''}"
+    dias = "día" if n_days == 1 else "días"
+    fases = "fase" if n_phases == 1 else "fases"
+    return f"Personalizada · {n_days} {dias} · {n_phases} {fases}"
 
 
 def list_user_drafts(store: Storage) -> list[DraftRoutine]:

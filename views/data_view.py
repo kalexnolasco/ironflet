@@ -791,7 +791,7 @@ class DataView:
             return
         self._dl_running = False
         if ok and not failed:
-            self._set_status("success", f"{ok} exercise images installed.")
+            self._set_status("success", f"{ok} imágenes de ejercicios instaladas.")
         elif ok:
             self._set_status(
                 "error", f"Descarga parcial: {ok} guardadas, {failed} faltan. Reintenta."
@@ -892,7 +892,9 @@ class DataView:
                     color=C.danger,
                     weight=ft.FontWeight.W_700,
                 ),
-                muted_text("Export and import stay unavailable until it responds.", size=10),
+                muted_text(
+                    "Exportar e importar seguirán sin funcionar hasta que responda.", size=10
+                ),
                 border_color=C.danger,
             )
 
@@ -938,7 +940,7 @@ class DataView:
                 [
                     section_title("En este dispositivo"),
                     ft.Text(
-                        f"{sum(self._counts.values())} rows · {format_size(self._counts_bytes)}",
+                        f"{sum(self._counts.values())} filas · {format_size(self._counts_bytes)}",
                         size=10,
                         color=C.text_muted,
                         weight=ft.FontWeight.W_700,

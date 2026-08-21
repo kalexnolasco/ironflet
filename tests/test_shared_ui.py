@@ -69,29 +69,59 @@ def texts(control) -> list[str]:
 @pytest.mark.parametrize(
     ("count", "expected"),
     [
-        (0, "0 sets"),  # zero is plural in English, and zero happens
-        (1, "1 set"),
-        (2, "2 sets"),
-        (12, "12 sets"),
-        (1.0, "1 set"),  # a float that is exactly one is still one
-        (0.5, "0.5 sets"),  # half a set is not "0.5 set"
-        (1.5, "1.5 sets"),
-        (2.0, "2 sets"),  # and never "2.0 sets"
+        (0, "0 series"),  # el cero es plural, y el cero pasa
+        (1, "1 serie"),
+        (2, "2 series"),
+        (12, "12 series"),
+        (1.0, "1 serie"),  # un float que vale exactamente uno sigue siendo uno
+        (0.5, "0.5 series"),  # media serie no es "0.5 serie"
+        (1.5, "1.5 series"),
+        (2.0, "2 series"),  # y nunca "2.0 series"
     ],
 )
 def test_plural_agrees_with_its_number(count, expected):
-    assert plural(count, "set") == expected
+    assert plural(count, "serie") == expected
+
+
+@pytest.mark.parametrize(
+    ("singular", "esperado"),
+    [
+        ("serie", "series"),  # acaba en vocal → -s
+        ("día", "días"),  # vocal acentuada, también -s
+        ("fase", "fases"),
+        ("ejercicio", "ejercicios"),
+        ("alimento", "alimentos"),
+        ("semana", "semanas"),
+        ("mes", "meses"),  # consonante → -es
+        ("calentamiento", "calentamientos"),
+    ],
+)
+def test_plural_sigue_la_regla_espanola(singular, esperado):
+    """`-s` tras vocal, `-es` tras consonante.
+
+    Con la regla inglesa que había antes, "mes" salía "mess" y nadie lo veía
+    hasta tener la pantalla delante.
+    """
+    assert plural(2, singular) == f"2 {esperado}"
+
+
+def test_plural_conoce_las_que_mueven_la_tilde():
+    """`sesión` → `sesiones`, no `sesiónes`. Ninguna regla mecánica lo saca."""
+    assert plural(1, "sesión") == "1 sesión"
+    assert plural(3, "sesión") == "3 sesiones"
+    assert plural(2, "repetición") == "2 repeticiones"
+
+
+def test_plural_respeta_la_caja_del_original():
+    """La misma función sirve en una cabecera en mayúsculas y en una frase."""
+    assert plural(3, "SERIE") == "3 SERIES"
+    assert plural(2, "MES") == "2 MESES"
 
 
 def test_plural_takes_an_irregular_form():
-    assert plural(1, "entry", "entries") == "1 entry"
-    assert plural(3, "entry", "entries") == "3 entries"
-
-
-def test_plural_handles_the_hyphenated_nouns_this_app_uses():
-    """The exact string the audit caught on the session card."""
-    assert plural(1, "warm-up") == "1 warm-up"
-    assert plural(3, "warm-up") == "3 warm-ups"
+    """La forma explícita sigue mandando sobre cualquier regla."""
+    assert plural(1, "lunes", "lunes") == "1 lunes"
+    assert plural(3, "lunes", "lunes") == "3 lunes"
 
 
 # ── dialog geometry ─────────────────────────────────────────────────────

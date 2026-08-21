@@ -1094,8 +1094,13 @@ class HomeView:
         )
 
     def _nutrition_body(self, totals: dict, targets: dict, logged: bool) -> ft.Control:
+        # Las claves son inglesas a propósito: son las que devuelven
+        # `nutrition.day_totals()` y `nutrition.targets_for()`, contrato de
+        # datos y no texto (trampa 22). Traducirlas aquí no rompió nada
+        # ruidosamente — `.get()` devolvía None y la tarjeta pintaba 0 g de
+        # proteína con 42 g registrados.
         target_kcal = float(targets.get("kcal") or 0)
-        target_protein = float(targets.get("proteína") or 0)
+        target_protein = float(targets.get("protein") or 0)
 
         if not logged:
             # Zeroes against a target read as failure at 9am. An empty day is an
@@ -1122,7 +1127,7 @@ class HomeView:
                 ft.Text("Comida de hoy", size=13, weight=ft.FontWeight.W_700, color=C.text),
                 self._macro_line("Calorías", float(totals.get("kcal") or 0), target_kcal, "kcal"),
                 self._macro_line(
-                    "Proteína", float(totals.get("proteína") or 0), target_protein, "g"
+                    "Proteína", float(totals.get("protein") or 0), target_protein, "g"
                 ),
             ],
             spacing=Space.x2,

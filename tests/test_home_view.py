@@ -166,6 +166,119 @@ def test_a_dead_database_does_not_open_the_app_on_nothing(home):
     assert "could not connect to server" in rendered
 
 
+# ── la tarjeta de comida lee las claves que nutrition escribe ───────────
+
+
+DIA_CON_COMIDA = date(2026, 8, 21)
+
+
+@pytest.fixture
+def totales_y_objetivos_reales(tmp_path):
+    """Un día con comida de verdad, por el mismo camino que la app.
+
+    Deliberadamente NO se escriben aquí las claves a mano: los diccionarios
+    salen de `nutrition.day_totals`/`targets_for`, así que el test compara la
+    vista contra el módulo y no contra lo que yo creía recordar del módulo.
+
+    Base propia en `tmp_path` en vez de la compartida del proceso: `Nutrition`
+    siembra el catálogo al construirse, y hacerlo sobre una base que otro test
+    acaba de vaciar deja la sesión sembrando dentro de una transacción ajena.
+    """
+    import nutrition as nutrition_module
+    from storage import Base, create_db_engine
+
+    engine = create_db_engine(f"sqlite+pysqlite:///{tmp_path}/comida.db")
+    Base.metadata.create_all(engine)
+
+    nut = nutrition_module.Nutrition(engine=engine)
+    nut.set_targets(2550.0, 115.0, 70.0, 365.0, starts_on=DIA_CON_COMIDA)
+    comida = nut.add_food("pechuga-pollo", "Pechuga de pollo (cruda)", 120.0, 23.0, 2.6, 0.0)
+    nut.log_food(comida, grams=150.0, meal="lunch", day=DIA_CON_COMIDA)
+
+    # Los facades aceptan un `Nutrition` y lo devuelven tal cual; con un
+    # MagicMock en su lugar `_nutrition_for` no lo reconoce y monta una
+    # instancia nueva contra DATABASE_URL, que no es esta base.
+    yield (
+        nutrition_module.day_totals(nut, DIA_CON_COMIDA),
+        nutrition_module.targets_for(nut, DIA_CON_COMIDA),
+    )
+    engine.dispose()
+
+
+def test_la_tarjeta_de_comida_pinta_la_proteina_que_nutrition_devuelve(
+    home, monkeypatch, totales_y_objetivos_reales
+):
+    """42 g registrados no pueden salir como «0 g» en Inicio.
+
+    Salían. La traducción al español renombró la CLAVE del diccionario
+    (`totals.get("proteína")`), y como `.get()` de una clave que no existe
+    devuelve None en vez de reventar, la tarjeta pintaba un cero perfectamente
+    creíble con la comida ya apuntada. Es la trampa 22 en su forma más
+    silenciosa: `nutrition` habla en inglés porque es contrato de datos.
+    """
+    import views.home as home_module
+
+    totales, objetivos = totales_y_objetivos_reales
+    assert totales["protein"] > 0, "el montaje del test no registró comida"
+
+    monkeypatch.setattr(home_module, "day_totals", lambda store, day: totales)
+    monkeypatch.setattr(home_module, "targets_for", lambda store, day: objetivos)
+
+    view = home(FakeStore())
+    pintado = " | ".join(texts(view.build()))
+
+    esperado = f"{totales['protein']:.0f}"
+    assert f"{esperado} / 115 g" in pintado or f"{esperado}/115 g" in pintado, (
+        f"la proteína registrada ({esperado} g) no aparece en la tarjeta: {pintado}"
+    )
+    assert "0 / 115 g" not in pintado and "0/115 g" not in pintado
+
+
+def test_las_claves_que_home_lee_existen_en_nutrition(monkeypatch, totales_y_objetivos_reales):
+    """Ancla el contrato: toda clave que la tarjeta pide, `nutrition` la da.
+
+    El test de arriba prueba el caso que se rompió; este prueba la clase
+    entera, para que el próximo renombre no necesite que alguien mire la
+    pantalla para enterarse.
+    """
+    import views.home as home_module
+
+    totales, objetivos = totales_y_objetivos_reales
+    pedidas_totales: set[str] = set()
+    pedidas_objetivos: set[str] = set()
+
+    class Espia(dict):
+        def __init__(self, real, registro):
+            super().__init__(real)
+            self._registro = registro
+
+        def get(self, clave, *resto):
+            self._registro.add(clave)
+            return super().get(clave, *resto)
+
+    monkeypatch.setattr(
+        home_module, "day_totals", lambda store, day: Espia(totales, pedidas_totales)
+    )
+    monkeypatch.setattr(
+        home_module, "targets_for", lambda store, day: Espia(objetivos, pedidas_objetivos)
+    )
+    monkeypatch.setattr(home_module, "current_program_week", lambda store: unknown_week())
+
+    page = MagicMock()
+    page.width = 400
+    page.height = 800
+    page.data = {"refresh_current": lambda: None, "navigate_to": lambda i, **k: None}
+    view = home_module.HomeView(page, FakeStore())
+    view.on_show()
+    view.build()
+
+    huerfanas = (pedidas_totales - set(totales)) | (pedidas_objetivos - set(objetivos))
+    assert not huerfanas, (
+        f"Inicio pide claves que nutrition no devuelve: {sorted(huerfanas)}. "
+        "Son contrato de datos, no texto de pantalla — no se traducen."
+    )
+
+
 def test_on_show_does_not_raise_when_the_week_cannot_be_read(monkeypatch):
     """`on_show` runs inside `navigate_to`, before `build()`.
 
