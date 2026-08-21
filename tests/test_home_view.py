@@ -296,3 +296,34 @@ def test_on_show_does_not_raise_when_the_week_cannot_be_read(monkeypatch):
     view = home_module.HomeView(page, FakeStore())
     view.on_show()  # must not raise
     assert view._week is None
+
+
+# ── las etiquetas concuerdan con su número ──────────────────────────────
+
+
+@pytest.mark.parametrize(
+    ("sesiones", "series", "esperadas"),
+    [
+        (1, 1, ("Sesión", "Serie")),
+        (0, 0, ("Sesiones", "Series")),
+        (3, 42, ("Sesiones", "Series")),
+    ],
+)
+def test_las_etiquetas_concuerdan_con_su_numero(home, sesiones, series, esperadas):
+    """«1 Sesiones» con el 1 justo encima se lee de golpe.
+
+    Eran dos literales fijos, así que la primera semana de cualquiera —y la
+    de Alex, que es cuando se vio— salía mal. El cero SÍ es plural.
+    """
+    view = home(FakeStore(stats={"sessions": sesiones, "sets": series, "volume": 100.0}))
+    pintado = texts(view.build())
+    for palabra in esperadas:
+        assert palabra in pintado, f"con {sesiones}/{series} esperaba «{palabra}»: {pintado}"
+
+
+def test_una_sola_sesion_no_dice_sesiones(home):
+    """El caso concreto que se vio en pantalla."""
+    view = home(FakeStore(stats={"sessions": 1, "sets": 5, "volume": 2000.0}))
+    pintado = texts(view.build())
+    assert "Sesión" in pintado
+    assert "Sesiones" not in pintado

@@ -1235,13 +1235,21 @@ class HomeView:
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
         )
 
+        # La etiqueta concuerda con su número. Eran literales fijos, así que la
+        # primera semana de cualquiera dice «1 Sesiones» — el número está justo
+        # encima, así que la discordancia se lee de golpe. `plural()` devuelve
+        # también el número; aquí solo se quiere la palabra, porque el número
+        # va en la línea grande de arriba.
+        sesiones = plural(int(stats["sessions"]), "sesión").split(" ", 1)[1].capitalize()
+        series = plural(int(stats["sets"]), "serie").split(" ", 1)[1].capitalize()
+
         stats_row = ft.Row(
             [
                 # The window is named once, above the row, so the tooltips only
                 # have to say what each number counts.
-                self._stat_card(str(stats["sessions"]), "Sesiones", tooltip="Días que entrenaste"),
+                self._stat_card(str(stats["sessions"]), sesiones, tooltip="Días que entrenaste"),
                 self._stat_card(
-                    str(stats["sets"]), "Series", tooltip="Series efectivas — calentamientos fuera"
+                    str(stats["sets"]), series, tooltip="Series efectivas — calentamientos fuera"
                 ),
                 self._stat_card(vol_str, "Vol (kg)", tooltip=vol_tooltip),
             ],
