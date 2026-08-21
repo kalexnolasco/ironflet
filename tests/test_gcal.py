@@ -174,3 +174,28 @@ def test_borrar_evento(store, monkeypatch):
     )
     monkeypatch.setattr(gcal.httpx, "delete", lambda *a, **k: _Respuesta(204))
     assert gcal.borrar_evento(store, "ev1") is True
+
+
+def test_codigo_vinculo_ida_y_vuelta(store, tmp_path):
+    codigo = gcal.codigo_vinculo(store)
+    assert codigo and codigo.startswith("ifgc1:")
+
+    movil = Storage(f"sqlite:///{tmp_path / 'movil.db'}")
+    assert gcal.aplicar_codigo(movil, codigo) is True
+    assert (movil.get_pref(gcal.CLIENT_ID_PREF) or "").endswith("googleusercontent.com")
+    assert movil.get_pref(gcal.CLIENT_SECRET_PREF) == "secreto-prueba"
+    # El refresh NO viaja en el código: cada dispositivo autoriza el suyo.
+    assert not (movil.get_pref(gcal.REFRESH_PREF) or "").strip()
+    assert gcal.conectado(movil) is False
+
+
+def test_codigo_corrupto_se_rechaza(tmp_path):
+    s = Storage(f"sqlite:///{tmp_path / 'x.db'}")
+    assert gcal.aplicar_codigo(s, "") is False
+    assert gcal.aplicar_codigo(s, "ifgc1:no-es-base64!!!") is False
+    assert gcal.aplicar_codigo(s, "otra-cosa:abcd") is False
+    import base64
+
+    sin_dominio = "ifgc1:" + base64.urlsafe_b64encode(b"id-raro\nsecreto").decode()
+    assert gcal.aplicar_codigo(s, sin_dominio) is False
+    assert not (s.get_pref(gcal.CLIENT_ID_PREF) or "").strip()

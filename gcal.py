@@ -101,6 +101,60 @@ def conectar_desde_bot(store: Any, ruta: Path | str | None = None) -> bool:
     return True
 
 
+# ── el código de vinculación PC → móvil ──────────────────────────────────
+#
+# El refresh token es secreto y NO viaja (cada dispositivo genera el suyo con
+# su propio consentimiento en el navegador), pero el flujo loopback necesita
+# el client_id y el client_secret del cliente OAuth — y en el móvil no hay
+# fichero del bot del que importarlos. Google documenta que en apps
+# INSTALADAS ese par no se considera confidencial (no puede serlo: va dentro
+# del binario de cualquier app de escritorio), así que un código corto que
+# viaja una vez por un chat propio es un intercambio razonable: lo sensible
+# — el acceso real a la cuenta — sigue naciendo en el propio móvil.
+
+_PREFIJO_VINCULO = "ifgc1:"
+
+
+def codigo_vinculo(store: Any) -> str | None:
+    """El código que el PC enseña y el móvil pega. None si aquí tampoco hay
+    credenciales (ni en prefs ni en el token del bot)."""
+    import base64
+
+    client_id = (store.get_pref(CLIENT_ID_PREF) or "").strip()
+    client_secret = (store.get_pref(CLIENT_SECRET_PREF) or "").strip()
+    if not client_id or not client_secret:
+        try:
+            datos = json.loads(ruta_token_bot().read_text(encoding="utf-8"))
+            client_id = datos.get("client_id") or ""
+            client_secret = datos.get("client_secret") or ""
+        except (OSError, ValueError):
+            return None
+    if not client_id or not client_secret:
+        return None
+    crudo = f"{client_id}\n{client_secret}".encode()
+    return _PREFIJO_VINCULO + base64.urlsafe_b64encode(crudo).decode("ascii")
+
+
+def aplicar_codigo(store: Any, codigo: str) -> bool:
+    """Pega el código en el móvil. Solo guarda el par cliente — el refresh
+    token llega después, cuando este dispositivo autorice en el navegador."""
+    import base64
+
+    limpio = (codigo or "").strip()
+    if not limpio.startswith(_PREFIJO_VINCULO):
+        return False
+    try:
+        crudo = base64.urlsafe_b64decode(limpio[len(_PREFIJO_VINCULO) :].encode("ascii"))
+        client_id, client_secret = crudo.decode("utf-8").split("\n", 1)
+    except Exception:
+        return False
+    if not client_id.endswith("googleusercontent.com") or not client_secret:
+        return False
+    store.set_pref(CLIENT_ID_PREF, client_id.strip())
+    store.set_pref(CLIENT_SECRET_PREF, client_secret.strip())
+    return True
+
+
 # ── el flujo loopback para conectar sin el bot ────────────────────────────
 
 
@@ -120,8 +174,9 @@ def iniciar_oauth(store: Any, abrir_url, timeout: float = 240.0) -> threading.Th
     client_secret = (store.get_pref(CLIENT_SECRET_PREF) or "").strip()
     if not client_id or not client_secret:
         raise GcalError(
-            "Faltan el client_id y el client_secret. En el PC usa "
-            "«Importar del bot» primero; el móvil los hereda al conectarse una vez."
+            "Falta el código de vinculación: en el PC abre Ajustes → Calendario "
+            "de Google → «Código para el móvil», mándatelo (Telegram sirve) y "
+            "pégalo aquí con «Pegar código del PC». Después, Conectar con Google."
         )
 
     servidor = socket.socket(socket.AF_INET, socket.SOCK_STREAM)

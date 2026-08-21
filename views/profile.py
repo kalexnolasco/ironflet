@@ -428,20 +428,134 @@ class ProfileView:
             ],
             spacing=6,
         )
-        botones: list[ft.Control] = []
+
+        def _ensenar_codigo(_):
+            codigo = gcal.codigo_vinculo(self.store)
+            if not codigo:
+                self._toast("Aquí tampoco hay credenciales — usa «Importar del bot» primero.")
+                return
+            dlg = ft.AlertDialog(
+                bgcolor=C.bg_surface,
+                title=ft.Text(
+                    "Código para el móvil", size=16, weight=ft.FontWeight.W_900, color=C.text
+                ),
+                content=ft.Container(
+                    content=ft.Column(
+                        [
+                            ft.Text(
+                                "Mándatelo al móvil (un chat contigo sirve), pégalo en "
+                                "Ajustes → Calendario → «Pegar código del PC» y luego "
+                                "«Conectar con Google». El código no da acceso a tu "
+                                "cuenta: el permiso lo darás tú en el navegador del móvil.",
+                                size=11,
+                                color=C.text_secondary,
+                            ),
+                            ft.TextField(
+                                value=codigo,
+                                read_only=True,
+                                multiline=True,
+                                min_lines=3,
+                                text_size=11,
+                                border_color=C.border,
+                                color=C.text,
+                            ),
+                        ],
+                        spacing=8,
+                        tight=True,
+                    ),
+                    width=dialog_width(self.page),
+                ),
+                actions=[
+                    ft.TextButton(
+                        "Cerrar",
+                        on_click=lambda _: self.page.close(dlg),
+                        style=ft.ButtonStyle(color=C.accent),
+                    )
+                ],
+            )
+            self.page.open(dlg)
+
+        def _pegar_codigo(_):
+            campo = ft.TextField(
+                hint_text="ifgc1:…",
+                multiline=True,
+                min_lines=2,
+                text_size=11,
+                border_color=C.border,
+                color=C.text,
+                hint_style=ft.TextStyle(color=C.text_muted),
+            )
+
+            def aplicar(_):
+                if gcal.aplicar_codigo(self.store, campo.value or ""):
+                    self.page.close(dlg)
+                    self._toast("Código aplicado — ahora toca «Conectar con Google».")
+                    self.page.data["refresh_current"]()
+                else:
+                    campo.error_text = "Ese código no es válido — cópialo entero desde el PC."
+                    self.page.update()
+
+            dlg = ft.AlertDialog(
+                bgcolor=C.bg_surface,
+                title=ft.Text(
+                    "Pegar código del PC", size=16, weight=ft.FontWeight.W_900, color=C.text
+                ),
+                content=ft.Container(content=campo, width=dialog_width(self.page)),
+                actions=[
+                    ft.TextButton(
+                        "Cancelar",
+                        on_click=lambda _: self.page.close(dlg),
+                        style=ft.ButtonStyle(color=C.text_secondary),
+                    ),
+                    ft.TextButton(
+                        "Aplicar", on_click=aplicar, style=ft.ButtonStyle(color=C.accent)
+                    ),
+                ],
+            )
+            self.page.open(dlg)
+
+        tiene_cliente = bool((self.store.get_pref(gcal.CLIENT_ID_PREF) or "").strip())
+        filas_botones: list[ft.Control] = []
         if esta:
-            botones = [
-                ghost_button("Comprobar conexión", on_click=_comprobar, expand=True),
-                ft.Container(width=8),
-                ghost_button("Desconectar", on_click=_desconectar, expand=True),
-            ]
+            filas_botones.append(
+                ft.Row(
+                    [
+                        ghost_button("Comprobar conexión", on_click=_comprobar, expand=True),
+                        ft.Container(width=8),
+                        ghost_button("Desconectar", on_click=_desconectar, expand=True),
+                    ]
+                )
+            )
+            filas_botones.append(ft.Container(height=6))
+            filas_botones.append(
+                ft.Row(
+                    [ghost_button("Código para el móvil", on_click=_ensenar_codigo, expand=True)]
+                )
+            )
         else:
-            botones = [
-                ghost_button("Importar del bot (PC)", on_click=_importar, expand=True),
-                ft.Container(width=8),
-                primary_button("Conectar con Google", on_click=_conectar, expand=True),
-            ]
-        return card(estado, ft.Container(height=8), ft.Row(botones))
+            filas_botones.append(
+                ft.Row(
+                    [
+                        ghost_button("Importar del bot (PC)", on_click=_importar, expand=True),
+                        ft.Container(width=8),
+                        ghost_button("Pegar código del PC", on_click=_pegar_codigo, expand=True),
+                    ]
+                )
+            )
+            filas_botones.append(ft.Container(height=6))
+            filas_botones.append(
+                ft.Row(
+                    [
+                        primary_button(
+                            "Conectar con Google"
+                            + ("" if tiene_cliente else " (pega el código antes)"),
+                            on_click=_conectar,
+                            expand=True,
+                        )
+                    ]
+                )
+            )
+        return card(estado, ft.Container(height=8), *filas_botones)
 
     def _backup_section(self) -> ft.Control:
         return ft.Row(
