@@ -6,9 +6,17 @@ usa [SemVer](https://semver.org/).
 
 ## [0.12.0] — 2026-08-21
 
-**Fotos de progreso, el coach que las ve, y los permisos que faltaban.**
+**Fotos de progreso, el coach que las ve, Google Calendar y los permisos que faltaban.**
 
 ### Añadido
+
+- **Google Calendar** (`gcal.py`, httpx puro): la tarjeta AGENDA en Inicio
+  enseña hoy y mañana; el coach lee tu semana antes de proponer horarios y
+  puede proponer eventos — tarjeta y Guardar, como todo. Conexión por
+  dispositivo: «Importar del bot» en el PC, «Conectar con Google» (navegador +
+  loopback) en el móvil. Las tres credenciales viven en `SECRET_PREF_KEYS` y
+  jamás entran en una copia. Ojo: si la app OAuth de Google está en modo
+  Testing, el token caduca a los 7 días — publícala en Cloud Console.
 
 - **Foto de progreso diaria** con la semántica de los pesajes: una por día y
   la segunda corrige la primera. Se eligen con el selector del sistema, se
