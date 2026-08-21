@@ -74,9 +74,44 @@ final FlutterLocalNotificationsPlugin _notifPlugin =
 String _notifJsonPath = "";
 DateTime? _notifMtime;
 
+Future<void> _writeNotifStatus(
+    AndroidFlutterLocalNotificationsPlugin? android, bool exact) async {
+  // Report both permissions back to the Python side, which cannot see them.
+  // Home's reminders dialog reads this file and tells the user exactly which
+  // system toggle is off instead of the app looking silently broken.
+  try {
+    final granted = await android?.areNotificationsEnabled() ?? true;
+    await File(path.join(File(_notifJsonPath).parent.path, "notif_status.json"))
+        .writeAsString(jsonEncode({
+      "granted": granted,
+      "exact": exact,
+      "updated": DateTime.now().toUtc().toIso8601String(),
+    }));
+  } catch (_) {}
+}
+
 Future<void> _syncNotifications() async {
   if (_notifJsonPath.isEmpty) return;
   try {
+    final android = _notifPlugin.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
+
+    // FIRST LAUNCH: ask for the notification permission right away, before
+    // any reminder exists. Alex's call, verbatim: "al instalar la apk, se
+    // debería pedir los permisos y así tenerlo". The flag file makes it one
+    // ask per install, not one per 3-second poll; a user who denies is not
+    // nagged again (Android would suppress the dialog anyway), and the
+    // status file below is what turns a denial into on-screen instructions.
+    final askedFlag = File(
+        path.join(File(_notifJsonPath).parent.path, "notif_perm_asked.flag"));
+    if (!await askedFlag.exists()) {
+      await askedFlag.writeAsString(DateTime.now().toIso8601String());
+      await android?.requestNotificationsPermission();
+      final exactNow =
+          await android?.canScheduleExactNotifications() ?? false;
+      await _writeNotifStatus(android, exactNow);
+    }
+
     final f = File(_notifJsonPath);
     if (!await f.exists()) {
       if (_notifMtime != null) {
@@ -90,11 +125,9 @@ Future<void> _syncNotifications() async {
     _notifMtime = mtime;
 
     final items = jsonDecode(await f.readAsString()) as List<dynamic>;
-    final android = _notifPlugin.resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin>();
     if (items.isNotEmpty) {
-      // Android 13+ runtime permission. Asked only once there is something to
-      // deliver — a user who never creates a reminder never sees the prompt.
+      // Re-ask alongside real deliveries too: harmless when already granted,
+      // and it covers the user who denied at install and then created one.
       await android?.requestNotificationsPermission();
     }
     // SCHEDULE_EXACT_ALARM may be declared and still not granted. The manifest
@@ -113,18 +146,7 @@ Future<void> _syncNotifications() async {
         exact = await android?.canScheduleExactNotifications() ?? false;
       }
     }
-    // Report both permissions back to the Python side, which cannot see them.
-    // Home's reminders dialog reads this file and tells the user exactly which
-    // system toggle is off instead of the app looking silently broken.
-    try {
-      final granted = await android?.areNotificationsEnabled() ?? true;
-      await File(path.join(File(_notifJsonPath).parent.path, "notif_status.json"))
-          .writeAsString(jsonEncode({
-        "granted": granted,
-        "exact": exact,
-        "updated": DateTime.now().toUtc().toIso8601String(),
-      }));
-    } catch (_) {}
+    await _writeNotifStatus(android, exact);
     await _notifPlugin.cancelAll();
     const details = NotificationDetails(
       android: AndroidNotificationDetails(
