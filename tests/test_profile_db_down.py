@@ -87,3 +87,32 @@ def test_el_fallo_tardio_de_la_seccion_de_peso_tambien_esta_cubierto():
     texto = _textos(_vista(store).build())
     assert texto.strip()
     assert "Ajustes" in texto
+
+
+# ── el formato de los campos del formulario ─────────────────────────────
+
+
+def test_una_altura_entera_no_lleva_decimal():
+    """«178.0» no es como nadie contesta cuánto mide.
+
+    `height_cm` se guarda como float y el campo lo pintaba con `str()`.
+    """
+    from views.profile import _texto_de_campo
+
+    assert _texto_de_campo(178.0) == "178"
+    assert _texto_de_campo(178) == "178"
+
+
+def test_una_altura_con_media_la_conserva():
+    """178,5 sí es una altura que alguien apunta."""
+    from views.profile import _texto_de_campo
+
+    assert _texto_de_campo(178.5) == "178.5"
+
+
+def test_un_campo_vacio_sigue_vacio():
+    from views.profile import _texto_de_campo
+
+    assert _texto_de_campo(None) == ""
+    assert _texto_de_campo("") == ""
+    assert _texto_de_campo(0) == ""

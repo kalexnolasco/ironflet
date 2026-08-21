@@ -150,19 +150,42 @@ def main(page: ft.Page):
     # Browse, Profile and Routines are reached from inside other screens.
     NAV_TABS = (0, 1, 2, 6, 4)
 
+    #: Cuánto dura el fundido al cambiar de pantalla. 180 ms es el rango en el
+    #: que una transición se percibe como que la interfaz responde; por encima
+    #: de ~250 se percibe como que va lenta.
+    _FUNDIDO_MS = 180
+
+    # El fundido es SOLO para cambiar de pantalla. `refresh_current()` se llama
+    # a cada serie confirmada, a cada peso apuntado y a cada tecla del
+    # buscador de alimentos, y un fundido en cada uno de esos no es pulido:
+    # es la pantalla parpadeando mientras entrenas. Así que la duración se
+    # pone a cero cuando se está redibujando la misma vista, y el
+    # `AnimatedSwitcher` se comporta como el `Container` de antes.
+    switcher = ft.AnimatedSwitcher(
+        content=ft.Container(),
+        transition=ft.AnimatedSwitcherTransition.FADE,
+        duration=0,
+        reverse_duration=0,
+        switch_in_curve=ft.AnimationCurve.EASE_OUT,
+        switch_out_curve=ft.AnimationCurve.EASE_IN,
+        expand=True,
+    )
     content_area = ft.Container(
+        content=switcher,
         expand=True,
         padding=ft.padding.only(left=14, right=14, top=14, bottom=4),
     )
 
     def navigate_to(idx: int, refresh: bool = True):
+        cambia_de_pantalla = current_tab["idx"] != idx
         current_tab["idx"] = idx
         if idx in NAV_TABS:
             nav_bar.selected_index = NAV_TABS.index(idx)
         v = view_list[idx]
         if refresh and hasattr(v, "on_show"):
             v.on_show()
-        content_area.content = v.build()
+        switcher.duration = _FUNDIDO_MS if cambia_de_pantalla else 0
+        switcher.content = v.build()
         # Zen mode: the training screen asks for the bar to go away while a set
         # is in front of you. Read *after* build(), because the answer depends
         # on the state build() just rendered from. Any view without the method
@@ -291,7 +314,10 @@ def main(page: ft.Page):
     start_view = view_list[start_idx]
     if hasattr(start_view, "on_show"):
         start_view.on_show()
-    content_area.content = start_view.build()
+    # Al switcher, no al Container: `content_area` ya lo contiene. Y con la
+    # duración todavía en cero, que es lo que queremos — la primera pantalla
+    # aparece, no se funde desde nada.
+    switcher.content = start_view.build()
     page.add(
         ft.SafeArea(content=content_area, expand=True),
         nav_bar,

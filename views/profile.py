@@ -10,8 +10,8 @@ import agent
 import asset_manager
 import exercise_images
 import openrouter
-from analytics import MEASUREMENT_EVERY_DAYS, waist_summary, weight_trend
-from components.charts import axis_note, bar_chart
+from analytics import MEASUREMENT_EVERY_DAYS, moving_average, waist_summary, weight_trend
+from components.charts import axis_note, line_chart
 from health import (
     ACTIVITY_FACTORS,
     age_years,
@@ -44,6 +44,25 @@ from views.shared_ui import (
 
 ACTIVITY_KEYS = list(ACTIVITY_FACTORS.keys())
 SEX_KEYS = ["M", "F", ""]
+
+
+def _texto_de_campo(valor) -> str:
+    """Lo que se escribe dentro de un campo del formulario.
+
+    `height_cm` se guarda como float y salía en pantalla como «178.0», que
+    nadie escribe cuando le preguntan cuánto mide. Un float que es un entero
+    exacto pierde el decimal; uno que no lo es lo conserva, porque 178,5 sí es
+    una altura que alguien apunta.
+
+    El cero se trata como vacío, igual que hacía el `str(valor or "")` de
+    antes: `set_profile` guarda 0.0 cuando el campo se deja en blanco, y un
+    «0» en la casilla de la altura se lee como que mides cero centímetros.
+    """
+    if valor is None or valor == "" or valor == 0:
+        return ""
+    if isinstance(valor, float) and valor.is_integer():
+        return str(int(valor))
+    return str(valor)
 
 
 def _antiguedad(cuando: str, dias: int) -> str:
@@ -1081,7 +1100,10 @@ class ProfileView:
                         label_style=ft.TextStyle(color=C.text_secondary),
                         options=opciones,
                     ),
-                    ghost_button("Los 350…", on_click=lambda _: self._open_model_picker()),
+                    # "Ver todos", no "Los 350…". Los puntos suspensivos eran
+                    # deliberados (unos 350, no exactamente 350) y en pantalla
+                    # se leen como un botón al que no le cabe el texto.
+                    ghost_button("Ver todos", on_click=lambda _: self._open_model_picker()),
                 ],
                 spacing=8,
             )
@@ -1213,7 +1235,7 @@ class ProfileView:
         return ft.TextField(
             label=label,
             hint_text=hint,
-            value=str(self._form_values.get(key, "") or ""),
+            value=_texto_de_campo(self._form_values.get(key)),
             keyboard_type=keyboard,
             bgcolor=C.bg_page,
             border_color=C.border,
@@ -1381,11 +1403,19 @@ class ProfileView:
         trend_chips = self._trend_chips(entries)
         trend_row = [ft.Container(height=8), ft.Row(trend_chips, spacing=8)] if trend_chips else []
 
-        # `baseline="auto"`: body weight lives in a two-kilo band a long way
-        # from zero, and on a zero axis 2.2 kg of change drew as three pixels
-        # of a hundred and ten. See `charts._floor_for`.
+        # Una línea, no barras: el peso es una serie en el tiempo y siete
+        # barras sueltas esconden justo la tendencia que se mira. Y encima, de
+        # puntos, la media móvil de 7 días — el peso de un día concreto se
+        # mueve un kilo con la sal y la hora a la que te pesaste, varias veces
+        # los ±0,3 kg/semana por los que se guía el plan, así que decidir
+        # sobre el dato suelto es decidir sobre ruido.
+        #
+        # `baseline="auto"` (el defecto de `line_chart`): el peso vive en una
+        # franja de dos kilos lejos del cero, y en un eje desde cero 2,2 kg de
+        # cambio se dibujaban como tres píxeles de ciento diez.
+        media = [p.get("kg") for p in moving_average(entries, days=7)] if entries else []
         grafica = (
-            bar_chart(kgs, labels, color=C.chart_bar, height=110, baseline="auto")
+            line_chart(kgs, labels, color=C.accent, height=130, trend=media or None)
             if entries
             else None
         )
