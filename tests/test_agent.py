@@ -1229,3 +1229,101 @@ def test_propose_calendar_event_valida_y_el_commit_crea(store, monkeypatch):
     mensaje = agent.commit_proposal(store, p)
     assert "Evento creado" in mensaje
     assert creado == {"title": "Meal prep", "day": date(2026, 8, 23), "hhmm": "17:00"}
+
+
+# ── el fallo de red, dicho en términos de qué mirar ─────────────────────
+
+
+class TestDiagnosticoDeRed:
+    """Cinco fallos distintos caían en «Sin conexión con OpenRouter».
+
+    Es verdad para uno de ellos y mentira para los otros cuatro, y en los
+    cuatro manda a mirar la cobertura — que es justo lo que no falla. Se cazó
+    en el emulador con ping, DNS y TCP/443 los tres funcionando y ninguna
+    forma de saber qué pasaba: Flet pinta los tracebacks en la interfaz y no
+    en logcat (trampa 20), así que la excepción tragada aquí no dejaba rastro
+    en ningún sitio.
+    """
+
+    def test_una_desconexion_sigue_hablando_de_cobertura(self):
+        class ConnectError(Exception):
+            pass
+
+        mensaje = agent._diagnostico_de_red(ConnectError("connection refused"))
+        assert "cobertura" in mensaje or "wifi" in mensaje
+        assert "ConnectError" in mensaje, "el nombre de la clase es con lo que se busca"
+
+    def test_un_certificado_no_se_lee_como_falta_de_señal(self):
+        class SSLCertVerificationError(Exception):
+            pass
+
+        mensaje = agent._diagnostico_de_red(SSLCertVerificationError("bad cert"))
+        assert "segura" in mensaje
+        assert "hora del móvil" in mensaje, "la causa más común, y accionable"
+        assert "cobertura" not in mensaje
+
+    def test_un_dns_caido_dice_que_es_de_la_red(self):
+        class NameResolutionError(Exception):
+            pass
+
+        mensaje = agent._diagnostico_de_red(NameResolutionError("nope"))
+        assert "DNS" in mensaje
+
+    def test_mira_la_causa_encadenada_y_no_solo_la_de_fuera(self):
+        """httpx envuelve: un fallo de certificado llega como `ConnectError`.
+
+        Mirar solo la excepción externa diría «no hay cobertura» con la
+        cobertura perfecta — que es el error que este módulo ya cometió una
+        vez con los tiempos agotados.
+        """
+
+        class SSLError(Exception):
+            pass
+
+        class ConnectError(Exception):
+            pass
+
+        try:
+            try:
+                raise SSLError("certificate verify failed")
+            except SSLError as interna:
+                raise ConnectError("connection failed") from interna
+        except ConnectError as externa:
+            mensaje = agent._diagnostico_de_red(externa)
+
+        assert "segura" in mensaje, f"debería diagnosticar el TLS de dentro: {mensaje}"
+
+    def test_una_excepcion_desconocida_al_menos_se_identifica(self):
+        """Sin familia que encaje, el nombre y el texto van igualmente.
+
+        Un mensaje genérico sin la causa es un callejón sin salida en un móvil.
+        """
+
+        class AlgoRaroDeHttpx(Exception):
+            pass
+
+        mensaje = agent._diagnostico_de_red(AlgoRaroDeHttpx("h2 stream reset"))
+        assert "AlgoRaroDeHttpx" in mensaje
+        assert "h2 stream reset" in mensaje
+
+    def test_una_cadena_circular_no_cuelga(self):
+        """`__context__` puede volver sobre sí misma; el recorrido está acotado."""
+        a, b = Exception("a"), Exception("b")
+        a.__cause__ = b
+        b.__cause__ = a
+        assert agent._diagnostico_de_red(a)  # no debe colgarse
+
+    def test_la_generica_va_la_ultima_de_la_tabla(self):
+        """Ancla el orden, que es lo que hace funcionar al test de arriba.
+
+        Con `ConnectError` el primero, un certificado caducado se diagnostica
+        como falta de cobertura. Reordenar la tabla sin pensarlo lo rompe en
+        silencio: los otros tests siguen verdes porque cada uno prueba su
+        excepción suelta, sin envolver.
+        """
+        familias = [nombres for nombres, _texto in agent._FALLOS_DE_RED]
+        generica = next(i for i, n in enumerate(familias) if "ConnectError" in n)
+        assert generica == len(familias) - 1, (
+            "la familia genérica de conexión tiene que ir la última: envuelve a "
+            "todas las demás y les robaría el diagnóstico"
+        )

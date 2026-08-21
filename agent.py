@@ -1764,10 +1764,16 @@ def _post_chat(payload: dict, api_key: str, timeout: float = 90.0) -> dict:
             f"El modelo tardó más de {int(timeout)} s en responder. "
             "Vuelve a intentarlo, o elige un modelo más rápido en Ajustes."
         ) from exc
-    except Exception as exc:  # red, DNS, TLS
-        raise ApiError(
-            "Sin conexión con OpenRouter. El entrenador necesita señal; el resto de la app no."
-        ) from exc
+    except Exception as exc:  # red, DNS, TLS, proxy, certificados
+        # El tipo de excepción va en el mensaje, y no es ruido técnico: es lo
+        # único que distingue "no tienes cobertura" de "el certificado no
+        # valida" o "el DNS no resuelve", y en el móvil no hay ningún otro
+        # sitio donde mirarlo. Flet pinta los tracebacks de Python dentro de
+        # la interfaz y NO en logcat (trampa 20), así que una excepción que se
+        # traga aquí no deja rastro en ninguna parte: se cazó en el emulador
+        # con ping, DNS y TCP/443 los tres funcionando, y sin ninguna forma de
+        # saber qué había fallado.
+        raise ApiError(f"{_diagnostico_de_red(exc)}") from exc
 
     if response.status_code >= 400:
         raise ApiError(_explain_status(response), response.status_code)
@@ -1776,6 +1782,81 @@ def _post_chat(payload: dict, api_key: str, timeout: float = 90.0) -> dict:
         return response.json()
     except ValueError as exc:
         raise ApiError("OpenRouter devolvió algo que no es JSON.") from exc
+
+
+#: Familia de fallo de red → qué le pasa y qué puede hacer Alex. Se busca por
+#: el NOMBRE de la clase de excepción y no con `isinstance`, para no importar
+#: `httpx` en el ámbito del módulo (ver `_post_chat`) ni depender de su
+#: jerarquía, que ha cambiado entre versiones menores.
+#:
+#: **El orden es de más específico a más genérico, y es load-bearing.** httpx
+#: envuelve: un certificado que no valida llega como un `ConnectError` cuyo
+#: `__cause__` es el `SSLCertVerificationError` que de verdad explica algo.
+#: Con `ConnectError` el primero de la lista, esa cadena se diagnosticaba como
+#: "comprueba la cobertura" — el mismo error de apuntar al sitio equivocado
+#: que esta función existe para evitar. La genérica va la última a propósito.
+_FALLOS_DE_RED: tuple[tuple[tuple[str, ...], str], ...] = (
+    (
+        ("SSLError", "SSLCertVerificationError", "CertificateError"),
+        "La conexión segura no se pudo verificar. Suele ser la hora del móvil "
+        "mal puesta, o una wifi que intercepta el tráfico.",
+    ),
+    (
+        ("NameResolutionError", "gaierror"),
+        "El nombre openrouter.ai no se resolvió. Es cosa del DNS de la red, no de la app.",
+    ),
+    (
+        ("ProxyError", "TunnelError"),
+        "El proxy de esta red rechazó la conexión.",
+    ),
+    (
+        ("RemoteProtocolError", "ReadError", "WriteError", "ConnectionResetError"),
+        "La conexión se cortó a mitad. Vuelve a intentarlo.",
+    ),
+    (
+        ("ConnectError", "ConnectTimeout", "NetworkError"),
+        "No se llegó a OpenRouter. Comprueba la cobertura o el wifi.",
+    ),
+)
+
+
+def _diagnostico_de_red(exc: BaseException) -> str:
+    """Un fallo de transporte, dicho en términos de qué mirar.
+
+    Todo esto caía antes en un único «Sin conexión con OpenRouter», que es
+    verdad para uno de los cinco casos y mentira para los otros cuatro — y en
+    los cuatro manda a mirar la cobertura, que es justo lo que no pasa.
+
+    El nombre de la clase se conserva entre paréntesis a propósito. Es feo y
+    es lo único con lo que se puede buscar el problema cuando el mensaje en
+    prosa no basta; en un móvil no hay consola donde sacarlo de otra forma.
+    """
+    nombres = {type(e).__name__ for e in _cadena_de_causas(exc)}
+    for familia, explicacion in _FALLOS_DE_RED:
+        if nombres.intersection(familia):
+            return f"{explicacion} ({', '.join(sorted(nombres.intersection(familia)))})"
+    detalle = str(exc).strip() or type(exc).__name__
+    return (
+        "Sin conexión con OpenRouter. El entrenador necesita señal; el resto "
+        f"de la app no. ({type(exc).__name__}: {detalle[:120]})"
+    )
+
+
+def _cadena_de_causas(exc: BaseException, limite: int = 6) -> list[BaseException]:
+    """La excepción y sus causas encadenadas.
+
+    httpx envuelve: un fallo de certificado llega como `ConnectError` cuyo
+    `__cause__` es el `SSLCertVerificationError` que de verdad explica algo.
+    Mirar solo la de fuera diría "no hay cobertura" con la cobertura perfecta.
+    """
+    cadena: list[BaseException] = []
+    vista: set[int] = set()
+    actual: BaseException | None = exc
+    while actual is not None and len(cadena) < limite and id(actual) not in vista:
+        vista.add(id(actual))
+        cadena.append(actual)
+        actual = actual.__cause__ or actual.__context__
+    return cadena
 
 
 def _explain_status(response: Any) -> str:
