@@ -137,3 +137,73 @@ def test_una_seccion_corrupta_no_tumba_la_vista_previa(store):
     cuentas = count_document(documento)
     assert cuentas["photos"] == 0
     assert cuentas["session_notes"] == 0
+
+
+# ── el segundo guardado, el que Android rechaza ─────────────────────────
+
+
+def _vista(store, tmp_path):
+    """Un `DataView` con `page` de mentira; nada de esto pinta nada."""
+    from unittest.mock import MagicMock
+
+    import views.data_view as dv
+
+    page = MagicMock()
+    page.width = 400
+    page.data = {"refresh_current": lambda: None, "navigate_to": lambda i, **k: None}
+    vista = dv.DataView(page, store)
+    vista._pending_export = b'{"app": "ironflet"}'
+    vista._last_export = tmp_path / "backups" / "ironflet-backup.json"
+    return vista
+
+
+def test_un_uri_del_saf_no_se_lee_como_copia_perdida(store, tmp_path):
+    """Android devuelve `/document/12`, que no es una ruta que se pueda abrir.
+
+    El mensaje decía «No se pudo escribir 12.json: [Errno 2]» y pisaba el
+    éxito de la copia interna, que en ese mismo momento tenía 28 KB de JSON
+    válido. Se leía como «te has quedado sin copia», que es la conclusión más
+    cara posible en esta pantalla.
+    """
+    from unittest.mock import MagicMock
+
+    vista = _vista(store, tmp_path)
+    evento = MagicMock()
+    evento.path = "/document/12"
+
+    vista._on_save_result(evento)
+    nivel, mensaje = vista._status
+
+    assert nivel == "error", "sigue siendo un fallo: la segunda copia no se escribió"
+    assert "VACÍO" in mensaje, "hay que nombrar el fichero de 0 bytes que queda en Descargas"
+    assert str(vista._last_export) in mensaje, "y sobre todo decir dónde SÍ está la copia buena"
+
+
+def test_un_fallo_de_disco_normal_sigue_diciendo_lo_de_siempre(store, tmp_path):
+    """Sin URI raro, el mensaje no debe inventarse una explicación de Android."""
+    from unittest.mock import MagicMock
+
+    vista = _vista(store, tmp_path)
+    evento = MagicMock()
+    evento.path = str(tmp_path / "no-existe" / "copia.json")
+
+    vista._on_save_result(evento)
+    _nivel, mensaje = vista._status
+
+    assert "Android" not in mensaje
+    assert str(vista._last_export) in mensaje, "la copia buena se nombra igual"
+
+
+def test_sin_copia_interna_el_mensaje_no_promete_uno(store, tmp_path):
+    """Si tampoco hubo copia local, hay que decirlo claro y sin consuelo."""
+    from unittest.mock import MagicMock
+
+    vista = _vista(store, tmp_path)
+    vista._last_export = None
+    evento = MagicMock()
+    evento.path = "/document/12"
+
+    vista._on_save_result(evento)
+    _nivel, mensaje = vista._status
+
+    assert "no hay copia" in mensaje.lower()

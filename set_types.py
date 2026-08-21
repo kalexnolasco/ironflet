@@ -457,3 +457,127 @@ def format_rest(seconds: int) -> str:
     """`180` → `"3:00"`. Clock format, same as the rest timer's own readout."""
     seconds = max(0, int(seconds))
     return f"{seconds // 60}:{seconds % 60:02d}"
+
+
+# ── prescripciones, dichas en español ────────────────────────
+#
+# `Phase.scheme` y `Phase.rest` son contrato de datos: `parse_prescribed_rest`
+# lee el descanso, `routine_builder._SCHEME_RE` saca del esquema su parte
+# numérica, y las rutinas que Alex escribe guardan esas mismas cadenas en la
+# base. Traducirlas en `data.py` es la trampa 22.
+#
+# Pero se PINTAN. Plan enseña «Descanso: 1' sets / 2-3' exercises» y la lista
+# de fases enseña «Ascending Pyramid» y «Drop sets (e.g.: 10,8,6+12↓)», en
+# medio de una pantalla en español. Así que el dato se queda como está y lo
+# que cambia es cómo se dice: estas dos funciones traducen **para mostrar**,
+# sin tocar nada de lo que los parsers leen.
+#
+# Dos pasadas, y las dos hacen falta.
+#
+# **Frases primero.** Hay términos que no se descomponen: traducir «drop sets»
+# palabra a palabra da «drop entre series», y «ascending pyramid» da
+# «ascendente pirámide» con el orden del inglés. Ambos salieron así en el
+# primer intento de esta función.
+#
+# **Palabras después**, y no una tabla de frases exactas, porque una tabla de
+# frases cubre las 22 cadenas que hay hoy y falla en silencio con la 23 — que
+# es la primera que escriba Alex en el editor de rutinas.
+
+#: Término compuesto → cómo se dice entero. Se aplica antes que nada; un valor
+#: igual a la clave (`drop sets`) es deliberado: significa "esto ya se dice así
+#: en un gimnasio español, protégelo de la pasada de palabras".
+_FRASES_PRESCRIPCION: dict[str, str] = {
+    "ascending pyramid": "pirámide ascendente",
+    "descending pyramid": "pirámide descendente",
+    "drop sets": "drop sets",
+    "drop set": "drop set",
+    "straight sets": "series rectas",
+    "working sets": "series efectivas",
+}
+
+#: Palabra inglesa → palabra española, aplicado sobre límites de palabra.
+_PALABRAS_PRESCRIPCION: dict[str, str] = {
+    "sets": "entre series",
+    "set": "entre series",
+    "exercises": "entre ejercicios",
+    "exercise": "entre ejercicios",
+    "ex.": "entre ejercicios",
+    "compounds": "en compuestos",
+    "compound": "en compuestos",
+    "isolation": "en aislamiento",
+    "max": "máx",
+    "min.": "mín.",
+    "between": "entre",
+    "blocks": "bloques",
+    "on": "en",
+    "ascending": "ascendente",
+    "pyramid": "pirámide",
+    "drop": "drop",
+    "e.g.": "p. ej.",
+}
+
+
+def _alternativa(claves) -> str:
+    """Las claves como alternativa de regex, la más larga primero.
+
+    El orden importa: sin él, `set` gana a `sets` y deja una «s» suelta.
+    """
+    return "|".join(re.escape(k) for k in sorted(claves, key=len, reverse=True))
+
+
+_RE_FRASE = re.compile(r"(?<![\w'])(" + _alternativa(_FRASES_PRESCRIPCION) + r")(?![\w'])", re.I)
+_RE_PALABRA = re.compile(
+    r"(?<![\w'])(" + _alternativa(_PALABRAS_PRESCRIPCION) + r")(?![\w'])", re.I
+)
+
+#: Marcador para apartar una frase ya traducida de la pasada de palabras. Usa
+#: caracteres que no aparecen en ninguna prescripción.
+_HUECO = "\x00{}\x00"
+
+
+def _con_caja(original: str, traducida: str) -> str:
+    return traducida.capitalize() if original[:1].isupper() else traducida
+
+
+def _traducir_prescripcion(texto: str) -> str:
+    if not texto:
+        return texto
+
+    # Pasada 1: frases. Cada una se aparta tras un marcador para que la pasada
+    # de palabras no vuelva a entrar en ella — sin esto, «drop sets» se
+    # traduce a «drop sets» y acto seguido «sets» lo convierte en «drop entre
+    # series», que es exactamente lo que pasó.
+    apartadas: list[str] = []
+
+    def _guardar(m: re.Match) -> str:
+        apartadas.append(_con_caja(m.group(0), _FRASES_PRESCRIPCION[m.group(0).lower()]))
+        return _HUECO.format(len(apartadas) - 1)
+
+    salida = _RE_FRASE.sub(_guardar, texto)
+
+    # Pasada 2: palabras sueltas.
+    salida = _RE_PALABRA.sub(
+        lambda m: _con_caja(m.group(0), _PALABRAS_PRESCRIPCION[m.group(0).lower()]), salida
+    )
+
+    for i, frase in enumerate(apartadas):
+        salida = salida.replace(_HUECO.format(i), frase)
+    return salida
+
+
+def describir_esquema(scheme: str | None) -> str:
+    """`"Ascending Pyramid"` → `"Pirámide ascendente"`. El dato no se toca.
+
+    Un esquema puramente numérico (`"3×8-10"`, `"4×5-6 (*=3×8)"`) sale igual
+    que entró: no hay ninguna palabra que traducir y no se inventa ninguna.
+    """
+    return _traducir_prescripcion(scheme or "")
+
+
+def describir_descanso(rest: str | None) -> str:
+    """`"1' sets / 2-3' exercises"` → `"1' entre series / 2-3' entre ejercicios"`.
+
+    Los números, las comillas de minuto y segundo y las barras se respetan tal
+    cual: lo único que cambia son las palabras.
+    """
+    return _traducir_prescripcion(rest or "")

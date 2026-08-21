@@ -47,6 +47,7 @@ from program_week import (
     set_program_start,
 )
 from routine_builder import duplicate_builtin, is_user_routine, routine_pk
+from set_types import describir_descanso, describir_esquema
 from storage import Storage
 from theme import (
     C,
@@ -339,7 +340,7 @@ class PlanView:
                     ft.Text(phase.subtitle, size=11, color=C.text_secondary),
                     ft.Row(
                         [
-                            chip(phase.scheme),
+                            chip(describir_esquema(phase.scheme)),
                             chip("Frec. alta" if phase.freq == "high" else "Frec. baja"),
                         ],
                         spacing=6,
@@ -1101,8 +1102,12 @@ class PlanView:
                         weight=ft.FontWeight.W_700,
                     ),
                     ft.Container(height=6),
-                    ft.Text(f"Series: {phase.scheme}", size=12, color=C.text),
-                    ft.Text(f"Descanso: {phase.rest}", size=11, color=C.text_secondary),
+                    ft.Text(f"Series: {describir_esquema(phase.scheme)}", size=12, color=C.text),
+                    ft.Text(
+                        f"Descanso: {describir_descanso(phase.rest)}",
+                        size=11,
+                        color=C.text_secondary,
+                    ),
                     ft.Container(height=6),
                     ft.Text(phase.notes, size=11, color=C.text_muted),
                 ),

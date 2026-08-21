@@ -461,6 +461,39 @@ class DataView:
                 )
                 self._refresh()
 
+    def _explicar_fallo_al_guardar(self, target: Path, exc: OSError) -> str:
+        """Por qué falló el segundo guardado — y que el primero sigue ahí.
+
+        Dos cosas que este mensaje tiene que hacer y antes no hacía.
+
+        **No dejar creer que no hay copia.** El texto era «No se pudo escribir
+        {nombre}: {error}», y pisaba el mensaje de éxito de la copia local que
+        se escribe *antes* de abrir el diálogo justamente por esto. En el
+        emulador se leía como "la exportación ha fallado" con 28 KB de JSON
+        perfectamente guardados en el almacenamiento de la app.
+
+        **Nombrar el fichero vacío.** En Android el diálogo del sistema crea el
+        fichero en cuanto eliges el nombre y nos devuelve un URI del Storage
+        Access Framework (`/document/12`), que no es una ruta y que
+        `write_bytes` no puede abrir. El resultado es un `.json` de 0 bytes en
+        Descargas con el nombre correcto — que es peor que ningún fichero,
+        porque parece una copia. No podemos borrarlo (el URI no se resuelve a
+        una ruta), así que al menos se dice.
+        """
+        parece_saf = str(target).startswith(("/document/", "/tree/", "content:"))
+        if parece_saf:
+            detalle = (
+                f"Android no dejó escribir en el destino que elegiste — devolvió "
+                f"«{target}», que no es una carpeta real. El archivo que veas ahí "
+                "con ese nombre está VACÍO: bórralo."
+            )
+        else:
+            detalle = f"No se pudo escribir {target.name}: {exc}"
+
+        if self._last_export:
+            return f"{detalle}  ·  Tu copia completa SÍ está guardada en {self._last_export}"
+        return f"{detalle}  ·  Y tampoco se pudo escribir la copia interna: no hay copia."
+
     def _on_save_result(self, e: ft.FilePickerResultEvent):
         payload = self._pending_export
         self._pending_export = None
@@ -491,7 +524,7 @@ class DataView:
         try:
             target.write_bytes(payload)
         except OSError as exc:
-            self._set_status("error", f"No se pudo escribir {target.name}: {exc}")
+            self._set_status("error", self._explicar_fallo_al_guardar(target, exc))
         else:
             self._set_status("success", f"Copia guardada en {target}")
         self._refresh()
@@ -1095,11 +1128,26 @@ class DataView:
         origen = getattr(self, "_last_photos_zip", None)
         if not e.path or origen is None:
             return
+        destino = Path(e.path)
         try:
-            Path(e.path).write_bytes(Path(origen).read_bytes())
-            self._set_status("success", f"Fotos guardadas en {e.path}")
+            destino.write_bytes(Path(origen).read_bytes())
+            self._set_status("success", f"Fotos guardadas en {destino}")
         except OSError as exc:
-            self._set_status("error", f"No se pudo escribir {e.path}: {exc}")
+            # Mismo URI del Storage Access Framework que en `_on_save_result`,
+            # mismo `.zip` de 0 bytes en Descargas, misma necesidad de decir
+            # que el zip bueno sí existe.
+            parece_saf = str(destino).startswith(("/document/", "/tree/", "content:"))
+            if parece_saf:
+                self._set_status(
+                    "error",
+                    f"Android no dejó escribir en «{destino}». El archivo con ese "
+                    f"nombre está VACÍO: bórralo.  ·  El zip completo está en {origen}",
+                )
+            else:
+                self._set_status(
+                    "error",
+                    f"No se pudo escribir {destino.name}: {exc}  ·  El zip está en {origen}",
+                )
         self._refresh()
 
     def _import_photos_zip(self, _):

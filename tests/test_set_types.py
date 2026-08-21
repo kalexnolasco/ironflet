@@ -478,3 +478,99 @@ def test_rest_accepts_a_set_dict_through_set_type_of():
 )
 def test_format_rest(seconds, text):
     assert format_rest(seconds) == text
+
+
+# ── prescripciones dichas en español ────────────────────────────────────
+
+
+class TestDescribirPrescripciones:
+    """`Phase.scheme` y `Phase.rest` son dato; esto es solo cómo se dicen.
+
+    Se pintaban crudas: Plan enseñaba «Descanso: 1' sets / 2-3' exercises» y
+    la lista de fases «Ascending Pyramid», en medio de una pantalla española.
+    Traducirlas en `data.py` habría sido la trampa 22 — `parse_prescribed_rest`
+    las lee, y las rutinas que el usuario escribe guardan esas cadenas en la
+    base. Así que el dato se queda y lo que cambia es la presentación.
+    """
+
+    def test_el_descanso_traduce_las_palabras_y_respeta_los_numeros(self):
+        from set_types import describir_descanso
+
+        assert (
+            describir_descanso("1' sets / 2-3' exercises")
+            == "1' entre series / 2-3' entre ejercicios"
+        )
+        assert describir_descanso("1'30\" sets (max 2')") == "1'30\" entre series (máx 2')"
+        assert (
+            describir_descanso("3' compounds / 60-90s isolation")
+            == "3' en compuestos / 60-90s en aislamiento"
+        )
+
+    def test_un_esquema_numerico_sale_intacto(self):
+        """No hay nada que traducir en «4×5-6 (*=3×8)» y no se inventa nada."""
+        from set_types import describir_esquema
+
+        for crudo in (
+            "3×12",
+            "3×8-10",
+            "4×5-6 (*=3×8)",
+            "BI 4×8+10 / SS 4×10+10",
+            "2×5-8 / 2×8-12",
+        ):
+            assert describir_esquema(crudo) == crudo
+
+    def test_la_piramide_sale_en_orden_espanol(self):
+        """Primer intento: «Ascendente Pirámide». El adjetivo va detrás."""
+        from set_types import describir_esquema
+
+        assert describir_esquema("Ascending Pyramid") == "Pirámide ascendente"
+
+    def test_drop_sets_no_se_descompone(self):
+        """Primer intento: «Drop entre series».
+
+        `drop set` se dice así en un gimnasio español; es un término, no dos
+        palabras. La tabla de frases corre antes que la de palabras y aparta
+        lo que traduce para que la segunda pasada no vuelva a entrar.
+        """
+        from set_types import describir_esquema
+
+        assert describir_esquema("Drop sets (e.g.: 10,8,6+12↓)") == "Drop sets (p. ej.: 10,8,6+12↓)"
+        assert describir_esquema("drop set") == "drop set"
+
+    def test_ninguna_fase_de_serie_sigue_enseñando_ingles(self):
+        """El barrido completo: las 4 rutinas, todas sus fases.
+
+        Es el test que importa. Los de arriba fijan casos concretos; este falla
+        el día que alguien añada una fase con una palabra inglesa que la tabla
+        no conoce, que es como llegaron estas dos.
+        """
+        import re
+
+        import data
+        from set_types import describir_descanso, describir_esquema
+
+        # Palabras inglesas que aparecían en las cadenas de serie. No es una
+        # lista de "inglés" en general: es lo que este vocabulario usa.
+        sospechosas = re.compile(
+            r"(?<![\w'])(sets?|exercises?|compounds?|isolation|between|blocks?|ascending"
+            r"|descending|pyramid|max|min)(?![\w'])",
+            re.IGNORECASE,
+        )
+        restos = []
+        for rutina in data.ROUTINES:
+            for fase in rutina.phases:
+                for crudo, dicho in (
+                    (fase.scheme, describir_esquema(fase.scheme)),
+                    (fase.rest, describir_descanso(fase.rest)),
+                ):
+                    # «drop sets» está protegido a propósito y contiene "sets".
+                    limpio = dicho.lower().replace("drop sets", "").replace("drop set", "")
+                    if sospechosas.search(limpio):
+                        restos.append((rutina.id, crudo, dicho))
+        assert not restos, f"prescripciones que siguen en inglés en pantalla: {restos}"
+
+    def test_no_revienta_con_vacio(self):
+        from set_types import describir_descanso, describir_esquema
+
+        assert describir_esquema(None) == ""
+        assert describir_descanso("") == ""

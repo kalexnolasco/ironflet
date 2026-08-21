@@ -43,6 +43,7 @@ from session_plan import ProposedSet, SessionPlan, plan_sets, to_draft_rows
 from set_types import (
     TYPE_KEY,
     SetType,
+    describir_esquema,
     format_rest,
     label_for,
     next_set_type,
@@ -3525,7 +3526,9 @@ class WorkoutView:
                                     weight=ft.FontWeight.W_900,
                                 ),
                                 ft.Text(p.name, size=17, weight=ft.FontWeight.W_900, color=C.text),
-                                ft.Text(p.scheme, size=11, color=C.text_secondary),
+                                ft.Text(
+                                    describir_esquema(p.scheme), size=11, color=C.text_secondary
+                                ),
                             ],
                             spacing=2,
                             tight=True,
