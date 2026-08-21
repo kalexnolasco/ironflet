@@ -152,7 +152,7 @@ class ProfileView:
             autofocus=True,
         )
         date_field = ft.TextField(
-            label="Date (YYYY-MM-DD)",
+            label="Fecha (AAAA-MM-DD)",
             value=date.today().isoformat(),
             bgcolor=C.bg_page,
             border_color=C.border,
@@ -239,7 +239,7 @@ class ProfileView:
             autofocus=True,
         )
         date_field = ft.TextField(
-            label="Date (YYYY-MM-DD)",
+            label="Fecha (AAAA-MM-DD)",
             value=date.today().isoformat(),
             bgcolor=C.bg_page,
             border_color=C.border,
