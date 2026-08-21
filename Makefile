@@ -1,30 +1,27 @@
-# Development entry points. The order inside `deps` matters — see below.
+# Puntos de entrada de desarrollo. Esta app es la APK: en el escritorio solo
+# se abre para desarrollar y para correr los tests.
 
 VENV := .venv/bin
 PY   := $(VENV)/python
 
-.PHONY: deps check test lint fmt run deploy
+.PHONY: deps check test lint fmt run apk install
 
-## deps: install everything the app needs, in the one order that works.
+## deps: instalar dependencias de desarrollo.
 #
-# `uv sync` alone is not enough. Flet's web client (`flet-web`) is now declared
-# through the `flet[all]` extra so the lockfile carries it, but the CanvasKit
-# assets are NOT a Python package: they are ~12 MB fetched by
-# scripts/vendor_canvaskit.py into the *installed* flet_web, plus a patch to
-# flutter_bootstrap.js. Reinstalling flet_web wipes both, and the app silently
-# goes back to downloading CanvasKit from Google — which fails in a gym with no
-# signal. So: sync first, vendor second, always.
+# En 0.12 esto tenía un segundo paso obligatorio (vendorizar CanvasKit dentro
+# de flet_web) y el ORDEN era load-bearing. Con el modo web jubilado no hay
+# CanvasKit que vendorizar ni orden que respetar: un `uv sync` y ya.
 deps:
 	uv sync --group dev
-	$(PY) scripts/vendor_canvaskit.py
 
-## check: everything CI runs, in the same order.
+## check: lo mismo que corre CI, en el mismo orden.
 check: lint test
 
 lint:
 	uv run ruff check .
 	uv run ruff format --check .
 
+## test: la suite entera sobre SQLite. Sin Docker, sin saltarse nada.
 test:
 	$(PY) -m pytest -q
 
@@ -32,19 +29,18 @@ fmt:
 	uv run ruff format .
 	uv run ruff check --fix .
 
-## run: web mode on loopback, the way it is actually deployed.
+## run: la app en el escritorio, contra el SQLite local. Solo para desarrollar.
 run:
-	IRONFLET_WEB=1 $(PY) main.py
+	$(PY) main.py
 
-## deploy: restart the three services in the safe order.
+## apk: compilar el APK con las tres ABIs (trampa 23: las tres, o exactamente una).
 #
-# The bot and the panel hold live SQLAlchemy pools against the shared database.
-# Anything touching the schema has to stop them first, or an ALTER takes an
-# ACCESS EXCLUSIVE lock and their next query blocks and fails.
-deploy:
-	systemctl --user stop entrenador-bot entrenador-panel
-	systemctl --user restart ironflet-web
-	systemctl --user start entrenador-bot entrenador-panel
-	@sleep 8
-	@systemctl --user is-active ironflet-web entrenador-bot entrenador-panel
-	@journalctl --user -u ironflet-web -n 15 --no-pager -o cat
+# `rm -rf build` antes, siempre: borrar solo `build/flutter` deja a flet con
+# estado a medias y falla con un FileNotFoundError que no dice qué pasa.
+apk:
+	rm -rf build
+	$(VENV)/flet build apk -v
+
+## install: el APK recién compilado, al móvil o al emulador conectado.
+install:
+	adb install -r build/apk/app-release.apk

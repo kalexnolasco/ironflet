@@ -60,25 +60,38 @@ def _test_url() -> str:
 # pool per test and eventually starved Postgres.
 @pytest.fixture(scope="module")
 def engine():
-    from sqlalchemy import create_engine
+    """El MISMO motor que construye la app, no un `create_engine` a pelo.
 
-    eng = create_engine(_test_url())
+    Se probó con `create_engine()` desnudo y pasó desapercibido durante toda
+    la era PostgreSQL, donde las claves foráneas van encendidas de fábrica. En
+    SQLite no: vienen apagadas, `ON DELETE SET NULL` se parsea y se ignora, y
+    `test_frozen_macros_survive_renaming_and_deleting_the_food` lo cazó al
+    migrar — un apunte de comida seguía apuntando a un alimento borrado.
+    `create_db_engine` es quien enciende los PRAGMAs; usarlo aquí es lo que
+    hace que el test pruebe la base que Alex lleva en el bolsillo.
+    """
+    from storage import create_db_engine
+
+    eng = create_db_engine(_test_url())
     yield eng
     eng.dispose()
 
 
 @pytest.fixture
 def nut(engine):
-    """Nutrition on the test database, with only the four nutrition tables wiped.
+    """Nutrition sobre la base de test, con solo las cuatro tablas de comida vacías.
 
-    Deliberately *not* `Base.metadata.drop_all()`. The training tables share
-    that Base, and the bot's suite and this one run against the same
-    `entrenador_test`: dropping everything makes each suite flake the other for
-    reasons that look nothing like the real cause. TRUNCATE ... CASCADE empties
-    exactly these four and resets the identity counters, which is all a test
-    actually needs.
+    A propósito NO es `Base.metadata.drop_all()`: las tablas de entreno
+    comparten ese Base y tirarlas dejaría a las demás suites sin esquema, con
+    fallos que no se parecen en nada a su causa.
+
+    Antes esto era `TRUNCATE … RESTART IDENTITY CASCADE`, que es sintaxis de
+    PostgreSQL. Jubilado el PC, la base de test es el mismo SQLite que usa el
+    móvil, y ahí se borra con DELETE en orden hijo→padre: SQLite no tiene
+    TRUNCATE, y el orden importa porque las claves foráneas están ENCENDIDAS
+    (`_apply_sqlite_pragmas`) y un borrado al revés fallaría.
     """
-    from sqlalchemy import text
+    from sqlalchemy import delete
 
     tables = [
         Food.__table__,
@@ -88,9 +101,8 @@ def nut(engine):
     ]
     Base.metadata.create_all(engine, tables=tables)
     with engine.begin() as conn:
-        conn.execute(
-            text("TRUNCATE food_log, servings, nutrition_targets, foods RESTART IDENTITY CASCADE")
-        )
+        for modelo in (FoodLogEntry, Serving, NutritionTarget, Food):
+            conn.execute(delete(modelo))
     return Nutrition(engine=engine)
 
 

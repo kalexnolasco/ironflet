@@ -299,19 +299,7 @@ def main(page: ft.Page):
 
 
 if __name__ == "__main__":
-    import os
-
-    if os.environ.get("IRONFLET_WEB"):
-        ft.app(
-            main,
-            view=ft.AppView.WEB_BROWSER,
-            # Both are overridable so a second instance can be started for
-            # testing without stopping the one systemd is running on 8550.
-            port=int(os.environ.get("IRONFLET_PORT", "8550")),
-            # Loopback by default: this app is served on the machine it runs on
-            # and nothing about it is meant to be reachable from the network.
-            host=os.environ.get("IRONFLET_HOST", "127.0.0.1"),
-            assets_dir="assets",
-        )
-    else:
-        ft.app(main, assets_dir="assets")
+    # Una sola forma de arrancar. El modo web (`IRONFLET_WEB`, loopback, el
+    # servicio `ironflet-web`) se jubiló en 0.13 junto con la versión de PC:
+    # esta app es la APK, y en el escritorio solo se abre para desarrollar.
+    ft.app(main, assets_dir="assets")

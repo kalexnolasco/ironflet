@@ -1,27 +1,21 @@
-"""The SQLite backend must behave exactly like the PostgreSQL one.
+"""El backend SQLite: el único que queda, y el que lleva Alex encima.
 
-The APK has no Postgres to talk to, so `storage.py` runs on a SQLite file in the
-app's private storage. That is only safe if the two engines are indistinguishable
-from the app's point of view — a workout that stores differently depending on the
-backend is a silent data bug, the worst kind, because nothing raises and the
-number is simply wrong months later.
+Hasta 0.12 este fichero existía para probar una PARIDAD: cada test corría dos
+veces, contra SQLite y contra PostgreSQL, porque una fila que se guardara
+distinto según el motor era un error de datos silencioso — nada falla, y el
+número simplemente está mal meses después.
 
-So the `store` fixture is **parametrised over both engines**. Every test below
-runs twice: once against a throwaway SQLite file, once against `entrenador_test`
-on PostgreSQL. Parity is not asserted by reading the code and hoping; it is
-asserted by running the same assertions on both. The Postgres half skips when
-`DATABASE_URL` is unset, exactly like `tests/test_storage_metrics.py`, so judge a
-run by the skip count.
+En 0.13 se jubiló el PC y con él PostgreSQL. La paridad dejó de ser una
+pregunta, pero los tests NO se borraron: lo que comprobaban de SQLite sigue
+siendo exactamente lo que hay que comprobar, y algunos de ellos (los PRAGMAs,
+el redondeo de instantes, la cascada de borrado) documentan trampas que solo
+existen en este motor. Lo único que se fue es el segundo parámetro.
 
-A handful of tests are SQLite-only by nature — the pragmas, the URL resolution,
-the Android probe — and say so.
-
-Nothing here imports the Telegram coach in ../agente/.
+Nada aquí importa el bot de Telegram: ya no hay bot que importar.
 """
 
 from __future__ import annotations
 
-import os
 import threading
 from datetime import date, datetime, timedelta, timezone
 
@@ -34,11 +28,8 @@ from nutrition import Food, FoodLogEntry, Nutrition, Serving
 from storage import (
     Entreno,
     Perfil,
-    Peso,
-    Preferencia,
     Storage,
     WorkoutEntry,
-    create_db_engine,
     is_sqlite_url,
     resolve_db_url,
     running_on_android,
@@ -55,43 +46,16 @@ PROBE_SLUG = "zz-parity-probe-food"
 # ── fixtures ─────────────────────────────────────────────────────────────
 
 
-def _postgres_url() -> str | None:
-    """`entrenador_test` on the configured server, or None if unavailable."""
-    url = os.environ.get("TEST_DATABASE_URL")
-    if not url:
-        base = os.environ.get("DATABASE_URL")
-        if not base:
-            return None
-        # render_as_string, not str(): str() masks the password.
-        url = make_url(base).set(database="entrenador_test").render_as_string(hide_password=False)
-    if make_url(url).database == "entrenador":
-        return None  # production: leave it alone
-    return url
+@pytest.fixture
+def store(tmp_path) -> Storage:
+    """Un `Storage` sobre un fichero nuevo por test.
 
-
-@pytest.fixture(params=["sqlite", "postgresql"])
-def store(request, tmp_path) -> Storage:
-    """A `Storage` on each backend, with the training tables emptied.
-
-    SQLite gets a fresh file per test — `tmp_path` is function-scoped, so
-    isolation is free. Postgres shares `entrenador_test` with the other suites,
-    so rows are deleted rather than tables dropped; dropping would take their
-    fixtures with it.
+    `tmp_path` es de ámbito función, así que el aislamiento sale gratis: cada
+    test estrena base y ninguno puede ensuciar al siguiente. Antes esto estaba
+    parametrizado sobre dos motores y la mitad PostgreSQL compartía servidor
+    con las demás suites, que es de donde venían los rojos intermitentes.
     """
-    if request.param == "sqlite":
-        return Storage(sqlite_url(tmp_path / "ironflet.db"))
-
-    url = _postgres_url()
-    if not url:
-        pytest.skip("no DATABASE_URL: the PostgreSQL half of the parity check cannot run")
-    almacen = Storage(url)
-    with almacen._Session() as s:
-        s.execute(delete(Entreno))
-        s.execute(delete(Peso))
-        s.execute(delete(Perfil))
-        s.execute(delete(Preferencia))
-        s.commit()
-    return almacen
+    return Storage(sqlite_url(tmp_path / "ironflet.db"))
 
 
 @pytest.fixture
@@ -559,17 +523,6 @@ def test_sqlite_engine_allows_cross_thread_use(sqlite_store):
     assert results == [1, 1, 1, 1]
 
 
-def test_postgres_engine_keeps_pool_pre_ping():
-    """The desktop path is unchanged: a socket connection can go stale."""
-    pytest.importorskip("psycopg")  # optional on mobile builds; see pyproject
-    engine = create_db_engine("postgresql+psycopg://entrenador@127.0.0.1:5432/entrenador")
-    try:
-        assert engine.dialect.name == "postgresql"
-        assert engine.pool._pre_ping is True
-    finally:
-        engine.dispose()
-
-
 def test_missing_parent_directory_is_created(tmp_path):
     """ "unable to open database file" reads like corruption; it is a mkdir."""
     nested = tmp_path / "does" / "not" / "exist" / "ironflet.db"
@@ -593,20 +546,20 @@ def clean_env(monkeypatch):
 
 def test_explicit_url_beats_everything(monkeypatch, tmp_path):
     """An operator who named a database means it — including on a phone."""
-    monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://from-env/db")
+    monkeypatch.setenv("DATABASE_URL", "sqlite+pysqlite:///from-env.db")
     monkeypatch.setenv("ANDROID_ROOT", "/system")
     monkeypatch.setenv("ANDROID_DATA", "/data")
 
     assert resolve_db_url("sqlite+pysqlite:///explicit.db") == "sqlite+pysqlite:///explicit.db"
 
 
-def test_database_url_beats_the_android_default(monkeypatch):
-    """Postgres over the network is legitimate on a phone if it is asked for."""
-    monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://from-env/db")
+def test_database_url_manda_sobre_la_ruta_por_defecto(monkeypatch):
+    """Nombrar una base es una orden, también en el móvil: los tests la usan."""
+    monkeypatch.setenv("DATABASE_URL", "sqlite+pysqlite:///from-env.db")
     monkeypatch.setenv("ANDROID_ROOT", "/system")
     monkeypatch.setenv("ANDROID_DATA", "/data")
 
-    assert resolve_db_url() == "postgresql+psycopg://from-env/db"
+    assert resolve_db_url() == "sqlite+pysqlite:///from-env.db"
 
 
 def test_android_without_database_url_gets_sqlite(monkeypatch, tmp_path):
@@ -621,18 +574,25 @@ def test_android_without_database_url_gets_sqlite(monkeypatch, tmp_path):
     assert make_url(url).database == str(tmp_path / storage.SQLITE_FILENAME)
 
 
-def test_the_desktop_default_is_still_postgres(monkeypatch, tmp_path):
-    """THE REGRESSION TO FEAR: the desktop must not drift onto a local file.
+def test_sin_database_url_siempre_es_el_sqlite_de_este_dispositivo(monkeypatch, tmp_path):
+    """La regla se invirtió en 0.13, y merece quedar escrita.
 
-    `FLET_APP_STORAGE_DATA` is set by `flet run` on the desktop too, so if it
-    were ever used as the Android signal this assertion is what would fail —
-    and in production it would mean Alex silently losing the database he shares
-    with the Telegram coach.
+    Hasta 0.12 este test defendía lo contrario: el escritorio NO debía caer en
+    un fichero local, porque hacerlo lo desconectaba en silencio del
+    PostgreSQL que compartía con el bot de Telegram. Jubilado el PC, ese
+    peligro no existe — no hay base compartida de la que desconectarse — y el
+    fichero local pasó de accidente temido a destino correcto.
+
+    `FLET_APP_STORAGE_DATA` sigue decidiendo DÓNDE vive el fichero, nunca SI se
+    usa SQLite. Esa parte no cambió.
     """
     monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.delenv("IRONFLET_SQLITE", raising=False)
     monkeypatch.setenv("FLET_APP_STORAGE_DATA", str(tmp_path))
 
-    assert resolve_db_url() == storage.DEFAULT_URL
+    url = resolve_db_url()
+    assert is_sqlite_url(url)
+    assert make_url(url).database == str(tmp_path / storage.SQLITE_FILENAME)
 
 
 def test_ironflet_sqlite_forces_the_mobile_path(monkeypatch, tmp_path):
@@ -652,11 +612,14 @@ def test_ironflet_sqlite_can_name_a_file(monkeypatch, tmp_path):
 
 
 @pytest.mark.parametrize("falsy", ["", "0", "false", "no"])
-def test_ironflet_sqlite_off_is_off(monkeypatch, falsy):
+def test_ironflet_sqlite_off_cae_en_la_ruta_por_defecto(monkeypatch, falsy, tmp_path):
+    """Apagar el forzado no apaga SQLite: solo devuelve la elección de ruta a
+    `sqlite_path()`. Antes esto caía en PostgreSQL; ya no hay adónde caer."""
     monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.setenv("IRONFLET_SQLITE", falsy)
+    monkeypatch.setenv("FLET_APP_STORAGE_DATA", str(tmp_path))
 
-    assert resolve_db_url() == storage.DEFAULT_URL
+    assert resolve_db_url() == storage.sqlite_url(tmp_path / storage.SQLITE_FILENAME)
 
 
 def test_sqlite_url_handles_an_absolute_path(tmp_path):

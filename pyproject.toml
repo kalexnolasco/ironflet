@@ -1,7 +1,7 @@
 [project]
 name = "ironflet"
-version = "0.12.0"
-description = "Registro de entrenos en español construido con Flet — corre en Android, escritorio y web desde una sola base Python."
+version = "0.13.0"
+description = "App de Android para entrenos, comidas y progreso, con entrenador dentro. Python + Flet, todo local."
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.10,<3.13"
@@ -38,24 +38,26 @@ classifiers = [
 # only ever EXTENDS this list, it cannot subtract from it. So anything that has
 # no Android wheel has to live in an extra below, not here.
 #
-# Two things used to be here and both broke `flet build apk` outright:
+# Two things used to be here and both broke `flet build apk` outright. Since
+# 0.13 neither exists anywhere in the project — the PC, the web mode and the
+# shared PostgreSQL were all retired — but the reasons are kept because they
+# are the shape of the trap, not trivia about two packages:
 #
 #   flet[all]  -> flet-cli -> watchdog<5,>=4, which publishes no Android wheel.
 #                 Observed failure: "Could not find a version that satisfies the
 #                 requirement watchdog<5.0.0,>=4.0.0 (from versions: none)".
 #                 flet[all] also drags in flet-web -> uvicorn[standard], i.e.
 #                 uvloop/httptools/watchfiles — three more C extensions with no
-#                 Android wheels — plus flet-desktop-light, which is a Linux
-#                 desktop binary the phone has no use for.
+#                 Android wheels — plus flet-desktop-light, a Linux desktop
+#                 binary the phone has no use for.
 #   psycopg[binary] -> a precompiled libpq. Wheels exist only for glibc/macOS/
 #                 Windows; on Android pip would fall back to building libpq
 #                 from source and the build dies.
 #
-# Dropping psycopg from the phone is safe because SQLAlchemy imports the DBAPI
-# lazily, inside create_engine(), and storage.create_db_engine() only reaches
-# the Postgres branch when the resolved URL asks for it. On Android the URL
-# resolves to SQLite, so psycopg is never imported. sqlite3 is in the stdlib
-# CPython that serious-python embeds, so the phone needs no driver at all.
+# The rule both illustrate: anything with compiled code has to be checked
+# against pypi.flet.dev for a `cp312-…-android_24_arm64_v8a` wheel BEFORE it
+# goes in this list. sqlite3 needs no driver at all — it is in the stdlib
+# CPython that serious-python embeds.
 #
 # `httpx` IS ON THE PHONE, AND IT IS PURE PYTHON — that is the whole point.
 #
@@ -93,28 +95,17 @@ dependencies = [
     "pillow==11.1.0",
 ]
 
-[project.optional-dependencies]
-# Desktop/web only. `flet[all]` carries flet-web, which the deployed web mode
-# needs; without it a bare `uv sync` uninstalls flet_web and takes the vendored
-# CanvasKit with it (see scripts/vendor_canvaskit.py and `make deps`).
-web = ["flet[all]>=0.25,<0.30"]
-# Desktop/web only. The PostgreSQL driver for the shared database the Telegram
-# bot also writes. The phone uses SQLite and must never see this.
-postgres = ["psycopg[binary]>=3.2"]
-
 [dependency-groups]
-# The two extras are repeated here rather than referenced as `ironflet[web,
-# postgres]` so that `make deps` and CI keep working unchanged with a plain
-# `uv sync --group dev`. Both are required for a real test run: the PostgreSQL
-# half of the suite (test_storage_metrics.py, test_nutrition.py, the Postgres
-# half of test_sqlite_backend.py) needs a live server, and dropping flet[all]
-# from the dev environment would break web mode on this machine.
+# Solo lo que hace falta para desarrollar y probar. En 0.13 salieron de aquí
+# `flet[all]` (arrastraba flet-web, que solo servía al modo web ya jubilado) y
+# `psycopg` (no queda PostgreSQL con quien hablar). La suite entera corre
+# ahora sobre SQLite, sin Docker y sin saltarse un solo test.
 dev = [
-    "flet[all]>=0.25,<0.30",
-    "psycopg[binary]>=3.2",
-    # Repeated from `[project] dependencies` for the same reason the two extras
-    # above are: `uv sync --group dev` installs only what is listed here.
+    # Repetido de `[project] dependencies` porque `uv sync --group dev`
+    # instala únicamente lo que está listado aquí.
+    "flet>=0.25,<0.30",
     "httpx>=0.27,<1",
+    "pillow==11.1.0",
     "ruff>=0.7",
     "pytest>=8",
     "pytest-asyncio>=0.24",

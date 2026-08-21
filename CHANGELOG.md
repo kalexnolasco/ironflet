@@ -4,6 +4,44 @@ Todos los cambios notables de IronFlet.
 El formato sigue [Keep a Changelog](https://keepachangelog.com/) y el proyecto
 usa [SemVer](https://semver.org/).
 
+## [0.13.0] — 2026-08-21
+
+**Solo el móvil.** Se jubilan la versión de PC, el modo web y el bot de
+Telegram. Lo que queda es la APK y su fichero SQLite.
+
+### Quitado
+
+- **PostgreSQL, Docker y `psycopg`.** El almacenamiento es un fichero SQLite y
+  `resolve_db_url()` ya no tiene rama de servidor.
+- **El modo web** (`IRONFLET_WEB`, `flet[all]`, los ~12 MB de CanvasKit
+  vendorizados a mano, `scripts/vendor_canvaskit.py`) y los tres servicios de
+  systemd: `ironflet-web`, `entrenador-bot`, `entrenador-panel` — parados y
+  deshabilitados.
+- **El esquema duplicado a mano** entre este repo y el del bot, con su test de
+  espejo. Una sola declaración.
+
+### Cambiado
+
+- **Ya no se salta ningún test.** Antes 211 pruebas —todo lo que tocaba
+  almacenamiento— se saltaban en silencio sin un PostgreSQL levantado, y un
+  verde con 211 saltos no había verificado nada. Ahora corren las 1716 sobre
+  SQLite, sin Docker, y en la mitad de tiempo.
+- `tests/conftest.py` da a cada proceso su propio fichero temporal en vez de
+  crear y borrar una base por pid.
+- Makefile nuevo: `make apk` y `make install` en lugar de `make deploy`.
+  `make apk` borra `build/` entero, porque borrar solo `build/flutter` deja a
+  flet con medio estado y falla con un error que no dice qué pasa.
+- README y CONTRIBUTING reescritos: hablaban de puertos, systemd y una app en
+  inglés con tema claro fijo.
+
+### Arreglado
+
+- **Las claves foráneas no se estaban comprobando en los tests de nutrición.**
+  Su fixture construía el motor con un `create_engine()` desnudo, sin los
+  PRAGMAs que sí aplica la app, y con PostgreSQL nunca se notó porque allí van
+  encendidas de fábrica. Al migrar saltó: un apunte de comida seguía apuntando
+  a un alimento borrado. La fixture usa ahora `create_db_engine`, como la app.
+
 ## [0.12.0] — 2026-08-21
 
 **Fotos de progreso, el coach que las ve, Google Calendar y los permisos que faltaban.**

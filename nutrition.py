@@ -40,7 +40,6 @@ before copying a USDA number in here or every carb total comes out ~10 % high.
 
 from __future__ import annotations
 
-import os
 import re
 import weakref
 from dataclasses import dataclass
@@ -64,7 +63,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, sessionmaker
 
-from storage import DEFAULT_URL, Base
+from storage import Base, resolve_db_url
 
 # ── meals ────────────────────────────────────────────────────
 # Five fixed slots. They are an ordered tuple, not a set: every report shows the
@@ -1036,7 +1035,9 @@ class Nutrition:
             self._engine = engine
             self.db_url = str(engine.url)
         else:
-            self.db_url = db_url or os.environ.get("DATABASE_URL") or DEFAULT_URL
+            # `resolve_db_url` es el único que sabe dónde vive la base — antes
+            # aquí se repetía la cadena y quedó desincronizada al jubilar el PC.
+            self.db_url = resolve_db_url(db_url)
             self._engine = create_engine(self.db_url, pool_pre_ping=True)
         self._Session = sessionmaker(bind=self._engine, expire_on_commit=False)
         self._init_db()

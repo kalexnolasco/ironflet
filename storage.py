@@ -1,43 +1,29 @@
-"""Persistence, dual-engine: PostgreSQL on the PC, SQLite on the phone.
+"""Persistencia: un fichero SQLite, el de este móvil.
 
-The same code has to serve two worlds, and they do not overlap:
+Hasta 0.12 esto era de doble motor — PostgreSQL compartido con el bot de
+Telegram en el PC, SQLite en la APK — y esa dualidad costaba un esquema
+duplicado a mano en dos repos, un test de espejo para vigilarlo, y una regla
+sobre quién puede escribir `proxima`. En 0.13 el PC se jubiló: no hay bot, no
+hay modo web, no hay Docker. Una app, una base, un dueño.
 
-* **PC (desktop and web)** — PostgreSQL, shared live with the Telegram coach in
-  `../agente/`. What Alex logs here the bot sees instantly, and the other way
-  round. Needs `docker compose up -d` in `../`.
-* **Phone (APK)** — a SQLite file in the app's private storage. No network, no
-  Docker, no bot. The APK must work standing in a gym basement with the PC off,
-  so a remote database is not an option there.
+Lo que queda de aquello, y por qué:
 
-Every model and every query in this repo is plain SQLAlchemy 2.x with nothing
-Postgres-specific in it, so the engine really is swappable by URL alone. What is
-*not* interchangeable is the tuning: see `create_db_engine`.
+* **SQLAlchemy 2.x** sigue siendo la capa. Sobra para un SQLite, pero está
+  escrita, probada y no cuesta nada; reescribirla a `sqlite3` a mano sería
+  cambiar código que funciona por código que hay que volver a probar.
+* **`create_db_engine` sigue afinando SQLite** con sus PRAGMAs, y esa parte
+  nunca fue opcional: SQLite ignora las claves foráneas si nadie las
+  enciende, y este esquema tiene borrados en cascada de verdad.
+* **`DATABASE_URL` sigue mandando** cuando está puesta: los tests apuntan a un
+  fichero temporal, y una app que no deja decir "usa ESTA base" no se puede
+  depurar.
 
-## Where the URL comes from
+## Dónde vive el fichero
 
-`resolve_db_url()` decides, in this order, and the order is the whole point:
-
-1. **An explicit `db_url` argument**, then **`DATABASE_URL`**. An operator who
-   named a database means it — tests point at `entrenador_test`, the systemd
-   unit points at the shared server. Nothing may second-guess that, least of all
-   a platform guess.
-2. **SQLite, if we are running on Android** (or if `IRONFLET_SQLITE` forces it).
-   There is no Postgres to reach from a phone; defaulting to one would give
-   Alex a connection error instead of an app.
-3. **PostgreSQL** otherwise — today's behaviour, unchanged, which is what keeps
-   the desktop and the bot on one database.
-
-### Why not `FLET_APP_STORAGE_DATA` as the Android signal
-
-`asset_manager.py` reads that variable, and it is tempting to reuse it here. It
-would be wrong: `flet_cli/commands/run.py` sets `FLET_APP_STORAGE_DATA` for a
-plain `flet run` **on the desktop** too. It answers "do I have a private
-directory to write in", not "am I a phone". Keying the engine off it would flip
-Alex's desktop to a private SQLite file the first time he ran `flet run`,
-silently disconnecting him from the database the bot writes to — with no error,
-just an empty history. So it decides *where* the file lives (`sqlite_path()`),
-never *whether* SQLite is used. See `running_on_android()` for the signals that
-do answer that question.
+`sqlite_path()`: en Android, el almacenamiento privado de la app
+(`FLET_APP_STORAGE_DATA`), que es el único sitio donde una app empaquetada
+puede escribir siempre y que sobrevive a las actualizaciones. En escritorio,
+junto al proyecto — ahí solo se corre para desarrollar y para los tests.
 """
 
 from __future__ import annotations
@@ -78,7 +64,10 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 import analytics
 from data import active_routine
 
-DEFAULT_URL = "postgresql+psycopg://entrenador@127.0.0.1:5432/entrenador"
+#: El destino por defecto: el fichero SQLite de este dispositivo. Desde 0.13
+#: esta app es SOLO móvil — se jubiló la versión de PC, el modo web y el bot
+#: de Telegram, y con ellos el PostgreSQL compartido y el esquema duplicado
+#: que había que mantener a mano en dos repos. Una app, una base, un dueño.
 
 # The database file on mobile. Deliberately at the root of the app's storage and
 # NOT under `assets/`: Flet serves `assets/` over HTTP in web mode, so a database
@@ -158,9 +147,12 @@ def _forced_sqlite() -> str | None:
 
 
 def resolve_db_url(db_url: str | None = None) -> str:
-    """Explicit URL > `DATABASE_URL` > SQLite on Android > PostgreSQL.
+    """URL explícita > `DATABASE_URL` > el SQLite de este dispositivo.
 
-    See the module docstring for why the order is what it is.
+    `DATABASE_URL` sobrevive a la jubilación del PC porque los tests la usan
+    para apuntar a un fichero temporal, y porque una app que no deja decir
+    "usa ESTA base" es una app que no se puede depurar. Ya no apunta a ningún
+    PostgreSQL: no queda nadie con quien compartir.
     """
     if db_url:
         return db_url
@@ -170,9 +162,7 @@ def resolve_db_url(db_url: str | None = None) -> str:
     forced = _forced_sqlite()
     if forced:
         return forced
-    if running_on_android():
-        return sqlite_url(sqlite_path())
-    return DEFAULT_URL
+    return sqlite_url(sqlite_path())
 
 
 def is_sqlite_url(db_url: str) -> bool:

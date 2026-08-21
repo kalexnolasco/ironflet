@@ -21,34 +21,30 @@ Two helpers that survived the old i18n purge and are **not** translation:
 - `exercises.py` — `exercise_key()` (the DB key contract, see below) and `phase_color()`.
 - `dates.py` — `day_name(idx)`, `month_name(idx)`, `weekday_label(idx)` and the `DAYS`/`MONTHS`/`WEEKDAYS` arrays — Spanish, lowercase on purpose ("jue, 20 ago"; capitalising them is the anglicism). Not in `data.py`, not in `home.py`.
 
-**Storage is PostgreSQL on the PC, SQLite on the phone.** On the PC the database is shared with a Telegram coaching bot in `../agente/`, so both write the same training history, nutrition log and user routines — the app needs it reachable (see Storage below). The sideloaded APK runs on its **own SQLite file** (`is_sqlite_url()` is the backend question everywhere it matters: reminders delivery, `proxima` ownership, backups are how data crosses between the two islands).
+**Storage is one SQLite file, on the phone.** As of 0.13 this is a phone-only app: the PC build, the web mode and the Telegram bot in `../agente/` were all retired, and with them the shared PostgreSQL, the hand-mirrored schema across two repos, and the rule about who may advance `recordatorios.proxima`. One app, one database, one owner.
+
+What that retirement removed, so nobody re-adds it by pattern-matching old docs:
+
+- No `DATABASE_URL` pointing at a server, no `docker compose`, no `psycopg`.
+- No `IRONFLET_WEB`, no `flet[all]`, no vendored CanvasKit, no `scripts/vendor_canvaskit.py`, no systemd units.
+- No cross-repo schema mirror and no `agente/tests/test_modelos_espejo.py` to keep in sync.
+- **No skipped tests.** The suite used to skip 211 of them — everything touching storage — on any machine without a live server. They all run now, on the same engine the phone uses.
 
 ## Commands
 
 ```bash
-# Desktop (default)
-flet run                  # or: python main.py
-
-# Web browser mode — loopback by default, port 8550
-IRONFLET_WEB=1 python main.py
-```
-
-Web mode binds `IRONFLET_HOST` (default `127.0.0.1`) on `IRONFLET_PORT` (default `8550`). Both are overridable so a second instance can run for testing without stopping the `ironflet-web` systemd unit. Nothing here is meant to be reachable from the network.
-
-Use the Makefile rather than raw commands:
-
-```bash
-make deps     # uv sync --group dev, THEN scripts/vendor_canvaskit.py (order matters)
+make deps     # uv sync --group dev
 make check    # lint + test, exactly what CI runs
-make test     # .venv/bin/python -m pytest -q
+make test     # the whole suite on SQLite — no Docker, nothing skipped
 make fmt      # ruff format + ruff check --fix
-make run      # IRONFLET_WEB=1 python main.py
-make deploy   # stops bot+panel, restarts ironflet-web, starts them back
+make run      # the app on the desktop, against the local SQLite. Development only.
+make apk      # rm -rf build && flet build apk -v (all three ABIs)
+make install  # adb install -r build/apk/app-release.apk
 ```
 
-`make deps` order is load-bearing: CanvasKit's ~12 MB of assets are not a Python package — `scripts/vendor_canvaskit.py` fetches them into the *installed* `flet_web` and patches `flutter_bootstrap.js`. Any reinstall of `flet_web` wipes both and the app silently goes back to downloading CanvasKit from Google, which fails in a gym with no signal.
-
-`make deploy` stops `entrenador-bot` and `entrenador-panel` first on purpose: they hold live SQLAlchemy pools against the shared database, and a schema change would take an ACCESS EXCLUSIVE lock that blocks their next query.
+`make apk` deletes `build/` first and that is not tidiness: deleting only
+`build/flutter` leaves flet with half a state and it dies on a
+`FileNotFoundError` that names the directory rather than the problem.
 
 CI (`.github/workflows/ci.yml`) runs, on Python 3.12:
 
@@ -56,7 +52,7 @@ CI (`.github/workflows/ci.yml`) runs, on Python 3.12:
 uv sync --group dev
 uv run ruff check .
 uv run ruff format --check .
-uv run pytest -q          # 1737 tests
+uv run pytest -q          # 1716 tests, 1 skipped (a network test, opt-in)
 ```
 
 ## Architecture
@@ -105,11 +101,9 @@ Every one of the ten view classes implements:
 
 ### Storage
 
-`storage.py` uses **SQLAlchemy 2.x over PostgreSQL 17**. The URL comes from `DATABASE_URL`, falling back to `postgresql+psycopg://entrenador@127.0.0.1:5432/entrenador`. The container is defined in `../docker-compose.yml` and listens on loopback only.
+`storage.py` uses **SQLAlchemy 2.x over one SQLite file**. `resolve_db_url()` decides: an explicit argument, then `DATABASE_URL` (which the tests use to name a temporary file — an app that cannot be told "use THIS database" cannot be debugged), then `sqlite_path()`. On Android that is the app's private storage; on the desktop, next to the project.
 
-```bash
-cd .. && docker compose up -d
-```
+SQLAlchemy is overkill for one SQLite and stays anyway: it is written, tested and costs nothing, and rewriting it to raw `sqlite3` would trade working code for code that needs re-proving. What is NOT optional is `create_db_engine`'s tuning — SQLite ships foreign keys **disabled**, and this schema has real `ON DELETE` cascades. A test fixture that built its engine with a bare `create_engine()` is exactly how a food-log row survived pointing at a deleted food; the fixture now goes through `create_db_engine` like the app does.
 
 Views never touch the ORM; they go through `Storage` methods and the module-level facades in `nutrition.py` / `routine_builder.py`. Tables are created via `Base.metadata.create_all` on every `Storage()` instantiation. **Thirteen tables are declared on this repo's side**, spread over three modules that all share `storage.Base`:
 
@@ -118,7 +112,7 @@ Views never touch the ORM; they go through `Storage` methods and the module-leve
 - `pesos` — body weight, one row per day (the date is the primary key, so a second weigh-in corrects the first instead of duplicating it).
 - `perfil` — single row (id = 1) with name, birthdate, height, sex, activity level.
 - `preferencias` — key-value store (`get_pref`, `set_pref`). Holds `routine`, the workout draft, and the coach's settings.
-- `fotos` — one progress photo per day (date PK). The row stores a bare FILENAME resolved against `fotos.directorio()`; the JPEG bytes live on disk, compressed by `fotos.guardar()` (Pillow, ≤1600 px). Backups carry the metadata; the bytes travel in the separate photos zip (`fotos.exportar_zip`). Mirrored in the bot's `modelos.py` like every shared table.
+- `fotos` — one progress photo per day (date PK). The row stores a bare FILENAME resolved against `fotos.directorio()`; the JPEG bytes live on disk, compressed by `fotos.guardar()` (Pillow, ≤1600 px). Backups carry the metadata; the bytes travel in the separate photos zip (`fotos.exportar_zip`).
 
 ##### `SECRET_PREF_KEYS` — the prefs that must never leave the device
 
@@ -132,27 +126,22 @@ Adding a pref that holds a secret means adding it to that tuple. Nothing warns y
 
 `routine_builder.py` — `user_routines`, `user_routine_phases`, `user_routine_days`, `user_routine_exercises`. Declared on `storage.Base`, but `ensure_tables(store)` also runs `create_all` lazily (guarded by a `WeakSet` of engines) because `Storage.__init__` may fire before this module is imported.
 
-#### THE CRITICAL RULE: the schema is duplicated by hand
+#### Migrations: `create_all()` will not add a column
 
-The database is one, but the SQLAlchemy models exist **twice**: here, and in `../agente/entrenador/modelos.py`, which mirrors all twelve tables (plus six of its own: `recordatorios`, `medidas`, `adherencia`, `sesiones`, `checkins`, `conversacion`).
+**Nobody runs migrations.** `Storage()` calls `create_all()` at start-up, which creates missing *tables* and **never touches a table that already exists**. That is the sharp edge, and it bit once: `entrenos.nota` worked on every fresh database — every test, every clean install — and broke every database already out there, on the first read. On a desktop that is one `ALTER TABLE`; **on the phone there is no console**, the APK's SQLite file survives app updates, and the only other route was export/uninstall/reinstall/restore.
 
-**Nobody runs migrations.** Each program calls `create_all()` at start-up and whichever arrives first creates the table. If the two declarations differ, `create_all` neither detects nor repairs it — it stays silent, and the other process dies later with an `UndefinedColumn` halfway through a query.
+So `storage.add_missing_columns()` runs right after `create_all()`. Deliberately narrow, because a migration that guesses is worse than none — it **only ADDs**, never drops, renames or retypes, and it **skips `NOT NULL` and `server_default` columns** rather than half-applying them, because those need a considered migration. `tests/test_column_migration.py` builds a pre-notes database on purpose: the rest of the suite is blind to this by construction, since a fresh database is exactly the case that never breaks.
 
-**`create_all()` does not add columns to a table that already exists.** This is the sharper half of the same edge and it bit once already: `entrenos.nota` worked on every fresh database — every test, every clean install — and broke every database that was already out there, on the first read. On the PC that is one `ALTER TABLE`; **on the phone there is no console**, the APK's SQLite file survives app updates, and the only other route was export/uninstall/reinstall/restore.
+Adding a `NOT NULL` column still needs a hand-written migration, and the app will fail loudly until it exists.
 
-So both programs run an additive migration right after `create_all()`: `storage.add_missing_columns()` and its mirror `modelos.anadir_columnas_que_faltan()`. Deliberately narrow, because a migration that guesses is worse than none — it **only ADDs**, never drops, renames or retypes, and it **skips `NOT NULL` and `server_default` columns** rather than half-applying them, because those need a considered migration. `tests/test_column_migration.py` builds a pre-notes database on purpose: the rest of the suite is blind to this by construction, since a fresh database is exactly the case that never breaks.
+Until 0.12 this section opened with a harder rule — the schema was declared **twice**, here and in the bot's `modelos.py`, and a column changed on one side only would take the other process down mid-query. That is gone with the bot: one declaration, one database. The migration discipline above stays, because it was never about the mirror.
 
-Adding a `NOT NULL` column still needs a hand-written migration in both repos, and the app will fail loudly until it exists.
+Other rules that outlived the shared database:
 
-So: **change a column here, change it there in the same commit.** This is now watched by `../agente/tests/test_modelos_espejo.py`, which compares *metadata* — columns, types, nullability, defaults, primary keys, foreign keys with their ON DELETE, unique constraints and indexes — for every table present on both sides, and asserts no app table is left undeclared in the bot. When it fails, sync the two files. Never relax the comparison.
-
-Other consequences of the shared database:
-
-- Keep set dicts open to extra keys. Anything reading sets must tolerate keys it does not know, and must not rewrite rows it did not create.
+- Keep set dicts open to extra keys. Anything reading sets must tolerate keys it does not know, and must not rewrite rows it did not create — old rows from the bot era have no `"type"` and are real work.
 - `delete_weight()` takes the **date**, not a numeric id: one weigh-in per day.
 - **`entrenos.grupo` holds the routine *day's* name, not a catalogue group.** `views/workout.py` writes `muscle_group=day.name` — "Chest-Biceps", "Shoulder-Leg". Anything else writing a row must use the same vocabulary (`agent.muscle_group_for()` does); the column takes any string, so a second vocabulary raises nothing and just groups the same session twice in History. Metrics are unaffected — `analytics.resolve_muscles()` goes through `exercise_details.py`, never this column.
 - **`save_workout()` always INSERTs; `replace_workout()` is the upsert.** There is no unique constraint on `(fecha, ejercicio)` — a superset legitimately writes two rows under different names — so a second save of the same exercise on the same day silently doubles every metric that sums it. The training screen owns the session it writes and calls `save_workout()`; anything re-submittable (the coach's confirmation card, where Alex can Save, spot a typo and Save again) must call `replace_workout()`.
-- Rows written by the bot have no `"type"` on their sets. They are real work; treating an untyped set as anything but normal rewrites history.
 
 #### Metrics live in analytics.py
 
@@ -173,7 +162,7 @@ None of them import Flet or open a database on import: plain data in, plain data
 - **Targets are versioned by start date**, never overwritten; `targets_for(day)` picks the newest row already in effect. The plan changes intake mid-course, and a mutable row would retroactively falsify past adherence.
 - Everything is per 100 g on the **European label convention**: `carbs` excludes fibre. USDA "carbohydrate, by difference" includes it — subtract fibre before copying a USDA number in, or carb totals come out ~10 % high.
 
-**`set_types.py`** — `SetType` (`warmup` / `normal` / `drop` / `failure`), stored under the optional `"type"` key, plus automatic rest. `parse_set_type`, `set_type_of`, `counts_as_work`, `working_sets`, `warmup_sets`, `count_by_type`, `tag_set`, `label_for`, `next_set_type`; rest via `parse_prescribed_rest`, `rest_seconds`, `rest_seconds_for_phase`, `format_rest`, `is_compound`. Two rules: **absent `"type"` means normal** (every pre-existing row, and everything the bot writes, has no type and is real work), and **only warm-ups are discounted** — a drop set and a set to failure are work; the label says *how*, not *whether*. Rest defaults (`REST_COMPOUND_S = 180`, `REST_ISOLATION_S = 90`) must match `../agente/entrenador/sesion_viva.py::descanso_de`; `tests/test_set_types.py` loads the coach's constants and compares, so a divergence fails a test instead of showing Alex two different rests.
+**`set_types.py`** — `SetType` (`warmup` / `normal` / `drop` / `failure`), stored under the optional `"type"` key, plus automatic rest. `parse_set_type`, `set_type_of`, `counts_as_work`, `working_sets`, `warmup_sets`, `count_by_type`, `tag_set`, `label_for`, `next_set_type`; rest via `parse_prescribed_rest`, `rest_seconds`, `rest_seconds_for_phase`, `format_rest`, `is_compound`. Two rules: **absent `"type"` means normal** (every pre-existing row, and everything the bot writes, has no type and is real work), and **only warm-ups are discounted** — a drop set and a set to failure are work; the label says *how*, not *whether*. Rest defaults (`REST_COMPOUND_S = 180`, `REST_ISOLATION_S = 90`) used to be mirrored in the retired bot's `sesion_viva.py`, and `tests/test_set_types.py` still compares against it **when that file happens to be on disk** (`skipif` otherwise). With the bot gone these are the only definition; the comparison is a leftover that costs nothing and will skip itself the day `../agente/` is deleted.
 
 **`gym_tools.py`** — the barbell arithmetic. `plate_breakdown` (which plates per side, honest about a target that cannot be assembled: `exact`, `delta`, `describe()`), `loadable_options` (the nearest assemblable weights *with* their breakdowns — what the set row shows), `round_to_loadable`, `warmup_plan` (percentage ramp, every rung a weight the room can actually build), `bar_for_exercise` (the EZ bar is 7.5 kg, not 20), `percentage_table` / `weight_for_reps` / `predicted_reps`. Two rules: the inventory is counted in **pairs**, because a widowed 20 kg plate cannot be loaded; and the internal arithmetic is in integer centi-kilos, because `2.5 + 1.25 + 1.25` in binary float stops being 5.0 after a few additions and the solver compares totals.
 
@@ -203,7 +192,7 @@ When adding a routine: append to `ROUTINES`, keep exercise names spelled exactly
 Why it matters:
 
 - **219 distinct routine strings across the four routines collapse into exactly 100 keys.** That collapse *is* the progression: `Squat [4×8-10]` in phase 2 and `Squat [5×5]` in phase 6 are the same exercise and must aggregate into one history.
-- **The Telegram coach writes the same column.** Its 28 exercises in `../agente/entrenador/entrenos.py` (`EJERCICIOS`, via `a_canonico()`) all resolve to keys this function produces.
+- **It used to be a cross-program contract.** The retired Telegram bot wrote the same column, and `tests/test_exercise_key.py` still checks its 28 exercises resolve to keys this function produces — `skipif` when `../agente/` is not there. The contract is dead; the normalisation rule it protected is not.
 
 If the normalisation drifts, **nothing raises**. Rows simply stop matching: the app writes one key, the bot another, and the history the whole plan depends on quietly splits in two.
 
@@ -328,46 +317,43 @@ Composite/superset names (containing `+`, or prefixed `Bi-set:` / `SS:` / `Trise
 Things that break quietly if you do not know them:
 
 1. **Renumbering views.** `home.py` hardcodes `navigate_to(2)` and `navigate_to(5)`. Reorder `view_list` and the app navigates to the wrong screen with no error. Add to the end; adjust `NAV_TABS`, never the indices.
-2. **Editing a model on one side only.** See the critical rule above. `create_all()` will not save you; `agente/tests/test_modelos_espejo.py` will.
-3. **Touching `exercise_key()` normalisation.** Silent history split, no exception. Frozen in tests for exactly this reason.
-4. **Assuming set keys exist.** `"rir"` and `"type"` are both optional and both absent on everything the bot writes.
-5. **Treating an untyped set as a warm-up.** Absent means *normal*. The inverse rewrites Alex's tonnage.
-6. **Writing a hex in a view**, or reintroducing a module-level colour constant. Both bypass the palette and break dark mode.
-7. **Reimplementing a metric in a view.** `analytics.py` is the single implementation; `storage.py` only fetches rows and supplies arguments.
-8. **Expecting `get_streak()` in days.** It is weeks.
-9. **Rebinding `data.ROUTINES`** instead of slice-assigning. `views/plan.py` holds a reference to the list object.
-10. **Editing rest defaults on one side.** `set_types.REST_COMPOUND_S` / `REST_ISOLATION_S` must match the coach's `sesion_viva.py`.
-11. **`uv sync` after `vendor_canvaskit.py`.** It reinstalls `flet_web` and wipes the vendored CanvasKit. Run `make deps`, which orders them correctly.
-12. **Schema changes while the bot is running.** Stop `entrenador-bot` and `entrenador-panel` first (`make deploy` does).
-13. **Importing anything from `../agente/`** in a test. `entrenador.config` loads the production `.env` and puts real credentials and the production `DATABASE_URL` in the environment. Parse the file with `ast`, as `tests/test_exercise_key.py` does.
-14. **Using `image_for()` in a view.** Correct on the PC, blank on the phone. Views call `image_props()`; see the delivery note above.
-15. **An `ft.Image` thumbnail without `cache_width`/`cache_height`.** Draws small, decodes huge.
-16. **Building the APK from a clean git worktree.** `assets/exercises/` is gitignored, so the worktree has no frames — which is fine (they download at runtime) but means the build cannot be used to check anything about images.
-17. **Reading `get_last_sets()` without a date while back-dating.** It returns the newest row in the table, so logging Monday on Wednesday prefills from Wednesday. Pass `before=` the date being logged.
-18. **Giving the coach a tool that writes.** The whole safety story of that feature is that no tool can reach the database — a *proposal* goes on screen and Alex's tap is what writes. One helpful tool that saves directly deletes the guarantee, and nothing fails.
-19. **Adding a pref that holds a secret without listing it in `SECRET_PREF_KEYS`.** Both exporters copy `preferencias` verbatim into a file people mail themselves.
-20. **Calling `save_workout()` from anything re-submittable.** It always INSERTs. Use `replace_workout()`; see the note in Storage.
-21. **Reading `function.arguments` as an object.** OpenRouter sends it as a JSON **string**. Parse it, or every tool runs with no arguments and the coach reports that it cannot find the exercise — which reads like a matching bug, not a parsing one.
-22. **Putting the system prompt in a top-level `system` field.** That is the Anthropic shape. OpenRouter ignores it, and you get a coach with no instructions rather than an error.
-23. **Restricting `target_arch` to two architectures.** serious_python packages `libpythonsitepackages.so` for the **first entry only**, so `["arm64-v8a", "x86_64"]` ships an x86_64 slice with a CPython and no site-packages. The build reports success and the app opens on *"ModuleNotFoundError: No module named 'certifi'"*. All three, or exactly one. See the note in `[tool.flet.android]`.
-24. **Trusting logcat to tell you the app crashed.** Flet renders a Python traceback *into the UI*, so `adb logcat | grep Traceback` comes back empty while the phone shows a purple error page. Screenshot the thing.
-25. **Writing `proxima` from the app on PostgreSQL.** That column is the bot's
-    cursor there; `notificaciones.sync()` refreshes it **only under SQLite**. A
-    second writer on the shared table is how one reminder fires twice.
-26. **Translating a data-contract string.** Exercise names/keys, `TrainingDay.name`
+2. **Touching `exercise_key()` normalisation.** Silent history split, no exception. Frozen in tests for exactly this reason.
+3. **Assuming set keys exist.** `"rir"` and `"type"` are both optional and both absent on every row written before they existed — and on everything the retired bot wrote.
+4. **Treating an untyped set as a warm-up.** Absent means *normal*. The inverse rewrites Alex's tonnage.
+5. **Writing a hex in a view**, or reintroducing a module-level colour constant. Both bypass the palette and break dark mode.
+6. **Reimplementing a metric in a view.** `analytics.py` is the single implementation; `storage.py` only fetches rows and supplies arguments.
+7. **Expecting `get_streak()` in days.** It is weeks.
+8. **Rebinding `data.ROUTINES`** instead of slice-assigning. `views/plan.py` holds a reference to the list object.
+9. **Rest defaults have no second copy any more.** `set_types.REST_COMPOUND_S` / `REST_ISOLATION_S` used to be mirrored in the bot's `sesion_viva.py` and a test compared them. The bot is gone; these are now the only definition.
+10. **Using `image_for()` in a view.** Blank on the phone — the APK cannot resolve an assets URL. Views call `image_props()`; see the delivery note above.
+11. **An `ft.Image` thumbnail without `cache_width`/`cache_height`.** Draws small, decodes huge.
+12. **Building the APK from a clean git worktree.** `assets/exercises/` is gitignored, so the worktree has no frames — which is fine (they download at runtime) but means the build cannot be used to check anything about images.
+13. **Reading `get_last_sets()` without a date while back-dating.** It returns the newest row in the table, so logging Monday on Wednesday prefills from Wednesday. Pass `before=` the date being logged.
+14. **Giving the coach a tool that writes.** The whole safety story of that feature is that no tool can reach the database — a *proposal* goes on screen and Alex's tap is what writes. One helpful tool that saves directly deletes the guarantee, and nothing fails.
+15. **Adding a pref that holds a secret without listing it in `SECRET_PREF_KEYS`.** Both exporters copy `preferencias` verbatim into a file people mail themselves.
+16. **Calling `save_workout()` from anything re-submittable.** It always INSERTs. Use `replace_workout()`; see the note in Storage.
+17. **Reading `function.arguments` as an object.** OpenRouter sends it as a JSON **string**. Parse it, or every tool runs with no arguments and the coach reports that it cannot find the exercise — which reads like a matching bug, not a parsing one.
+18. **Putting the system prompt in a top-level `system` field.** That is the Anthropic shape. OpenRouter ignores it, and you get a coach with no instructions rather than an error.
+19. **Restricting `target_arch` to two architectures.** serious_python packages `libpythonsitepackages.so` for the **first entry only**, so `["arm64-v8a", "x86_64"]` ships an x86_64 slice with a CPython and no site-packages. The build reports success and the app opens on *"ModuleNotFoundError: No module named 'certifi'"*. All three, or exactly one. See the note in `[tool.flet.android]`.
+20. **Trusting logcat to tell you the app crashed.** Flet renders a Python traceback *into the UI*, so `adb logcat | grep Traceback` comes back empty while the phone shows a purple error page. Screenshot the thing.
+21. **Assuming a second writer on the database.** There is none any more: the
+    app is alone with its SQLite. `notificaciones.sync()` refreshing `proxima`
+    used to be gated on the backend for that reason; the gate can stay, the
+    fear behind it is gone.
+22. **Translating a data-contract string.** Exercise names/keys, `TrainingDay.name`
     (→ `entrenos.grupo`), set-type keys, phase `scheme`/`rest`. The UI is Spanish;
     those are not UI. See the Project section's list before touching any literal.
-27. **Bumping `flutter_local_notifications` or `timezone` separately in the
+23. **Bumping `flutter_local_notifications` or `timezone` separately in the
     template's pubspec.** They are a matched pair (fln 19 ⇢ timezone ^0.10; fln
     18 ⇢ ^0.9). Mismatch them and pub does not error — it silently resolves fln
     down to some ancient version whose API breaks `main.dart` at compile time
     ("uiLocalNotificationDateInterpretation must be provided" = you got fln ≤18).
-28. **Adding phase prose only one parser understands.** `parse_rir`,
+24. **Adding phase prose only one parser understands.** `parse_rir`,
     `parse_prescribed_step` and `_DELOAD_MARKS` are bilingual (es/en). New
     Spanish phrasing that no regex matches doesn't raise — the RIR target or the
     prescribed step just silently vanishes. `tests/test_progression.py` pins the
     shipped phases.
-29. **Adding a package to `[project] dependencies` that carries compiled code.** That list is pip-installed into the APK against `pypi.flet.dev`. The list is currently free of third-party binaries and that is worth keeping: it means no upgrade can be blocked by a missing wheel for an ABI almost nobody targets. If you must, check for a `cp312-…-android_24_arm64_v8a` wheel there *first* and pin so the resolver cannot wander off it.
+25. **Adding a package to `[project] dependencies` that carries compiled code.** That list is pip-installed into the APK against `pypi.flet.dev`. The list is currently free of third-party binaries and that is worth keeping: it means no upgrade can be blocked by a missing wheel for an ABI almost nobody targets. If you must, check for a `cp312-…-android_24_arm64_v8a` wheel there *first* and pin so the resolver cannot wander off it.
 
 ### Flet version caveat
 
@@ -375,14 +361,14 @@ Pinned to `flet[all]>=0.25,<0.30` — `flet[all]`, not plain `flet`, because web
 
 ## Tests
 
-`.venv/bin/python -m pytest -q` — **1737 tests**, `testpaths = ["tests"]`, `asyncio_mode = "auto"`:
+`.venv/bin/python -m pytest -q` — **1716 tests**, `testpaths = ["tests"]`, `asyncio_mode = "auto"`:
 
-`test_agent.py`, `test_analytics.py`, `test_asset_manager.py`, `test_backup.py`, `test_chart_baseline.py`, `test_column_migration.py`, `test_dialog_layout.py`, `test_draft_dates.py`, `test_draft_substitution.py`, `test_exercise_images.py`, `test_exercise_key.py`, `test_flet_reconnect.py`, `test_fotos.py`, `test_gcal.py`, `test_gym_tools.py`, `test_health.py`, `test_help_dialog.py`, `test_history_notes.py`, `test_history_view.py`, `test_home_view.py`, `test_image_delivery.py`, `test_notificaciones.py`, `test_nutrition.py`, `test_nutrition_view.py`, `test_percent_table.py`, `test_prefill_por_fecha.py`, `test_profile_db_down.py`, `test_program_week.py`, `test_progression.py`, `test_routine_builder.py`, `test_session_duration.py`, `test_session_plan.py`, `test_set_types.py`, `test_shared_ui.py`, `test_smoke.py`, `test_sqlite_backend.py`, `test_storage_metrics.py`, `test_substitutions.py`, `test_theme.py`, `test_timer_sound.py`, `test_weight_trend.py`, `test_workout_date.py`, `test_workout_draft.py`, `test_workout_exercise_date.py`, `test_workout_notes.py`, `test_workout_notes_swap.py`, `test_workout_plan_rows.py`, `test_workout_resume.py`, `test_workout_session_time.py`, `test_workout_tools.py`, `test_workout_zen.py`.
+`test_agent.py`, `test_analytics.py`, `test_asset_manager.py`, `test_backup.py`, `test_chart_baseline.py`, `test_column_migration.py`, `test_day_screen.py`, `test_dialog_layout.py`, `test_draft_dates.py`, `test_draft_substitution.py`, `test_exercise_images.py`, `test_exercise_key.py`, `test_flet_reconnect.py`, `test_fotos.py`, `test_gcal.py`, `test_gym_tools.py`, `test_health.py`, `test_help_dialog.py`, `test_history_notes.py`, `test_history_view.py`, `test_home_view.py`, `test_image_delivery.py`, `test_notificaciones.py`, `test_nutrition.py`, `test_nutrition_view.py`, `test_percent_table.py`, `test_prefill_por_fecha.py`, `test_profile_db_down.py`, `test_program_week.py`, `test_progression.py`, `test_routine_builder.py`, `test_session_duration.py`, `test_session_plan.py`, `test_set_types.py`, `test_shared_ui.py`, `test_smoke.py`, `test_sqlite_backend.py`, `test_storage_metrics.py`, `test_substitutions.py`, `test_theme.py`, `test_timer_sound.py`, `test_weight_trend.py`, `test_workout_date.py`, `test_workout_draft.py`, `test_workout_exercise_date.py`, `test_workout_notes.py`, `test_workout_notes_swap.py`, `test_workout_plan_rows.py`, `test_workout_resume.py`, `test_workout_session_time.py`, `test_workout_tools.py`, `test_workout_zen.py`.
 
-Without `DATABASE_URL` the run is `1513 passed, 211 skipped`: the skips are every test that needs PostgreSQL. Judge a run by the skip count, not the pass count — a green suite that skipped 211 tests has verified nothing about storage. With the database up it is `1736 passed, 1 skipped`.
+A clean run is `1716 passed, 1 skipped` and needs **nothing installed but the dev group** — no Docker, no server. The single skip is a network test in `test_asset_manager.py` (opt in with `IRONFLET_NETWORK_TESTS=1`). Until 0.12 this section warned to judge a run by its skip count, because 211 tests — everything touching storage — skipped silently without PostgreSQL; that trap is gone with the server.
 
-`tests/conftest.py` gives each pytest process its own database (`ironflet_test_<pid>`), created and dropped per run, because the fixtures wipe rows and two concurrent runs used to delete each other's data mid-query — red runs with a different set of failures each time, in files unrelated to whatever was being changed.
+`tests/conftest.py` gives each pytest process its own SQLite file in the system temp dir, for the same reason it used to create a database per pid: the fixtures wipe rows, and two concurrent runs deleting each other's data mid-query produced red runs with a different set of failures each time, in files unrelated to whatever was being changed.
 
 `test_agent.py` is deliberately the one file that never needs either: SQLite in `tmp_path` and a stubbed model, because a suite that needs a paid API is a suite that stops being run.
 
-The bot's suite in `../agente/` (**117 tests**, pytest available there via its own `requirements-dev.txt`) includes `test_modelos_espejo.py`, the cross-repo schema guard. Anything that changes a shared table must be run against both.
+There is no second suite to run any more. The bot's 117 tests in `../agente/` still exist on disk but guard a program that no longer runs, and nothing in this repo depends on them.

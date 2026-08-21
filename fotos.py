@@ -27,6 +27,7 @@ de las fotos tumbadas parece rota. ~10 MB de cámara quedan en ~200-400 KB.
 
 from __future__ import annotations
 
+import contextlib
 import io
 import os
 import zipfile
@@ -132,10 +133,8 @@ def borrar(store: Any, on_date: date | str, base: Path | None = None) -> bool:
         return False
     if fila:
         ruta = (base or directorio()) / fila["file"]
-        try:
+        with contextlib.suppress(OSError):
             ruta.unlink(missing_ok=True)
-        except OSError:
-            pass
     return True
 
 

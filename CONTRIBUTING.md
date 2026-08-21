@@ -7,41 +7,38 @@ aportaciones son bienvenidas.
 
 Tres cosas que condicionan casi todo lo demás:
 
-- **Solo inglés.** No hay capa de traducción. `i18n.py` se eliminó y con él
-  `t()`, `t_exercise()`, `t_muscle()`, el diccionario `ES` y el selector de
-  idioma. Todo el texto visible es un literal en inglés escrito en la vista.
-- **Tema claro, fijo.** `theme.LIGHT` es el que se aplica. `DARK` existe en el
-  código y también cumple AA, pero no hay ningún botón para cambiarlo.
-- **Necesita base de datos.** El almacenamiento es PostgreSQL 17 con SQLAlchemy
-  2.x, no SQLite, y la base **se comparte** con el bot de Telegram de
-  `../agente/`. Sin el contenedor levantado la app no arranca.
+- **Todo en español.** No hay capa de traducción: cada texto visible es un
+  literal español escrito en la vista. Lo que NO se traduce, porque es
+  contrato de datos y no interfaz: nombres de ejercicios y sus claves, los
+  nombres de día que van a `entrenos.grupo`, las claves de tipo de serie y las
+  cadenas `scheme`/`rest` de las fases.
+- **Tres temas**, elegibles en Ajustes → Apariencia. Ninguna vista escribe un
+  color: todo pasa por el proxy `C`, y por eso cambiar de tema reviste las
+  once pantallas de golpe.
+- **No necesita nada levantado.** El almacenamiento es un fichero SQLite y los
+  tests crean el suyo en el temporal. Hasta 0.12 esto pedía PostgreSQL en
+  Docker y compartía base con el bot de Telegram; en 0.13 se jubilaron los dos.
 
 ## Setup
 
 ```bash
 git clone https://github.com/kalexnolasco/ironflet
 cd ironflet
-make deps                        # uv sync --group dev + vendor de CanvasKit
-uv run pre-commit install        # instala hook de lint + formato
+make deps                        # uv sync --group dev
+uv run pre-commit install        # hook de lint + formato
 ```
 
-Usa `make deps`, no `uv sync` a secas: **el orden importa**. Los ~12 MB de
-CanvasKit no son un paquete de Python — los baja `scripts/vendor_canvaskit.py`
-dentro del `flet_web` ya instalado y parchea `flutter_bootstrap.js`. Cualquier
-reinstalación de `flet_web` borra las dos cosas y la app vuelve, en silencio, a
-descargar CanvasKit de Google.
-
-Levanta la base antes de ejecutar o testear nada:
+Y ya está: no hay contenedor que levantar ni assets que vendorizar.
 
 ```bash
-cd .. && docker compose up -d
+make check     # lint + los 1716 tests
+make run       # la app en el escritorio, contra un SQLite local
+make apk       # el APK (las tres ABIs)
+make install   # adb install al dispositivo conectado
 ```
 
-Para arrancar la app en modo web (que es como se usa de verdad):
-
-```bash
-make run                         # IRONFLET_WEB=1, escucha en 127.0.0.1:8550
-```
+`make run` en el escritorio sirve para mirar pantallas mientras desarrollas.
+La app de verdad es la APK.
 
 ## Flujo de trabajo
 
@@ -53,34 +50,20 @@ make run                         # IRONFLET_WEB=1, escucha en 127.0.0.1:8550
    ```
 4. Abre el PR contra `main` con una descripción clara del cambio.
 
-### Cuidado: hay tests que se saltan solos
+### La suite no se salta nada
 
-La suite son **340 pruebas**, pero 102 de ellas necesitan una base de datos y,
-si no la encuentran, se **saltan en silencio**. Sin nada en el entorno verás:
+Son **1716 pruebas** y corren todas con `make test`, sin Docker y sin
+variables de entorno. `tests/conftest.py` le da a cada proceso su propio
+fichero SQLite en el temporal.
 
-```
-238 passed, 102 skipped
-```
-
-Eso parece verde y no ha probado nada de nutrición, almacenamiento ni editor de
-rutinas. **Mira siempre el número de `skipped`, no el de `passed`.**
-
-Las pruebas buscan primero `TEST_DATABASE_URL`; si no está, derivan la base de
-`DATABASE_URL` cambiándole el nombre a `entrenador_test`. En ninguno de los dos
-casos tocan datos reales. Levanta el contenedor y pásales una de las dos:
+Hasta 0.12 esta sección avisaba de lo contrario: 102 pruebas —y luego 211—
+necesitaban PostgreSQL y **se saltaban en silencio** si no lo encontraban, así
+que un `238 passed, 102 skipped` parecía verde sin haber probado nada de
+almacenamiento. Ese riesgo se fue con el servidor. La única que sigue
+saltándose es un test de red en `test_asset_manager.py`, y hay que pedirlo:
 
 ```bash
-cd .. && docker compose up -d && cd ironflet
-export $(grep '^DATABASE_URL=' ../agente/.env | xargs) && make test
-```
-
-No des por bueno un cambio hasta que el `skipped` sea 0.
-
-Si tocas cualquier tabla compartida, ejecuta también la suite del bot, que
-incluye `test_modelos_espejo.py`, la comparación de los dos esquemas:
-
-```bash
-cd ../agente && .venv/bin/python -m pytest -q
+IRONFLET_NETWORK_TESTS=1 make test
 ```
 
 ## Estilo
@@ -95,7 +78,7 @@ cd ../agente && .venv/bin/python -m pytest -q
 
 Ninguna de estas lanza una excepción cuando la incumples. Por eso están aquí.
 
-**1. Todo el texto visible al usuario es un literal en inglés en la vista.**
+**1. Todo el texto visible al usuario es un literal en español en la vista.**
 No hay función de traducción que llamar ni diccionario al que añadir nada.
 
 **2. Ningún color hex en una vista.** Todo color sale de `from theme import C`,
@@ -109,27 +92,30 @@ en las dos paletas.
 **3. Todo nombre de ejercicio que llegue a la base pasa por `exercise_key()`**
 (`exercises.py`). Convierte `"Squat [5×12,10,8,8,8]"` en `"Squat"`, y ese nombre
 pelado **es** la clave con la que se guarda cada serie en `entrenos.ejercicio`.
-El bot de Telegram escribe esa misma columna con su propio `a_canonico()`. Si la
-normalización cambia, no salta nada: las filas simplemente dejan de cuadrar, la
-app escribe una clave y el bot otra, y el historial del que depende todo el plan
-se parte en dos. Congelado en `tests/test_exercise_key.py` (282 cadenas de
-rutina colapsan en exactamente 104 claves). Un fallo ahí es un incidente de
+Si la normalización cambia, no salta nada: las filas simplemente dejan de
+cuadrar con las ya guardadas y el historial del que depende todo el plan se
+parte en dos. Congelado en `tests/test_exercise_key.py` (282 cadenas de rutina
+colapsan en exactamente 104 claves). Un fallo ahí es un incidente de
 integridad de datos, no una nota de formato.
 
-**4. Un cambio de esquema se hace a la vez aquí y en
-`../agente/entrenador/modelos.py`.** Los modelos SQLAlchemy están duplicados a
-mano. Nadie ejecuta migraciones: cada programa llama a `create_all()` al
-arrancar y crea la tabla el que llegue primero. Si las dos declaraciones
-difieren, `create_all` ni lo detecta ni lo repara — se queda callado y el otro
-proceso muere más tarde con un `UndefinedColumn` a mitad de consulta. Los dos
-ficheros, en el mismo commit. Lo vigila
-`../agente/tests/test_modelos_espejo.py`, que compara columnas, tipos,
-nullability, defaults, claves primarias y ajenas, constraints e índices.
+**4. `create_all()` no añade columnas a una tabla que ya existe.** Nadie
+ejecuta migraciones: `Storage()` llama a `create_all()` al arrancar, que crea
+las tablas que faltan y **no toca** las que están. Una columna nueva funciona
+en todo lo nuevo — cada test, cada instalación limpia — y revienta en el móvil
+de Alex, que es el único sitio donde hay una base vieja y no hay consola. Por
+eso `storage.add_missing_columns()` corre justo después: solo **añade**, nunca
+borra ni renombra, y se salta las columnas `NOT NULL` en vez de aplicarlas a
+medias. Una columna `NOT NULL` nueva sigue necesitando migración escrita a
+mano.
 
-Y una consecuencia de compartir base que conviene tener presente: las filas que
-escribe el bot no llevan las claves opcionales `"rir"` ni `"type"` en sus
-series. Léelas siempre con `.get()`, y trata una serie sin `"type"` como
-**normal** — nunca como calentamiento, porque eso reescribiría el tonelaje.
+Hasta 0.12 esta regla era más dura: el esquema estaba declarado **dos veces**,
+aquí y en el bot, y cambiarlo en un lado tumbaba al otro a mitad de consulta.
+Jubilado el bot, queda una sola declaración.
+
+Y una herencia de aquella época: las filas que escribió el bot no llevan las
+claves opcionales `"rir"` ni `"type"` en sus series. Léelas siempre con
+`.get()`, y trata una serie sin `"type"` como **normal** — nunca como
+calentamiento, porque eso reescribiría el tonelaje.
 
 ## Añadir una rutina nueva
 

@@ -21,7 +21,6 @@ from datetime import date, timedelta
 
 import pytest
 from sqlalchemy import delete
-from sqlalchemy.engine import make_url
 
 from storage import Entreno, Storage, WorkoutEntry
 
@@ -32,14 +31,10 @@ HOY = date.today()
 @pytest.fixture
 def store():
     """Storage with `entrenos` emptied. Same resolution as the other suites."""
-    url = os.environ.get("TEST_DATABASE_URL")
-    if not url:
-        base = os.environ.get("DATABASE_URL")
-        if not base:
-            pytest.skip("no DATABASE_URL: there is no database to test against")
-        url = make_url(base).set(database="entrenador_test").render_as_string(hide_password=False)
-    if make_url(url).database == "entrenador":
-        pytest.skip("points at the production database: leave it alone")
+    # `tests/conftest.py` da a cada proceso su propio SQLite. Antes aquí había
+    # una cadena de precedencia con PostgreSQL y dos `pytest.skip`; sin
+    # servidor al que caer, es una línea.
+    url = os.environ["TEST_DATABASE_URL"]
 
     almacen = Storage(url)
     with almacen._Session() as s:

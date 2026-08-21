@@ -41,15 +41,11 @@ def store():
     Necesita PostgreSQL en marcha (`docker compose up -d` en la raíz). La URL
     sale de TEST_DATABASE_URL, o se deriva de DATABASE_URL cambiando la base.
     """
-    from sqlalchemy.engine import make_url
 
-    url = os.environ.get("TEST_DATABASE_URL")
-    if not url:
-        base = os.environ.get("DATABASE_URL")
-        if not base:
-            pytest.skip("sin DATABASE_URL: no hay base de datos contra la que probar")
-        # render_as_string, no str(): str() enmascara la contraseña.
-        url = make_url(base).set(database="entrenador_test").render_as_string(hide_password=False)
+    # `tests/conftest.py` da a cada proceso su propio SQLite. Antes aquí había
+    # una cadena de precedencia con PostgreSQL y dos `pytest.skip`; sin
+    # servidor al que caer, es una línea.
+    url = os.environ["TEST_DATABASE_URL"]
 
     from storage import Base
 
