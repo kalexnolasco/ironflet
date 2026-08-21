@@ -70,6 +70,7 @@ VIEW_NUTRITION = 6
 #: The in-app coach. Appended after Backup (8) — indices are frozen, so a new
 #: screen goes on the end and never in the middle. See trap #1 in CLAUDE.md.
 VIEW_COACH = 9
+VIEW_PHOTOS = 10
 
 # Trailing window behind get_week_stats(); shown so the three numbers below it
 # are not read as "all time".
@@ -268,6 +269,85 @@ class HomeView:
         else:
             pie = "pesado hoy"
         return self._day_tile("PESO", valor, pie, tone=tono, on_click=lambda _: nav(VIEW_PROFILE))
+
+    def _photo_tile(self) -> ft.Control:
+        """La foto de progreso de hoy — hecha o pendiente, y la puerta a la galería.
+
+        Mismo papel que PESO y CINTURA: un hábito diario con su estado a la
+        vista. Sin foto hoy, el toque abre directamente el selector (un toque
+        menos para el hábito); con ella, abre la galería, que es donde está
+        el valor una vez la de hoy ya existe.
+        """
+        import fotos as _fotos
+
+        nav = self.page.data["navigate_to"]
+        hoy = date.today().isoformat()
+        try:
+            de_hoy = _fotos.para_fecha(self.store, hoy)
+            total = len(self.store.get_photos())
+        except Exception:
+            de_hoy, total = None, 0
+
+        vista_fotos = self.page.data.get("photos_view")
+
+        def _tap(_):
+            if de_hoy is None and vista_fotos is not None:
+                nav(VIEW_PHOTOS)
+                vista_fotos.pick_today()
+            else:
+                nav(VIEW_PHOTOS)
+
+        mini: ft.Control
+        if de_hoy and de_hoy.get("path"):
+            mini = ft.Image(
+                src=de_hoy["path"],
+                width=44,
+                height=44,
+                fit=ft.ImageFit.COVER,
+                cache_width=88,
+                border_radius=Radius.sm,
+            )
+        else:
+            mini = ft.Icon(ft.Icons.ADD_A_PHOTO_OUTLINED, color=C.text_muted, size=26)
+
+        if de_hoy:
+            titulo, tono = "Foto de hoy hecha", C.success
+            pie = f"{plural(total, 'foto')} en la galería · toca para verlas"
+        else:
+            titulo, tono = "Sin foto hoy", C.text
+            pie = (
+                "toca para añadirla — misma luz, misma pose"
+                if total == 0
+                else f"toca para añadirla · {plural(total, 'foto')} guardadas"
+            )
+
+        return ft.Container(
+            content=ft.Row(
+                [
+                    mini,
+                    ft.Column(
+                        [
+                            ft.Text(
+                                "FOTO", size=10, weight=ft.FontWeight.W_800, color=C.text_secondary
+                            ),
+                            ft.Text(titulo, size=14, weight=ft.FontWeight.W_900, color=tono),
+                            ft.Text(pie, size=10, color=C.text_secondary),
+                        ],
+                        spacing=1,
+                        expand=True,
+                    ),
+                    ft.Icon(ft.Icons.CHEVRON_RIGHT, color=C.text_muted, size=18),
+                ],
+                spacing=10,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
+            bgcolor=C.bg_surface,
+            border=ft.border.all(1, C.border),
+            border_radius=Radius.lg,
+            padding=12,
+            on_click=_tap,
+            ink=True,
+        )
 
     def _waist_tile(self) -> ft.Control:
         """Waist, its age, and how far it has drifted — with no verdict.
@@ -617,12 +697,53 @@ class HomeView:
             else "Los entrega el móvil, con la app cerrada incluso."
         )
 
+        # El puente de vuelta desde Dart: si el sistema tiene algo apagado, el
+        # sitio donde Alex lo va a buscar es exactamente este diálogo — "creo
+        # que se tiene que pedir permisos" es literalmente lo que reportó. Sin
+        # fichero de estado (PC, primer arranque) no se alarma de nada.
+        avisos_sistema: list[ft.Control] = []
+        estado = notificaciones.estado_android()
+        if estado is not None:
+            if not estado["granted"]:
+                avisos_sistema.append(
+                    ft.Container(
+                        content=ft.Text(
+                            "Las notificaciones están APAGADAS para IronFlet. "
+                            "Actívalas en Ajustes del sistema → Aplicaciones → "
+                            "IronFlet → Notificaciones, o ningún aviso sonará.",
+                            size=11,
+                            color=C.danger,
+                            weight=ft.FontWeight.W_700,
+                        ),
+                        border=ft.border.all(1, C.danger),
+                        border_radius=10,
+                        padding=10,
+                    )
+                )
+            elif not estado["exact"]:
+                avisos_sistema.append(
+                    ft.Container(
+                        content=ft.Text(
+                            "Los avisos pueden llegar con retraso: activa "
+                            "«Alarmas y recordatorios» para IronFlet en los "
+                            "Ajustes del sistema. Si tu móvil «optimiza» la "
+                            "batería de la app, quítale también esa optimización.",
+                            size=11,
+                            color=C.warning,
+                        ),
+                        border=ft.border.all(1, C.warning),
+                        border_radius=10,
+                        padding=10,
+                    )
+                )
+
         dlg = ft.AlertDialog(
             bgcolor=C.bg_surface,
             title=ft.Text("Avisos", size=16, weight=ft.FontWeight.W_900, color=C.text),
             content=ft.Container(
                 content=ft.Column(
                     [
+                        *avisos_sistema,
                         texto,
                         ft.Row([tipo, hora], spacing=8),
                         fecha,
@@ -1112,6 +1233,8 @@ class HomeView:
         # not what the app is opened for.
         dia: list[ft.Control] = [
             ft.Row([self._weight_tile(), self._waist_tile()], spacing=8),
+            ft.Container(height=Space.x1),
+            self._photo_tile(),
             ft.Container(height=Space.x1),
             self._nutrition_card(),
         ]

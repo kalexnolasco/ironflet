@@ -16,6 +16,12 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <!-- USE_EXACT_ALARM se concede solo, sin pantalla de ajustes. Google Play
+         lo restringe a apps de alarma/calendario, pero esta APK va por
+         sideload a un solo movil: sin el, Android 14+ deja las alarmas
+         inexactas y Doze retrasa un aviso de 17:30 hasta un cuarto de hora,
+         que en el movil de Alex se leyo como "no suena". -->
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
 
     <!-- {% set manifest_application = cookiecutter.pyproject.get('tool', {}).get('flet', {}).get('android', {}).get('manifest_application', {}) %} -->
     <application

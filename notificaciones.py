@@ -60,6 +60,11 @@ _FACTOR_ID = 1000
 
 FICHERO = "notifications.json"
 
+#: Lo escribe el lado Dart tras cada sincronización: `{"granted": bool,
+#: "exact": bool, "updated": iso}`. Es la única ventana que Python tiene a los
+#: permisos del sistema — el puente principal es de ida, este es el de vuelta.
+ESTADO_FICHERO = "notif_status.json"
+
 
 # ── el subconjunto de cron que la app escribe ─────────────────────────────
 
@@ -250,6 +255,33 @@ def _destino_por_defecto() -> Path | None:
     if not raiz:
         return None
     return Path(raiz) / FICHERO
+
+
+def estado_android(target: Path | str | None = None) -> dict | None:
+    """Los permisos de notificación tal y como los vio Dart, o None.
+
+    None significa "no hay lado Dart" (PC, o el fichero aún no existe): ahí
+    no hay nada que avisar. La interfaz solo debe alarmar cuando el fichero
+    exista y diga que algo está apagado — un móvil recién instalado pasa por
+    None durante los primeros segundos y eso no es un problema que enseñar.
+    """
+    if target is not None:
+        ruta = Path(target)
+    else:
+        raiz = os.environ.get("FLET_APP_STORAGE_DATA")
+        if not raiz:
+            return None
+        ruta = Path(raiz) / ESTADO_FICHERO
+    try:
+        datos = json.loads(ruta.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(datos, dict):
+        return None
+    return {
+        "granted": bool(datos.get("granted", True)),
+        "exact": bool(datos.get("exact", True)),
+    }
 
 
 def sync(store: Any, now: datetime | None = None, target: Path | str | None = None) -> list[dict]:

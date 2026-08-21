@@ -97,10 +97,34 @@ Future<void> _syncNotifications() async {
       // deliver — a user who never creates a reminder never sees the prompt.
       await android?.requestNotificationsPermission();
     }
-    // SCHEDULE_EXACT_ALARM may be declared and still not granted (Android 14
-    // no longer pre-grants it). A training alert a quarter-hour late is worse
-    // than an app that asks, but far better than one that crashes: fall back.
-    final exact = await android?.canScheduleExactNotifications() ?? false;
+    // SCHEDULE_EXACT_ALARM may be declared and still not granted. The manifest
+    // now also carries USE_EXACT_ALARM (auto-granted, sideload-only app), so
+    // this should be true everywhere — but some OEMs ignore it, so when it is
+    // still false AND there is something to deliver, open the system's
+    // "Alarms & reminders" screen ONCE per install. The flag file keeps a
+    // refusal from turning the 3-second poll into a settings-screen loop.
+    var exact = await android?.canScheduleExactNotifications() ?? false;
+    if (!exact && items.isNotEmpty) {
+      final asked = File(path.join(File(_notifJsonPath).parent.path,
+          "exact_alarm_asked.flag"));
+      if (!await asked.exists()) {
+        await asked.writeAsString(DateTime.now().toIso8601String());
+        await android?.requestExactAlarmsPermission();
+        exact = await android?.canScheduleExactNotifications() ?? false;
+      }
+    }
+    // Report both permissions back to the Python side, which cannot see them.
+    // Home's reminders dialog reads this file and tells the user exactly which
+    // system toggle is off instead of the app looking silently broken.
+    try {
+      final granted = await android?.areNotificationsEnabled() ?? true;
+      await File(path.join(File(_notifJsonPath).parent.path, "notif_status.json"))
+          .writeAsString(jsonEncode({
+        "granted": granted,
+        "exact": exact,
+        "updated": DateTime.now().toUtc().toIso8601String(),
+      }));
+    } catch (_) {}
     await _notifPlugin.cancelAll();
     const details = NotificationDetails(
       android: AndroidNotificationDetails(
