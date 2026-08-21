@@ -343,8 +343,12 @@ Future prepareApp() async {
       try {
         _notifJsonPath = path.join(appDataPath, "notifications.json");
         tzdata.initializeTimeZones();
+        // `@drawable/ic_stat_ironflet`, no `@mipmap/ic_launcher`: Android
+        // descarta el color de un icono de notificación y pinta solo la
+        // silueta del canal alfa, así que el icono adaptativo de la app salía
+        // como un círculo hueco en cada aviso. Ver el comentario del drawable.
         await _notifPlugin.initialize(const InitializationSettings(
-            android: AndroidInitializationSettings('@mipmap/ic_launcher')));
+            android: AndroidInitializationSettings('@drawable/ic_stat_ironflet')));
         await _syncNotifications();
         Timer.periodic(
             const Duration(seconds: 3), (_) => _syncNotifications());

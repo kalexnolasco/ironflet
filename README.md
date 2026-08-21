@@ -6,7 +6,7 @@
 ![Android](https://img.shields.io/badge/APK-84%20MB%20·%20SQLite-3DDC84?style=for-the-badge&logo=android&logoColor=white)
 ![Flet](https://img.shields.io/badge/Flet-0.28.3-7F52FF?style=for-the-badge)
 ![Idioma](https://img.shields.io/badge/interfaz-español-E4312b?style=for-the-badge)
-![Tests](https://img.shields.io/badge/tests-1736-2f9e44?style=for-the-badge)
+![Tests](https://img.shields.io/badge/tests-1742-2f9e44?style=for-the-badge)
 
 **Donde apuntas lo que levantas y lo que comes, con un entrenador dentro que
 mira tus fotos y te propone la semana. Una app de móvil y nada más: sin
@@ -58,7 +58,7 @@ clave con la que se guarda el historial y traducirlos lo partiría en dos.
 
 ```bash
 make deps      # dependencias de desarrollo
-make check     # lint + los 1736 tests (sin Docker, sin saltarse nada)
+make check     # lint + los 1742 tests (sin Docker, sin saltarse nada)
 make apk       # el APK, con las tres ABIs
 make install   # adb install al móvil o al emulador conectado
 ```

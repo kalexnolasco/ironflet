@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  El icono pequeño de las notificaciones: una mancuerna.
+
+  Tiene que ser MONOCROMO con transparencia. Android ignora el color de un
+  icono de notificación y se queda solo con el canal alfa para pintar una
+  silueta, así que un icono adaptativo a color —`@mipmap/ic_launcher`, que es
+  lo que había— sale como una mancha: en el emulador se veía un círculo hueco
+  donde debería estar el logo, en cada aviso.
+
+  De ahí que las formas vayan en blanco opaco y el resto quede vacío: lo que
+  se dibuja es exactamente lo que Android recortará.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- La barra -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M7,11 H17 V13 H7 Z" />
+    <!-- Discos grandes, uno por lado -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M4.5,8 H7 V16 H4.5 Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M17,8 H19.5 V16 H17 Z" />
+    <!-- Discos pequeños -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M2.5,9.5 H4.5 V14.5 H2.5 Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M19.5,9.5 H21.5 V14.5 H19.5 Z" />
+    <!-- Topes de la barra -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M1,10.75 H2.5 V13.25 H1 Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M21.5,10.75 H23 V13.25 H21.5 Z" />
+</vector>

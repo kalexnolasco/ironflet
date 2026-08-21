@@ -47,13 +47,26 @@ from views.shared_ui import plural
 # rendered — `ordered_counts()` appends them under "Other" — so a table added to
 # backup.py appears on screen even before anyone updates this tuple.
 TABLE_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("Entreno", ("workouts", "weights", "photos", "profile", "prefs")),
+    (
+        "Entreno",
+        (
+            "workouts",
+            "session_notes",
+            "session_durations",
+            "weights",
+            "photos",
+            "profile",
+            "prefs",
+        ),
+    ),
     ("Nutrición", ("foods", "servings", "food_log", "nutrition_targets")),
     ("Rutinas", ("routines", "routine_phases", "routine_days", "routine_exercises")),
 )
 
 TABLE_LABELS = {
     "workouts": "Entrenos",
+    "session_notes": "Notas de sesión",
+    "session_durations": "Tiempos de sesión",
     "weights": "Peso corporal",
     "photos": "Fotos (metadatos)",
     "profile": "Perfil",
@@ -78,13 +91,23 @@ IMAGE_BUNDLE_LABEL = "≈9 MB"
 # ── document counting ────────────────────────────────────────
 
 # Every table `count_document` below actually knows how to find in a document.
-# A thirteenth table appearing in `backup.TABLES` would otherwise be reported as
-# a permanent zero on the one screen whose job is to show what a backup covers —
-# which is precisely the bug that made the v2 backup lose the food diary in
-# silence. `UNCOUNTED_TABLES` puts that on screen instead of hiding it.
+# A table appearing in `backup.TABLES` and not here would otherwise be reported
+# as a permanent zero on the one screen whose job is to show what a backup
+# covers — which is precisely the bug that made the v2 backup lose the food
+# diary in silence. `UNCOUNTED_TABLES` puts that on screen instead of hiding it.
+#
+# It is empty today and that is the point. `photos`, `session_notes` and
+# `session_durations` sat outside it for three versions, each printing a "0"
+# under a warning that named them in snake_case — so the screen said "no
+# photos" and "I am not counting photos" at the same time, and the zero is the
+# half a reader believes. They are flat top-level lists in the document; the
+# three lines below are all it ever took.
 COUNTED_TABLES = frozenset(
     {
         "workouts",
+        "session_notes",
+        "session_durations",
+        "photos",
         "weights",
         "profile",
         "prefs",
@@ -127,6 +150,11 @@ def count_document(data: dict) -> dict[str, int]:
 
     counts["workouts"] = len(rows(data.get("workouts")))
     counts["weights"] = len(rows(data.get("weights")))
+    # Las tres secciones planas de nivel superior. `.get()` tolera un documento
+    # v2/v3 que no las lleva: `rows()` devuelve [] y el conteo es un 0 honesto.
+    counts["session_notes"] = len(rows(data.get("session_notes")))
+    counts["session_durations"] = len(rows(data.get("session_durations")))
+    counts["photos"] = len(rows(data.get("photos")))
     counts["prefs"] = len(data["prefs"]) if isinstance(data.get("prefs"), dict) else 0
 
     profile = data.get("profile")
