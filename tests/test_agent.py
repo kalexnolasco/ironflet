@@ -1152,3 +1152,43 @@ def test_el_catalogo_marca_la_vision():
     modelos = {m.id: m for m in openrouter.parse_models(payload)}
     assert modelos["google/gemini-2.5-flash"].vision is True
     assert modelos["solo-texto/modelo"].vision is False
+
+
+def test_propose_reminder_valida_y_el_commit_crea_el_aviso(store, tmp_path):
+    ctx = agent._Context(store=store, today=date(2026, 8, 21))
+    assert agent._tool_propose_reminder(ctx, text="", time_hhmm="10:00")[1] is None
+    assert agent._tool_propose_reminder(ctx, text="Agua", time_hhmm="25:00")[1] is None
+    assert (
+        agent._tool_propose_reminder(ctx, text="Agua", time_hhmm="10:00", repeat="weekly")[1]
+        is None
+    ), "semanal sin días debe rechazarse"
+
+    told, p = agent._tool_propose_reminder(
+        ctx, text="Lista de la compra", time_hhmm="10:00", repeat="weekly", weekdays=[6]
+    )
+    assert p is not None and "sáb" in p.summary()
+    assert "NOT created" in told or "NOT" in told
+
+    mensaje = agent.commit_proposal(store, p)
+    assert "Aviso creado" in mensaje
+    filas = store.get_all_reminders()
+    assert len(filas) == 1
+    assert filas[0]["texto"] == "Lista de la compra"
+    assert filas[0]["cron"] == "0 10 * * 6"
+    assert filas[0]["origen"] == "usuario"
+
+
+def test_commit_de_aviso_una_vez_calcula_madrid(store):
+    p = agent.ReminderProposal(
+        texto="Meal prep", hour=17, minute=0, tipo="once", day=date(2026, 8, 23)
+    )
+    agent.commit_proposal(store, p)
+    fila = store.get_all_reminders()[0]
+    assert fila["cron"] is None
+    proxima = fila["proxima"]
+    if proxima.tzinfo is None:
+        from datetime import timezone as _tz
+
+        proxima = proxima.replace(tzinfo=_tz.utc)
+    # 17:00 de Madrid en agosto (CEST, +2) son las 15:00Z.
+    assert proxima.hour == 15 and proxima.date().isoformat() == "2026-08-23"

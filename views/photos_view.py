@@ -280,17 +280,28 @@ class PhotosView:
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
             ),
             ft.Container(height=Space.x1),
-            primary_button(
-                "Cambiar la foto de hoy" if hay_de_hoy else "Añadir la foto de hoy",
-                icon=ft.Icons.ADD_A_PHOTO,
-                on_click=self.pick_today,
-                expand=True,
+            # En Row, no sueltos: un botón con expand directamente en la Column
+            # expandida se estira en VERTICAL (visto en el emulador como dos
+            # óvalos a media pantalla). La Row lo acota a su altura natural.
+            ft.Row(
+                [
+                    primary_button(
+                        "Cambiar la foto de hoy" if hay_de_hoy else "Añadir la foto de hoy",
+                        icon=ft.Icons.ADD_A_PHOTO,
+                        on_click=self.pick_today,
+                        expand=True,
+                    )
+                ]
             ),
             ft.Container(height=Space.x1),
-            ghost_button(
-                "Salir de la comparación" if self.picking_compare else cab_comparar,
-                on_click=alterna_comparar,
-                expand=True,
+            ft.Row(
+                [
+                    ghost_button(
+                        "Salir de la comparación" if self.picking_compare else cab_comparar,
+                        on_click=alterna_comparar,
+                        expand=True,
+                    )
+                ]
             ),
         ]
         if self.picking_compare:

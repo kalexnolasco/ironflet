@@ -1447,6 +1447,20 @@ def day_totals(store, day) -> dict:
     }
 
 
+def target_note(store, day=None) -> str | None:
+    """La nota del objetivo vigente ese día — el plan semanal del coach.
+
+    El facade `targets_for` aplana a cuatro números porque eso quiere el
+    anillo; la pantalla de Comida además quiere poder ENSEÑAR el porqué y la
+    lista de la compra que el coach dejó en la nota al proponer la semana.
+    """
+    fila = _nutrition_for(store).targets_for(day)
+    if fila is None:
+        return None
+    nota = (fila.get("note") or "").strip()
+    return nota or None
+
+
 def set_targets(store, kcal, protein, fat, carbs, starts_on=None, note="") -> date:
     """Facade del método de la clase, como el resto de este bloque.
 

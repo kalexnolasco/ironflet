@@ -256,6 +256,13 @@ class AgentView:
                 else ""
             )
             note = p.note or ""
+        elif isinstance(p, agent.ReminderProposal):
+            title = "Aviso nuevo"
+            when = date.today()
+            body = p.texto
+            detail = p.summary()
+            warn = ""
+            note = ""
         elif isinstance(p, agent.MealTargetsProposal):
             title = "Objetivos de la semana"
             when = p.starts_on

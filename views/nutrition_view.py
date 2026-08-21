@@ -37,6 +37,7 @@ from nutrition import (
     favourite_foods,
     log_food,
     search_foods,
+    target_note,
     targets_for,
 )
 from storage import Storage
@@ -681,9 +682,32 @@ class NutritionView:
                 f"{_n(targets.get('carbs'))}C"
             )
             whose = "Plan de hoy" if self.day == date.today() else "Plan de ese día"
-            note = ft.Text(
-                f"{whose}: {plan}", size=11, color=C.text_muted, text_align=ft.TextAlign.CENTER
-            )
+            nota_semana = self._read(lambda: target_note(self.store, self._day_arg()), None)
+            if nota_semana:
+                # La nota que el coach dejó al proponer la semana: el porqué
+                # del objetivo y la lista de compra/preparaciones. Plegada por
+                # defecto — es un párrafo, y el diario es la pantalla.
+                note = ft.ExpansionTile(
+                    title=ft.Text(
+                        f"{whose}: {plan} · ver plan de la semana",
+                        size=11,
+                        color=C.text_muted,
+                        text_align=ft.TextAlign.CENTER,
+                    ),
+                    controls=[
+                        ft.Container(
+                            content=ft.Text(nota_semana, size=12, color=C.text_secondary),
+                            padding=ft.padding.symmetric(horizontal=12, vertical=6),
+                        )
+                    ],
+                    tile_padding=ft.padding.symmetric(horizontal=0),
+                    shape=ft.RoundedRectangleBorder(radius=0),
+                    collapsed_shape=ft.RoundedRectangleBorder(radius=0),
+                )
+            else:
+                note = ft.Text(
+                    f"{whose}: {plan}", size=11, color=C.text_muted, text_align=ft.TextAlign.CENTER
+                )
         else:
             note = ft.Text(
                 "Aún no hay objetivos diarios, así que nada se mide contra un plan — "

@@ -87,6 +87,11 @@ class FakeNutrition:
     def targets_for(self, store, day):
         return {"kcal": 2550, "protein": 115, "fat": 70, "carbs": 365}
 
+    def target_note(self, store, day=None):
+        # El plan semanal del coach; None = sin nota, la vista pinta la línea
+        # simple. Un test concreto lo sobreescribe para ver el desplegable.
+        return None
+
     def log_food(self, store, day, meal, food, qty=1.0, portion=None):
         entry = {
             "id": self._next_id,
@@ -124,6 +129,7 @@ def _fake_module(fake: FakeNutrition) -> types.ModuleType:
     for name in (
         "day_totals",
         "targets_for",
+        "target_note",
         "log_food",
         "delete_entry",
         "search_foods",
