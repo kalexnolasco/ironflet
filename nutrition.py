@@ -1447,6 +1447,17 @@ def day_totals(store, day) -> dict:
     }
 
 
+def set_targets(store, kcal, protein, fat, carbs, starts_on=None, note="") -> date:
+    """Facade del método de la clase, como el resto de este bloque.
+
+    Existe para `agent.commit_proposal`: la tarjeta de objetivos semanales
+    escribe por aquí, con la misma instancia por-store que usan las vistas.
+    """
+    return _nutrition_for(store).set_targets(
+        kcal=kcal, protein=protein, fat=fat, carbs=carbs, starts_on=starts_on, note=note
+    )
+
+
 def targets_for(store, day) -> dict | None:
     """The day's target, flattened.
 

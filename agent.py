@@ -116,6 +116,7 @@ from storage import WorkoutEntry, clean_note
 #: more.
 API_KEY_PREF = "agent_openrouter_key"
 MODEL_PREF = "agent_model"
+VISION_PREF = "agent_model_vision"
 #: Price snapshot for the chosen model, so the cost line still says something in
 #: a gym with no signal. `"<prompt>/<completion>"` in dollars per million.
 PRICE_PREF = "agent_model_price"
@@ -224,6 +225,22 @@ def save_model(store: Any, model: Any) -> None:
     """Remember the choice AND its price, so the cost line survives no signal."""
     store.set_pref(MODEL_PREF, model.id)
     store.set_pref(PRICE_PREF, f"{model.prompt_price:g}/{model.completion_price:g}")
+    store.set_pref(VISION_PREF, "1" if getattr(model, "vision", False) else "0")
+
+
+def model_sees_images(store: Any) -> bool | None:
+    """Si el modelo elegido acepta imágenes, según el catálogo al elegirlo.
+
+    None = no se sabe (el modelo se eligió antes de que esto existiera, o se
+    escribió a mano). El llamante decide: la interfaz trata None como "prueba
+    y que lo diga el proveedor" en vez de bloquear con un dato que no tiene.
+    """
+    valor = (store.get_pref(VISION_PREF) or "").strip()
+    if valor == "1":
+        return True
+    if valor == "0":
+        return False
+    return None
 
 
 def read_price(store: Any) -> tuple[float, float] | None:
@@ -557,7 +574,32 @@ class WeightProposal:
         return f"{self.kg:g} kg"
 
 
-Proposal = WorkoutProposal | WeightProposal
+@dataclass(frozen=True)
+class MealTargetsProposal:
+    """Los objetivos de la semana que el modelo propone. Nada escrito aún.
+
+    La mitad accionable de "que vaya cambiando mis comidas semanales": los
+    objetivos diarios (kcal y macros) son lo que la pantalla de Comida mide
+    todo contra, y `nutrition` ya los versiona por fecha de inicio — proponer
+    unos nuevos desde el lunes es exactamente el ajuste semanal del plan, sin
+    reescribir nada de lo comido. El texto libre (`note`) guarda el porqué y
+    las ideas de menú, y aparece en la pantalla de Comida como nota del plan.
+    """
+
+    starts_on: date
+    kcal: float
+    protein: float
+    fat: float
+    carbs: float
+    note: str | None = None
+
+    kind: str = "meal_targets"
+
+    def summary(self) -> str:
+        return f"{self.kcal:g} kcal · {self.protein:g}P / {self.fat:g}F / {self.carbs:g}C"
+
+
+Proposal = WorkoutProposal | WeightProposal | MealTargetsProposal
 
 
 def commit_proposal(store: Any, proposal: Proposal) -> str:
@@ -574,6 +616,19 @@ def commit_proposal(store: Any, proposal: Proposal) -> str:
     if isinstance(proposal, WeightProposal):
         store.save_weight(proposal.kg, proposal.day.isoformat())
         return f"Guardados {proposal.kg:g} kg en {proposal.day.isoformat()}."
+    if isinstance(proposal, MealTargetsProposal):
+        import nutrition
+
+        nutrition.set_targets(
+            store,
+            kcal=proposal.kcal,
+            protein=proposal.protein,
+            fat=proposal.fat,
+            carbs=proposal.carbs,
+            starts_on=proposal.starts_on,
+            note=proposal.note or "",
+        )
+        return f"Objetivos nuevos desde el {proposal.starts_on.isoformat()}: {proposal.summary()}."
     raise TypeError(f"Not a proposal: {type(proposal).__name__}")
 
 
@@ -915,6 +970,110 @@ def _tool_propose_weight(
     return (told, WeightProposal(day=when, kg=value, replaces=replaces))
 
 
+def _tool_progress_photos(ctx: _Context, days: Any = 60, **_) -> str:
+    """Qué fotos de progreso existen y qué se midió cerca de cada una.
+
+    Solo metadatos: los bytes de una imagen viajan únicamente cuando Alex la
+    adjunta él mismo desde el chat — una herramienta que leyera JPEGs del
+    disco a demanda del modelo convertiría cada turno en una subida que él no
+    eligió. Con las fechas y las medidas el modelo ya puede decir "compara la
+    del día 1 con la de hoy: −1,8 kg" o pedir que adjunte una concreta.
+    """
+    import fotos as _fotos
+
+    try:
+        ventana = max(7, min(365, int(days)))
+    except (TypeError, ValueError):
+        ventana = 60
+    try:
+        filas = _fotos.listar(ctx.store)
+    except Exception as exc:
+        return f"Could not read the photo list: {exc}"
+    desde = ctx.today - timedelta(days=ventana)
+    lineas: list[str] = []
+    for fila in filas:
+        dia = date.fromisoformat(fila["date"])
+        if dia < desde:
+            continue
+        piezas = [fila["date"] + (" (file missing on this device)" if not fila["path"] else "")]
+        medidas = _fotos.medidas_para(ctx.store, dia)
+        if "kg" in medidas:
+            piezas.append(f"{medidas['kg']:g} kg")
+        if "waist" in medidas:
+            piezas.append(f"waist {medidas['waist']:g} cm")
+        if fila.get("note"):
+            piezas.append(f"note: {fila['note']}")
+        lineas.append(" · ".join(piezas))
+    if not lineas:
+        return (
+            f"No progress photos in the last {ventana} days. The user adds them from "
+            "Home ('FOTO') or the gallery; suggest one photo a day, same light and pose."
+        )
+    encabezado = f"{len(lineas)} progress photos in the last {ventana} days, newest first:"
+    return "\n".join([encabezado, *lineas])
+
+
+def _tool_propose_week_targets(
+    ctx: _Context,
+    kcal: Any = None,
+    protein_g: Any = None,
+    fat_g: Any = None,
+    carbs_g: Any = None,
+    starts_on: str = "",
+    note: str = "",
+    **_,
+) -> tuple[str, MealTargetsProposal | None]:
+    """El ajuste semanal del plan de comidas, como PROPUESTA con tarjeta.
+
+    Mismos límites de cordura que el resto de propuestas: rangos anchos pero
+    humanos, porque un modelo que confunde gramos con kilocalorías no debe
+    poder poner 4000 g de proteína en una tarjeta con aspecto oficial.
+    """
+    try:
+        valores = {
+            "kcal": float(kcal),
+            "protein": float(protein_g),
+            "fat": float(fat_g),
+            "carbs": float(carbs_g),
+        }
+    except (TypeError, ValueError):
+        return ("Refused: kcal, protein_g, fat_g and carbs_g must all be numbers.", None)
+    limites = {
+        "kcal": (1200, 6000),
+        "protein": (50, 400),
+        "fat": (20, 250),
+        "carbs": (0, 800),
+    }
+    for campo, (lo, hi) in limites.items():
+        if not lo <= valores[campo] <= hi:
+            return (f"Refused: {campo}={valores[campo]:g} is outside {lo}-{hi}.", None)
+
+    if starts_on:
+        try:
+            inicio = _parse_day(starts_on, ctx.today)
+        except ValueError as exc:
+            return (f"Refused: {exc}", None)
+    else:
+        # El lunes que viene: los objetivos son semanales y empezar a mitad de
+        # semana partiría la adherencia de la semana en dos varas de medir.
+        inicio = ctx.today + timedelta(days=(7 - ctx.today.weekday()) % 7 or 7)
+
+    propuesta = MealTargetsProposal(
+        starts_on=inicio,
+        kcal=valores["kcal"],
+        protein=valores["protein"],
+        fat=valores["fat"],
+        carbs=valores["carbs"],
+        note=(note or "").strip()[:500] or None,
+    )
+    told = (
+        f"Shown to the user as a confirmation card: daily targets {propuesta.summary()} "
+        f"starting {inicio.isoformat()}. NOT saved. He has to tap Save. Current targets "
+        "stay in force for the days already lived — targets are versioned by start date."
+    )
+    return (told, propuesta)
+
+
 #: name -> (schema, handler). Handlers that can produce a proposal return a
 #: `(text, proposal)` pair; the read-only ones return plain text. Keeping the
 #: two shapes distinct is what makes "which tools can put a card on screen"
@@ -926,11 +1085,13 @@ _READ_TOOLS: dict[str, Callable[..., str]] = {
     "body_weight": _tool_body_weight,
     "nutrition": _tool_nutrition,
     "list_exercises": _tool_list_exercises,
+    "progress_photos": _tool_progress_photos,
 }
 
 _PROPOSE_TOOLS: dict[str, Callable[..., tuple[str, Proposal | None]]] = {
     "propose_workout_log": _tool_propose_workout,
     "propose_body_weight": _tool_propose_weight,
+    "propose_week_targets": _tool_propose_week_targets,
 }
 
 
@@ -1086,6 +1247,45 @@ def _tool_declarations() -> list[dict]:
                 "required": ["kg"],
             },
         },
+        {
+            "name": "progress_photos",
+            "description": (
+                "Which progress photos exist (dates only, no images) and the weight/waist "
+                "measured near each one. Call this before talking about visual progress or "
+                "before asking the user to attach a specific photo to the chat."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {"days": {"type": "integer", "description": "7-365, default 60."}},
+            },
+        },
+        {
+            "name": "propose_week_targets",
+            "description": (
+                "Show the user a confirmation card with NEW daily nutrition targets (kcal and "
+                "macros), normally starting next Monday. Does NOT save; he taps Save. Use it "
+                "when reviewing the week — weigh-ins, adherence, photos — leads to adjusting "
+                "the meal plan. Put the reasoning and any concrete meal ideas in `note`."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "kcal": {"type": "number", "description": "Daily calories, 1200-6000."},
+                    "protein_g": {"type": "number", "description": "Daily protein grams, 50-400."},
+                    "fat_g": {"type": "number", "description": "Daily fat grams, 20-250."},
+                    "carbs_g": {"type": "number", "description": "Daily carb grams, 0-800."},
+                    "starts_on": {
+                        "type": "string",
+                        "description": "ISO date; blank = next Monday.",
+                    },
+                    "note": {
+                        "type": "string",
+                        "description": "Why, plus concrete meal ideas for the week (Spanish).",
+                    },
+                },
+                "required": ["kcal", "protein_g", "fat_g", "carbs_g"],
+            },
+        },
     ]
 
 
@@ -1169,6 +1369,25 @@ class ApiError(AgentError):
     def __init__(self, message: str, status: int = 0):
         super().__init__(message)
         self.status = status
+
+
+def _image_part(path: str) -> dict:
+    """Una ruta de imagen → la parte `image_url` del formato OpenAI.
+
+    Data URL en base64: OpenRouter la acepta en todos los modelos con visión y
+    no obliga a subir la foto a ningún sitio con URL pública — la imagen viaja
+    dentro de la petición HTTPS y no queda alojada en nada.
+    """
+    import base64
+    import mimetypes
+    from pathlib import Path
+
+    datos = Path(path).read_bytes()
+    if len(datos) > 8_000_000:
+        raise ValueError("la imagen pasa de 8 MB — elige la foto de progreso, no un RAW")
+    mime = mimetypes.guess_type(path)[0] or "image/jpeg"
+    b64 = base64.b64encode(datos).decode("ascii")
+    return {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}}
 
 
 def _post_chat(payload: dict, api_key: str, timeout: float = 90.0) -> dict:
@@ -1308,11 +1527,26 @@ class Coach:
             return _PROPOSE_TOOLS[name](ctx, **args)
         return (f"No tool named {name!r}.", None)
 
-    def ask(self, text: str) -> Reply:
-        """One user turn in, one `Reply` out. Never raises."""
+    def ask(self, text: str, image_path: str | None = None) -> Reply:
+        """One user turn in, one `Reply` out. Never raises.
+
+        `image_path` adjunta UNA foto (la de progreso que Alex eligió) como
+        parte multiparte del turno. Tras la respuesta, el content multiparte se
+        sustituye en el historial por su marca de texto: si no, cada pregunta
+        posterior re-subiría la misma imagen y el turno de dos céntimos se
+        convertiría en una suscripción.
+        """
         message = (text or "").strip()
-        if not message:
+        if not message and not image_path:
             return Reply(text="", error="Nada que enviar.")
+        if image_path and model_sees_images(self.store) is False:
+            return Reply(
+                text="",
+                error=(
+                    "El modelo elegido no acepta imágenes. En Ajustes → Entrenador, "
+                    "elige uno con 📷 (por ejemplo gemini-2.5-flash) y reenvía la foto."
+                ),
+            )
 
         key = read_key(self.store)
         if not key:
@@ -1332,7 +1566,23 @@ class Coach:
         # it and the rewind would cut the wrong turns out.
         self._trim()
         watermark = len(self.messages)
-        self.messages.append({"role": "user", "content": message})
+        if image_path:
+            try:
+                contenido_imagen = _image_part(image_path)
+            except (OSError, ValueError) as exc:
+                return Reply(text="", error=f"No se pudo leer la foto: {exc}")
+            texto_turno = message or "Mira esta foto de progreso."
+            self.messages.append(
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": texto_turno},
+                        contenido_imagen,
+                    ],
+                }
+            )
+        else:
+            self.messages.append({"role": "user", "content": message})
 
         model = read_model(self.store)
         proposal: Proposal | None = None
@@ -1404,6 +1654,8 @@ class Coach:
                         error="El modelo no quiso responder a eso.",
                         tool_calls=tuple(used),
                     )
+                if image_path:
+                    self._collapse_image(watermark)
                 return Reply(
                     text=answer,
                     proposal=proposal,
@@ -1467,6 +1719,25 @@ class Coach:
             output_tokens=tokens_out,
             charged=cobrado,
         )
+
+    def _collapse_image(self, watermark: int) -> None:
+        """El turno multiparte con la imagen → su texto más una marca.
+
+        Se llama tras una respuesta con éxito: el modelo ya vio la foto y su
+        respuesta está en el historial, así que reenviar los bytes en cada
+        turno posterior solo repite el coste. La marca conserva el hecho de
+        que HABÍA una foto — el modelo la sigue viendo mencionada.
+        """
+        if watermark >= len(self.messages):
+            return
+        turno = self.messages[watermark]
+        contenido = turno.get("content")
+        if turno.get("role") != "user" or not isinstance(contenido, list):
+            return
+        texto = " ".join(
+            p.get("text", "") for p in contenido if isinstance(p, dict) and p.get("type") == "text"
+        ).strip()
+        turno["content"] = f"{texto} [foto adjunta, ya vista]".strip()
 
     def _trim(self) -> None:
         """Drop the oldest turns, never orphaning a `tool_calls` from its results.

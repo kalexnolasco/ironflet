@@ -583,7 +583,7 @@ class ProfileView:
                     content=ft.Column(
                         [
                             ft.Text(
-                                m.id,
+                                f"{m.id} 📷" if m.vision else m.id,
                                 size=12,
                                 color=C.accent if m.id == actual else C.text,
                                 weight=ft.FontWeight.W_700
@@ -844,7 +844,9 @@ class ProfileView:
         # rendered as **"Opus 5 — be"**. A dropdown does not shorten a label that
         # does not fit; it cuts it. Same failure as the "Heig" height field, and
         # invisible from a desktop window. Found on a screenshot.
-        opciones = [ft.dropdown.Option(m.id, m.short) for m in corta]
+        opciones = [
+            ft.dropdown.Option(m.id, f"{m.short} 📷" if m.vision else m.short) for m in corta
+        ]
         if model not in {m.id for m in corta}:
             # Whatever he picked from the full list belongs in the dropdown too,
             # or reopening Settings silently resets him to the default.

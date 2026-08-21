@@ -1020,3 +1020,135 @@ def test_las_pantallas_no_nombran_al_proveedor_viejo():
             if "Anthropic" in linea or "sk-ant-" in linea:
                 culpables.append(f"{archivo.name}:{numero}: {desnuda[:70]}")
     assert not culpables, "screens still naming the old provider:\n" + "\n".join(culpables)
+
+
+# ── fotos en el chat y objetivos semanales ─────────────────────────────────
+
+
+def _foto_jpeg(tmp_path):
+    from PIL import Image
+
+    ruta = tmp_path / "2026-08-21.jpg"
+    Image.new("RGB", (60, 90), (90, 60, 60)).save(ruta, format="JPEG")
+    return str(ruta)
+
+
+def test_propose_week_targets_valida_y_apunta_al_lunes(store):
+    ctx = agent._Context(store=store, today=date(2026, 8, 21))  # viernes
+    told, propuesta = agent._tool_propose_week_targets(
+        ctx, kcal=2400, protein_g=170, fat_g=70, carbs_g=250, note="Semana de ajuste."
+    )
+    assert propuesta is not None
+    assert propuesta.starts_on == date(2026, 8, 24), "el lunes que viene, no mitad de semana"
+    assert "NOT saved" in told
+
+    assert (
+        agent._tool_propose_week_targets(ctx, kcal=200, protein_g=170, fat_g=70, carbs_g=250)[1]
+        is None
+    )
+    assert (
+        agent._tool_propose_week_targets(ctx, kcal="mucho", protein_g=1, fat_g=1, carbs_g=1)[1]
+        is None
+    )
+
+
+def test_commit_de_objetivos_escribe_targets_versionados(store):
+    import nutrition
+
+    propuesta = agent.MealTargetsProposal(
+        starts_on=date(2026, 8, 24), kcal=2400, protein=170, fat=70, carbs=250, note="ajuste"
+    )
+    mensaje = agent.commit_proposal(store, propuesta)
+    assert "2026-08-24" in mensaje
+    objetivo = nutrition.targets_for(store, date(2026, 8, 25))
+    assert objetivo and objetivo["kcal"] == 2400 and objetivo["protein"] == 170
+    # Los días anteriores al inicio no se reescriben: versionado, no mutación.
+    assert nutrition.targets_for(store, date(2026, 8, 23)) != objetivo
+
+
+def test_progress_photos_lista_fechas_sin_bytes(store, tmp_path):
+    import fotos as fotos_mod
+
+    carpeta = tmp_path / "progreso"
+    carpeta.mkdir()
+    import io as _io
+
+    from PIL import Image
+
+    buf = _io.BytesIO()
+    Image.new("RGB", (50, 50), (10, 10, 10)).save(buf, format="JPEG")
+    fotos_mod.guardar(store, buf.getvalue(), on_date=HOY.isoformat(), base=carpeta)
+    store.save_weight(82.0, HOY.isoformat())
+
+    ctx = agent._Context(store=store, today=HOY)
+    texto = agent._tool_progress_photos(ctx)
+    assert HOY.isoformat() in texto
+    assert "82" in texto
+    assert "base64" not in texto and ".jpg" not in texto, (
+        "la herramienta no debe filtrar rutas ni bytes"
+    )
+
+
+def test_imagen_con_modelo_sin_vision_se_rechaza_sin_red(store, tmp_path):
+    agent.save_key(store, CLAVE)
+    store.set_pref(agent.VISION_PREF, "0")
+    coach = agent.Coach(store, today=HOY)
+    r = coach.ask("mira esto", image_path=_foto_jpeg(tmp_path))
+    assert r.error and "📷" in r.error
+    assert coach.messages == [], "el turno rechazado no debe quedar en el historial"
+
+
+def test_imagen_viaja_multiparte_y_se_colapsa_despues(store, monkeypatch, tmp_path):
+    agent.save_key(store, CLAVE)
+    store.set_pref(agent.VISION_PREF, "1")
+    transporte = TransporteFalso([RespuestaFalsa("Se te ve más definido que en julio.")])
+    monkeypatch.setattr(agent, "_post_chat", transporte)
+
+    coach = agent.Coach(store, today=HOY)
+    r = coach.ask("¿me ves mejor?", image_path=_foto_jpeg(tmp_path))
+    assert not r.error
+
+    turno = transporte.peticiones[0]["messages"][-1]
+    assert turno["role"] == "user" and isinstance(turno["content"], list)
+    tipos = [p["type"] for p in turno["content"]]
+    assert tipos == ["text", "image_url"]
+    assert turno["content"][1]["image_url"]["url"].startswith("data:image/jpeg;base64,")
+
+    # Tras responder, el historial guarda la marca, no los bytes.
+    ultimo_usuario = [m for m in coach.messages if m["role"] == "user"][-1]
+    assert isinstance(ultimo_usuario["content"], str)
+    assert "[foto adjunta, ya vista]" in ultimo_usuario["content"]
+
+
+def test_image_part_rechaza_gigantes(tmp_path):
+    gorda = tmp_path / "gorda.jpg"
+    gorda.write_bytes(b"x" * 9_000_000)
+    import pytest as _pytest
+
+    with _pytest.raises(ValueError):
+        agent._image_part(str(gorda))
+
+
+def test_el_catalogo_marca_la_vision():
+    import openrouter
+
+    payload = {
+        "data": [
+            {
+                "id": "google/gemini-2.5-flash",
+                "supported_parameters": ["tools"],
+                "architecture": {"input_modalities": ["text", "image"]},
+                "pricing": {"prompt": "0.0000003", "completion": "0.0000025"},
+                "context_length": 1048576,
+            },
+            {
+                "id": "solo-texto/modelo",
+                "supported_parameters": ["tools"],
+                "pricing": {"prompt": "0", "completion": "0"},
+                "context_length": 8192,
+            },
+        ]
+    }
+    modelos = {m.id: m for m in openrouter.parse_models(payload)}
+    assert modelos["google/gemini-2.5-flash"].vision is True
+    assert modelos["solo-texto/modelo"].vision is False

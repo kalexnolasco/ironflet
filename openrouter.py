@@ -84,6 +84,10 @@ class Model:
     prompt_price: float
     completion_price: float
     tools: bool = True
+    #: Si `architecture.input_modalities` trae "image": el modelo puede mirar
+    #: una foto de progreso. El desplegable lo marca con 📷 y `Coach.ask`
+    #: rehúsa adjuntar una imagen a un modelo que no la vería.
+    vision: bool = False
 
     @property
     def vendor(self) -> str:
@@ -147,6 +151,7 @@ def parse_models(payload: Any) -> list[Model]:
             context = int(row.get("context_length") or 0)
         except (TypeError, ValueError):
             context = 0
+        modalidades = (row.get("architecture") or {}).get("input_modalities") or []
         out.append(
             Model(
                 id=str(ident),
@@ -154,6 +159,7 @@ def parse_models(payload: Any) -> list[Model]:
                 context=context,
                 prompt_price=_price(pricing.get("prompt")),
                 completion_price=_price(pricing.get("completion")),
+                vision="image" in modalidades,
             )
         )
     out.sort(key=lambda m: m.id)

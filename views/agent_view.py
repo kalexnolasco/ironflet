@@ -59,6 +59,9 @@ class AgentView:
         self.busy = False
         self.last_cost = 0.0
         self._input = ft.TextField()
+        #: Ruta de la foto adjunta al próximo envío, o None. Se limpia al enviar.
+        self.attach_path: str | None = None
+        self.attach_date: str = ""
 
     # ── lifecycle ─────────────────────────────────────────────────────────
 
@@ -101,13 +104,17 @@ class AgentView:
         rest timer, which is running on the same loop while he is in the gym.
         """
         self.busy = True
-        self.bubbles.append(Bubble("me", text))
+        adjunto = self.attach_path
+        etiqueta = self.attach_date
+        self.attach_path = None
+        self.attach_date = ""
+        self.bubbles.append(Bubble("me", f"📷 {etiqueta} · {text}" if adjunto else text))
         self.pending = None
         self._render()
 
         assert self.coach is not None
         try:
-            reply = await asyncio.to_thread(self.coach.ask, text)
+            reply = await asyncio.to_thread(self.coach.ask, text, adjunto)
         except Exception as exc:  # pragma: no cover - `ask` is already total
             reply = agent.Reply(text="", error=f"Algo ha fallado: {exc}")
 
@@ -126,6 +133,39 @@ class AgentView:
         # is what makes that work with no signal.
         self.last_cost = agent.estimate_cost(reply, agent.priced_model(self.store))
         self._render()
+
+    def _toggle_attach(self, _=None):
+        """Adjunta la foto de progreso más reciente, o quita la adjunta.
+
+        La "última" y no un selector: el caso real es "mírame HOY", y la foto
+        de hoy es la última en cuanto existe. Para comparar fechas concretas
+        el coach ya sabe cuáles hay (`progress_photos`) y puede pedir la que
+        le falte. Sin fotos aún, el error dice dónde se crea la primera.
+        """
+        import fotos as _fotos
+
+        if self.attach_path:
+            self.attach_path = None
+            self.attach_date = ""
+            self.page.data["refresh_current"]()
+            return
+        try:
+            filas = [f for f in _fotos.listar(self.store) if f["path"]]
+        except Exception:
+            filas = []
+        if not filas:
+            self.bubbles.append(
+                Bubble(
+                    "error",
+                    "No hay fotos de progreso todavía — añade la de hoy desde "
+                    "Inicio (tarjeta FOTO) y vuelve a intentarlo.",
+                )
+            )
+            self.page.data["refresh_current"]()
+            return
+        self.attach_path = filas[0]["path"]
+        self.attach_date = filas[0]["date"]
+        self.page.data["refresh_current"]()
 
     def _on_submit(self, _=None):
         text = (self._input.value or "").strip()
@@ -215,6 +255,13 @@ class AgentView:
                 if p.replaces
                 else ""
             )
+            note = p.note or ""
+        elif isinstance(p, agent.MealTargetsProposal):
+            title = "Objetivos de la semana"
+            when = p.starts_on
+            body = p.summary()
+            detail = "objetivo diario"
+            warn = ""
             note = p.note or ""
         else:
             title = "Peso corporal"
@@ -407,6 +454,13 @@ class AgentView:
 
         composer = ft.Row(
             [
+                ft.IconButton(
+                    icon=ft.Icons.ADD_A_PHOTO_OUTLINED,
+                    icon_color=C.accent if self.attach_path else C.text_muted,
+                    disabled=self.busy,
+                    tooltip="Adjuntar la última foto de progreso",
+                    on_click=self._toggle_attach,
+                ),
                 self._input,
                 ft.IconButton(
                     icon=ft.Icons.SEND_ROUNDED,
@@ -420,6 +474,28 @@ class AgentView:
         )
 
         below: list[ft.Control] = []
+        if self.attach_path:
+            below.append(
+                ft.Row(
+                    [
+                        ft.Icon(ft.Icons.PHOTO, size=14, color=C.accent),
+                        ft.Text(
+                            f"Foto del {self.attach_date} adjunta — se envía con tu mensaje",
+                            size=11,
+                            color=C.text_secondary,
+                            expand=True,
+                        ),
+                        ft.IconButton(
+                            icon=ft.Icons.CLOSE,
+                            icon_size=14,
+                            icon_color=C.text_muted,
+                            tooltip="Quitar la foto",
+                            on_click=self._toggle_attach,
+                        ),
+                    ],
+                    spacing=4,
+                )
+            )
         if self.pending is not None:
             below.append(self._proposal_card())
             below.append(ft.Container(height=8))
