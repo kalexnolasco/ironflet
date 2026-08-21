@@ -153,8 +153,12 @@ def _kg_tooltip(value: float, what: str) -> str:
 
 
 def _week_label(weeks_back: int) -> str:
-    """ISO week keys ("2026-W33") mean nothing at a glance; offsets do."""
-    return "Esta semana" if weeks_back == 0 else f"−{weeks_back}w"
+    """Las claves ISO («2026-W33») no dicen nada de un vistazo; los saltos sí.
+
+    «sem» y no «w»: la w venía de *week* y era la última letra inglesa que
+    quedaba en un chip, al lado de un «Esta semana» que ya estaba traducido.
+    """
+    return "Esta semana" if weeks_back == 0 else f"−{weeks_back} sem"
 
 
 def _sessions_label(count: int) -> str:
