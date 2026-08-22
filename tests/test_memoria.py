@@ -307,9 +307,7 @@ def _walk(control):
 def _textos(control) -> str:
     import flet as ft
 
-    return " | ".join(
-        str(c.value) for c in _walk(control) if isinstance(c, ft.Text) and c.value
-    )
+    return " | ".join(str(c.value) for c in _walk(control) if isinstance(c, ft.Text) and c.value)
 
 
 @pytest.fixture
@@ -324,19 +322,79 @@ def ajustes(store):
     return ProfileView(page, store)
 
 
-def test_ajustes_lista_lo_apuntado(ajustes, store):
+def _abrir_dialogo(ajustes):
+    """Abre el diálogo de memoria y devuelve el control que se pintó.
+
+    `page` es un MagicMock, así que `page.open(dlg)` no hace nada visible: el
+    diálogo se recoge del argumento con el que se llamó.
+    """
+    ajustes._open_memoria()
+    assert ajustes.page.open.called, "no se abrió ningún diálogo"
+    return ajustes.page.open.call_args[0][0]
+
+
+def test_ajustes_resume_sin_obligar_a_abrir(ajustes, store):
+    """La fila de Ajustes dice cuántas son y adelanta un par. La lista entera
+    está a un toque; leerla no debería costar bajar por toda la pantalla."""
     memoria.anadir(store, "No come pescado", "comida", hoy=HOY)
     memoria.anadir(store, "Entrena a las 7:00", "rutina", hoy=HOY)
 
     texto = _textos(ajustes._memoria_section())
+    assert "2 cosas" in texto
     assert "No come pescado" in texto
-    assert "Entrena a las 7:00" in texto
-    assert "Comida" in texto and "Horarios y rutina" in texto
 
 
 def test_ajustes_sin_nada_explica_para_que_sirve(ajustes, store):
     texto = _textos(ajustes._memoria_section())
-    assert "todavía no sabe nada de ti" in texto
+    assert "Todavía no sabe nada de ti" in texto
+
+
+def test_la_fila_de_ajustes_abre_el_dialogo(ajustes, store):
+    memoria.anadir(store, "No come pescado", "comida", hoy=HOY)
+    fila = next(c for c in _walk(ajustes._memoria_section()) if getattr(c, "on_click", None))
+    fila.on_click(None)
+    assert ajustes.page.open.called
+
+
+def test_el_dialogo_lista_lo_apuntado_con_su_categoria(ajustes, store):
+    memoria.anadir(store, "No come pescado", "comida", hoy=HOY)
+    memoria.anadir(store, "Entrena a las 7:00", "rutina", hoy=HOY)
+
+    texto = _textos(_abrir_dialogo(ajustes))
+    assert "No come pescado" in texto and "Entrena a las 7:00" in texto
+    assert "Comida" in texto and "Horarios y rutina" in texto
+
+
+def test_anadir_desde_el_dialogo_no_mueve_ajustes_de_sitio(ajustes, store):
+    """El motivo de que esto sea un diálogo. `refresh_current()` reconstruye
+    Ajustes desde arriba, y rellenando seis hechos de una sentada eso deja al
+    usuario a cinco arrastres de donde estaba después de cada uno."""
+    import flet as ft
+
+    refrescos = []
+    ajustes.page.data["refresh_current"] = lambda: refrescos.append(1)
+
+    dlg = _abrir_dialogo(ajustes)
+    campo = next(c for c in _walk(dlg) if isinstance(c, ft.TextField))
+    campo.value = "No come pescado"
+    next(c for c in _walk(dlg) if getattr(c, "on_click", None) and "Añadir" in _textos(c)).on_click(
+        None
+    )
+
+    assert [h.texto for h in memoria.leer(store)] == ["No come pescado"]
+    assert refrescos == [], "refrescó la pantalla de detrás y perdió el scroll"
+    assert campo.value == "", "el campo no se vació para el siguiente"
+    assert "No come pescado" in _textos(dlg), "el diálogo no se redibujó"
+
+
+def test_al_cerrar_el_dialogo_si_se_refresca_ajustes(ajustes, store):
+    """Porque el resumen de la fila tiene que contar lo que se acaba de editar."""
+    refrescos = []
+    ajustes.page.data["refresh_current"] = lambda: refrescos.append(1)
+
+    dlg = _abrir_dialogo(ajustes)
+    next(c for c in dlg.actions if "Listo" in str(getattr(c, "text", ""))).on_click(None)
+    assert refrescos == [1]
 
 
 def test_la_papelera_borra_ese_hecho_y_no_otro(ajustes, store):
@@ -356,18 +414,62 @@ def test_la_papelera_borra_ese_hecho_y_no_otro(ajustes, store):
     assert [h.texto for h in memoria.leer(store)] == ["Entrena a las 7:00"]
 
 
-def test_al_llegar_al_tope_ajustes_quita_el_campo_de_anadir(ajustes, store):
+def test_el_boton_de_anadir_no_se_come_el_dialogo(ajustes, store):
+    """`expand=True` reparte el eje del padre, y el de una `Column` es el alto.
+
+    Suelto en la columna, el botón medía 350 px y empujaba la lista fuera de
+    la pantalla. Dentro de una `Row` expande a lo ancho, que es lo que se
+    quería. Ni Flet ni el layout se quejan: sale enorme y ya está. Primo
+    hermano de la trampa 27.
+    """
+    import flet as ft
+
+    dlg = _abrir_dialogo(ajustes)
+    boton = next(
+        c for c in _walk(dlg) if getattr(c, "on_click", None) and "Añadir" in _textos(c)
+    )
+
+    padres = [
+        c
+        for c in _walk(dlg)
+        if isinstance(getattr(c, "controls", None), list) and boton in c.controls
+    ]
+    assert padres, "el botón perdió su contenedor"
+    assert all(isinstance(p, ft.Row) for p in padres), (
+        "el botón expande dentro de una Column: crecerá a lo alto, no a lo ancho"
+    )
+
+
+def test_al_llegar_al_tope_el_dialogo_quita_el_campo_de_anadir(ajustes, store):
     """Y dice por qué: esto se paga en cada pregunta."""
     import flet as ft
 
     for i in range(memoria.MAX_HECHOS):
         memoria.anadir(store, f"hecho {i}", hoy=HOY)
 
-    seccion = ajustes._memoria_section()
-    assert "el máximo" in _textos(seccion)
-    assert not [c for c in _walk(seccion) if isinstance(c, ft.TextField)], (
-        "dejó el campo puesto en un sitio donde añadir ya no funciona"
+    dlg = _abrir_dialogo(ajustes)
+    assert "el máximo" in _textos(dlg)
+    campos = [c for c in _walk(dlg) if isinstance(c, ft.TextField)]
+    assert all(not _visible(c, dlg) for c in campos), (
+        "dejó el campo a la vista en un sitio donde añadir ya no funciona"
     )
+
+
+def _visible(control, raiz) -> bool:
+    """True si ningún antepasado del control está oculto."""
+    import flet as ft
+
+    def buscar(c, oculto):
+        if c is control:
+            return not oculto
+        propio = oculto or getattr(c, "visible", True) is False
+        kids = getattr(c, "controls", None) or []
+        hijo = getattr(c, "content", None)
+        if isinstance(hijo, ft.Control):
+            kids = [*kids, hijo]
+        return any(buscar(k, propio) for k in kids)
+
+    return buscar(raiz, False)
 
 
 def test_una_base_de_datos_muerta_no_tumba_ajustes(ajustes, monkeypatch):

@@ -1498,6 +1498,32 @@ class NutritionView:
             ft.Container(height=Space.x3),
         ]
 
+        # Lo que le pasa a casi todo, una vez. Repetido en cada tarjeta ocupaba
+        # media pantalla y se dejaba de leer — incluida la única nota que era
+        # distinta, que es justo la que importa.
+        if plan.conservacion_comun:
+            bloques += [
+                ft.Container(
+                    content=ft.Row(
+                        [
+                            ft.Icon(ft.Icons.AC_UNIT, size=14, color=C.text_secondary),
+                            ft.Text(
+                                plan.conservacion_comun + " (salvo donde diga otra cosa)",
+                                size=11,
+                                color=C.text_secondary,
+                                expand=True,
+                            ),
+                        ],
+                        spacing=6,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                    ),
+                    bgcolor=C.bg_sunken,
+                    border_radius=Radius.sm,
+                    padding=ft.padding.symmetric(vertical=8, horizontal=10),
+                ),
+                ft.Container(height=Space.x3),
+            ]
+
         for i, tarea in enumerate(plan.tareas, 1):
             bloques += [self._tarjeta_tarea(i, tarea), ft.Container(height=Space.x2)]
 

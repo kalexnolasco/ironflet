@@ -1177,6 +1177,8 @@ def _tool_weekend_plan(ctx: _Context, days: Any = 7, **_) -> str:
         lineas.append(f"  {seccion}: " + ", ".join(f"{a.nombre} {a.cantidad()}" for a in articulos))
 
     lineas.append(f"Sunday prep, in order, ~{plan.minutos_totales} min of wall clock:")
+    if plan.conservacion_comun:
+        lineas.append(f"  (applies to most of it: {plan.conservacion_comun})")
     for i, tarea in enumerate(plan.tareas, 1):
         fila = f"  {i}. {tarea.titulo} — {tarea.detalle} ({tarea.minutos} min)"
         if tarea.conservacion:

@@ -257,3 +257,24 @@ def test_si_el_calculo_falla_en_la_pantalla_se_dice(view, monkeypatch):
     # Y las pestañas siguen ahí: quedarse atrapado en la pantalla que falló
     # sería el segundo fallo.
     assert pinchable_con(pantalla, "Sábado · Compra") is not None
+
+
+def test_la_pantalla_dice_la_nota_comun_una_sola_vez(view):
+    """Contar apariciones, no buscar la cadena: el fallo era la repetición."""
+    view.finde = "prep"
+    pantalla = junto(view.build())
+    assert pantalla.count("Aguanta 4 días") == 1
+    assert "salvo donde diga otra cosa" in pantalla
+
+
+def test_la_del_salmon_sigue_en_su_tarjeta(view):
+    """La excepción es lo que cambia lo que haces, y va donde se está mirando."""
+    view.finde = "prep"
+    assert "Solo aguanta 2 días" in junto(view.build())
+
+
+def test_la_leche_se_pide_en_litros(view):
+    view.finde = "compra"
+    pantalla = junto(view.build())
+    assert "1,75 l" in pantalla
+    assert "1,81 kg" not in pantalla, "nadie compra leche en kilos"

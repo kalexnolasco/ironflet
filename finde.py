@@ -111,6 +111,17 @@ _ESCALADO_MINIMO = 0.05
 _FACTOR_MINIMO = 0.5
 
 
+#: Lo que se vende por volumen, y su densidad en g/ml. La tabla nutricional
+#: está en gramos porque las etiquetas europeas lo están — la propia plantilla
+#: escribe `258.0,  # 250 ml`. Pero **la leche no se compra en kilos**: en la
+#: pantalla salía «Leche semidesnatada 1,81 kg», que es correcto y no lo dice
+#: nadie en una tienda. Aquí se deshace esa conversión para escribirlo.
+_LIQUIDOS: dict[str, float] = {
+    "milk_semi": 1.03,
+    "olive_oil": 0.916,
+}
+
+
 @dataclass(frozen=True)
 class Articulo:
     """Un alimento y cuánto hace falta para la semana."""
@@ -119,18 +130,29 @@ class Articulo:
     nombre: str
     gramos: float
     seccion: str
+    #: g/ml cuando se compra por volumen; 0 cuando se compra por peso.
+    densidad: float = 0.0
 
     def cantidad(self) -> str:
-        """La cantidad como se lee en una lista: «1,05 kg», «280 g», «7 uds».
+        """La cantidad como se lee en una lista: «1,05 kg», «280 g», «1,75 l».
 
         Coma decimal aquí y punto en el resto de la app es deliberado: un kilo
         con cinco decimales no se lee, y esta es la única pantalla donde la
         cifra se escribe para copiarla a mano en una tienda.
         """
+        if self.densidad > 0:
+            ml = self.gramos / self.densidad
+            if ml >= 1000:
+                return _con_coma(ml / 1000) + " l"
+            return f"{round(ml):g} ml"
         if self.gramos >= 1000:
-            kilos = self.gramos / 1000
-            return f"{kilos:.2f}".rstrip("0").rstrip(".").replace(".", ",") + " kg"
+            return _con_coma(self.gramos / 1000) + " kg"
         return f"{round(self.gramos):g} g"
+
+
+def _con_coma(valor: float) -> str:
+    """`1.05` → `"1,05"`, `1.40` → `"1,4"`, `2.00` → `"2"`."""
+    return f"{valor:.2f}".rstrip("0").rstrip(".").replace(".", ",")
 
 
 @dataclass(frozen=True)
@@ -172,6 +194,12 @@ class Preparacion:
     #: Minutos de reloj, no la suma de los pasos: el arroz hierve mientras el
     #: pollo está en el horno.
     minutos_totales: int = 0
+    #: La advertencia de conservación que valdría para casi todo, dicha una
+    #: sola vez. En la pantalla, la misma frase repetida en cuatro de cinco
+    #: tarjetas ocupaba media pantalla y dejaba de leerse — incluida la única
+    #: que era distinta, la del salmón. Lo que se repite se dice arriba; en la
+    #: tarjeta solo queda lo que se sale de la norma.
+    conservacion_comun: str = ""
 
 
 def _plantilla(store: Any) -> tuple[tuple[str, str, float], ...]:
@@ -260,6 +288,7 @@ def lista_de_la_compra(store: Any, dias: int = 7, hoy: date | None = None) -> Co
                 nombre=str(getattr(comida, "name", slug)),
                 gramos=g * escala * dias,
                 seccion=_SECCION.get(slug, "Otros"),
+                densidad=_LIQUIDOS.get(slug, 0.0),
             )
         )
 
@@ -306,7 +335,8 @@ def plan_de_preparacion(store: Any, dias: int = 7, hoy: date | None = None) -> P
     minutos totales no son la suma de los pasos.
     """
     compra = lista_de_la_compra(store, dias=dias, hoy=hoy)
-    tareas = []
+
+    crudas: list[tuple[str, str, int, str]] = []
     for art in compra.articulos:
         receta = _COCINADO.get(art.slug)
         if receta is None:
@@ -320,14 +350,26 @@ def plan_de_preparacion(store: Any, dias: int = 7, hoy: date | None = None) -> P
                 if aguanta > 2
                 else f"Solo aguanta {aguanta} días: cocina para {aguanta} y congela el resto crudo"
             )
-        tareas.append(
-            Tarea(
-                titulo=titulo,
-                detalle=f"{art.cantidad()} · {art.nombre}",
-                minutos=minutos,
-                conservacion=nota,
-            )
+        crudas.append((titulo, f"{art.cantidad()} · {art.nombre}", minutos, nota))
+
+    # La nota que le toca a la mayoría se dice una vez arriba; en las tarjetas
+    # solo se queda la que dice algo distinto. Umbral en la mitad: con dos de
+    # cinco repetidas la repetición todavía no molesta, y sacarlas arriba
+    # obligaría a mirar dos sitios para saber qué pasa con una.
+    comun = ""
+    notas = [n for _t, _d, _m, n in crudas if n]
+    if len(notas) > len(crudas) / 2:
+        comun = max(set(notas), key=notas.count)
+
+    tareas = [
+        Tarea(
+            titulo=titulo,
+            detalle=detalle,
+            minutos=minutos,
+            conservacion="" if nota == comun else nota,
         )
+        for titulo, detalle, minutos, nota in crudas
+    ]
 
     tareas.sort(key=lambda t: -t.minutos)
     if tareas:
@@ -353,7 +395,13 @@ def plan_de_preparacion(store: Any, dias: int = 7, hoy: date | None = None) -> P
     if tareas:
         consejo = f"Empieza por «{tareas[0].titulo.split(' — ')[0]}»: mientras se hace, entra lo siguiente."
 
-    return Preparacion(tareas=tuple(tareas), dias=dias, consejo=consejo, minutos_totales=total)
+    return Preparacion(
+        tareas=tuple(tareas),
+        dias=dias,
+        consejo=consejo,
+        minutos_totales=total,
+        conservacion_comun=comun,
+    )
 
 
 def es_dia_de_compra(hoy: date | None = None) -> bool:

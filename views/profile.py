@@ -666,13 +666,15 @@ class ProfileView:
     # ── lo que el entrenador recuerda ────────────────────────
 
     def _memoria_section(self) -> ft.Control:
-        """La lista de hechos, con una papelera por línea y un campo para añadir.
+        """El resumen; la edición vive en un diálogo.
 
-        Editable a mano y no solo por el chat, por dos razones: quitar algo que
-        ya no es verdad — una lesión curada — no debería costar convencer a un
-        modelo, y **ver la lista entera es la única forma de saber qué sabe de
-        ti**. Una memoria que solo se escribe desde la conversación es una
-        memoria que nadie audita.
+        Estuvo en línea, con el campo y la lista dentro de Ajustes, y en el
+        móvil no valía: **cada añadido o borrado llama a `refresh_current()`,
+        que reconstruye la pantalla desde arriba** y te deja a cinco arrastres
+        de donde estabas. Con un hecho pasa desapercibido; rellenando seis de
+        una sentada es insufrible. Un diálogo se refresca solo a sí mismo y
+        deja quieto lo que hay detrás — y es lo que esta misma pantalla ya hace
+        para apuntar peso y cintura.
         """
         import memoria
 
@@ -681,31 +683,55 @@ class ProfileView:
         except Exception as exc:
             return db_error_card(exc, on_retry=self.page.data["refresh_current"])
 
-        cuerpo: list[ft.Control] = []
-
         if hechos:
-            cuerpo.append(
-                muted_text(
-                    f"{plural(len(hechos), 'cosa')} que el entrenador tiene presente "
-                    "en cada conversación.",
-                    size=11,
-                )
-            )
-            cuerpo.append(ft.Container(height=8))
-            for h in hechos:
-                cuerpo.append(self._fila_memoria(h))
+            resumen = ", ".join(h.texto for h in hechos[:2])
+            if len(hechos) > 2:
+                resumen += f" y {len(hechos) - 2} más"
+            titulo = plural(len(hechos), "cosa") + " que tiene presente"
         else:
-            cuerpo.append(
-                ft.Text(
-                    "El entrenador todavía no sabe nada de ti que no esté en tus datos: "
-                    "ni a qué hora entrenas, ni qué no comes, ni qué rodilla te molesta. "
-                    "Escríbelo aquí, o cuéntaselo en el chat y te ofrecerá guardarlo.",
-                    size=11,
-                    color=C.text_secondary,
-                )
+            resumen = (
+                "Ni a qué hora entrenas, ni qué no comes, ni qué rodilla te molesta. "
+                "Cuéntaselo una vez y no vuelve a preguntarlo."
             )
-            cuerpo.append(ft.Container(height=8))
+            titulo = "Todavía no sabe nada de ti"
 
+        return card(
+            ft.Container(
+                content=ft.Row(
+                    [
+                        ft.Column(
+                            [
+                                ft.Text(titulo, size=13, weight=ft.FontWeight.W_700, color=C.text),
+                                ft.Text(
+                                    resumen,
+                                    size=11,
+                                    color=C.text_secondary,
+                                    max_lines=2,
+                                    overflow=ft.TextOverflow.ELLIPSIS,
+                                ),
+                            ],
+                            spacing=2,
+                            expand=True,
+                            tight=True,
+                        ),
+                        ft.Icon(ft.Icons.CHEVRON_RIGHT, size=18, color=C.text_muted),
+                    ],
+                    spacing=Space.x2,
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                ),
+                on_click=self._open_memoria,
+                ink=True,
+                padding=ft.padding.symmetric(vertical=4),
+                border_radius=Radius.sm,
+            ),
+            padding=12,
+        )
+
+    def _open_memoria(self, _=None):
+        """El diálogo que edita la memoria sin mover Ajustes de sitio."""
+        import memoria
+
+        lista = ft.Column(spacing=0, tight=True, scroll=ft.ScrollMode.AUTO)
         campo = ft.TextField(
             hint_text="Entreno a las 7:00, antes de trabajar",
             dense=True,
@@ -714,50 +740,116 @@ class ProfileView:
             border_color=C.border,
             color=C.text,
             text_size=12,
+            on_submit=lambda _: anadir(None),
         )
         categoria = ft.Dropdown(
             value="rutina",
-            width=132,
             dense=True,
-            text_size=11,
+            text_size=12,
             border_color=C.border,
             color=C.text,
             options=[ft.dropdown.Option(clave, nombre) for clave, nombre in memoria.CATEGORIAS],
         )
+        aviso = ft.Text("", size=11, color=C.warning)
+        fila_nueva = ft.Column([campo, categoria], spacing=8, tight=True)
 
-        def _anadir(_):
+        def pintar():
+            """Redibuja SOLO el diálogo. Ajustes se entera al cerrarse."""
+            hechos = memoria.leer(self.store)
+            lista.controls = (
+                [self._fila_memoria(h, pintar) for h in hechos]
+                if hechos
+                else [
+                    ft.Container(
+                        content=ft.Text(
+                            "Nada todavía. Escribe algo que quieras que tenga siempre "
+                            "presente — cómo es tu semana, qué no comes, qué te molesta.",
+                            size=11,
+                            color=C.text_secondary,
+                        ),
+                        padding=ft.padding.symmetric(vertical=8),
+                    )
+                ]
+            )
+            lleno = len(hechos) >= memoria.MAX_HECHOS
+            fila_nueva.visible = not lleno
+            aviso.value = (
+                f"Son ya {memoria.MAX_HECHOS}, el máximo. Viajan en cada pregunta que le "
+                "haces y las pagas: quita alguna antes de añadir otra."
+                if lleno
+                else ""
+            )
+            self.page.update()
+
+        def anadir(_):
             texto = (campo.value or "").strip()
             if not texto:
                 return
             try:
                 memoria.anadir(self.store, texto, categoria.value or "otro")
-            except Exception:
+            except ValueError:
                 return
+            # El campo se vacía y la categoría se queda: rellenando la primera
+            # vez se encadenan varios de la misma clase.
+            campo.value = ""
+            pintar()
+
+        def cerrar(_=None):
+            self.page.close(dlg)
+            # Ahora sí: el resumen de Ajustes tiene que reflejar lo editado.
             self.page.data["refresh_current"]()
 
-        lleno = len(hechos) >= memoria.MAX_HECHOS
-        if lleno:
-            cuerpo.append(
-                ft.Text(
-                    f"Son ya {memoria.MAX_HECHOS}, el máximo. Viajan en cada pregunta que le "
-                    "haces y las pagas: quita alguna antes de añadir otra.",
-                    size=11,
-                    color=C.warning,
-                )
-            )
-        else:
-            cuerpo.append(ft.Row([campo, categoria], spacing=8))
-            cuerpo.append(ft.Container(height=8))
-            cuerpo.append(ghost_button("Añadir", on_click=_anadir, expand=True))
+        dlg = ft.AlertDialog(
+            modal=False,
+            bgcolor=C.bg_surface,
+            title=ft.Text(
+                "Lo que recuerda de ti", size=16, weight=ft.FontWeight.W_900, color=C.text
+            ),
+            content=ft.Container(
+                content=ft.Column(
+                    [
+                        ft.Text(
+                            "Viaja en cada conversación, así que el entrenador no vuelve a "
+                            "preguntarlo. Cuéntaselo también por el chat: te ofrecerá "
+                            "guardarlo él.",
+                            size=11,
+                            color=C.text_secondary,
+                        ),
+                        ft.Container(height=4),
+                        ft.Container(content=lista, expand=True),
+                        aviso,
+                        fila_nueva,
+                        # En una `Row`. `expand=True` reparte el eje del padre,
+                        # y el de una `Column` es el vertical: suelto ahí, el
+                        # botón se comía 350 px de alto del diálogo. Es el
+                        # primo del `wrap=True` de la trampa 27 — el mismo
+                        # parámetro queriendo decir cosas distintas según quién
+                        # lo lea, y sin error por medio.
+                        ft.Row([ghost_button("Añadir", on_click=anadir, expand=True)]),
+                    ],
+                    spacing=8,
+                    tight=True,
+                ),
+                width=dialog_width(self.page),
+                height=dialog_height(self.page, 520),
+            ),
+            actions=[
+                ft.TextButton("Listo", on_click=cerrar, style=ft.ButtonStyle(color=C.accent)),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+            on_dismiss=lambda _: self.page.data["refresh_current"](),
+        )
+        pintar()
+        self.page.open(dlg)
 
-        return card(*cuerpo)
-
-    def _fila_memoria(self, hecho) -> ft.Control:
+    def _fila_memoria(self, hecho, al_cambiar=None) -> ft.Control:
+        """Una línea con su papelera. `al_cambiar` redibuja lo que toque —
+        el diálogo cuando se edita desde él, la pantalla entera si no."""
         import memoria
 
         def _borrar(_):
             memoria.borrar(self.store, hecho.texto)
-            self.page.data["refresh_current"]()
+            (al_cambiar or self.page.data["refresh_current"])()
 
         return ft.Container(
             content=ft.Row(

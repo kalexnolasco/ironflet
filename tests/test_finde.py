@@ -289,3 +289,57 @@ def test_funciona_con_la_base_vacia(store):
     compra = finde.lista_de_la_compra(store, hoy=SABADO)
     plan = finde.plan_de_preparacion(store, hoy=DOMINGO)
     assert compra.articulos and plan.tareas
+
+
+# ── lo que solo se ve en la pantalla ─────────────────────────────────────
+
+
+def test_los_liquidos_van_en_litros(store):
+    """«Leche semidesnatada 1,81 kg» era correcto y no lo dice nadie.
+
+    La tabla nutricional está en gramos porque las etiquetas europeas lo están
+    — la plantilla escribe literalmente `258.0, # 250 ml`. En una lista de la
+    compra hay que deshacer esa conversión.
+    """
+    compra = finde.lista_de_la_compra(store, hoy=SABADO)
+    leche = next(a for a in compra.articulos if a.slug == "milk_semi")
+    aceite = next(a for a in compra.articulos if a.slug == "olive_oil")
+
+    assert leche.cantidad() == "1,75 l"
+    assert aceite.cantidad() == "175 ml"
+    assert "kg" not in leche.cantidad() and "g" not in aceite.cantidad().replace("ml", "")
+
+
+def test_lo_solido_sigue_en_kilos(store):
+    compra = finde.lista_de_la_compra(store, hoy=SABADO)
+    pollo = next(a for a in compra.articulos if a.slug == "chicken_breast")
+    assert pollo.cantidad() == "1,05 kg"
+
+
+def test_la_nota_que_le_toca_a_casi_todo_se_dice_una_vez(store):
+    """En pantalla, la misma frase en cuatro de cinco tarjetas ocupaba media
+    pantalla y se dejaba de leer — incluida la única distinta, la del salmón,
+    que es justo la que cambia lo que haces."""
+    plan = finde.plan_de_preparacion(store, dias=7, hoy=DOMINGO)
+
+    assert plan.conservacion_comun, "no se sacó arriba la nota repetida"
+    assert "4 días" in plan.conservacion_comun
+
+    con_nota = [t for t in plan.tareas if t.conservacion]
+    assert len(con_nota) == 1, f"quedaron {len(con_nota)} notas en las tarjetas"
+    assert "Salmón" in con_nota[0].titulo
+    assert con_nota[0].conservacion != plan.conservacion_comun
+
+
+def test_lo_que_queda_en_la_tarjeta_es_lo_que_se_sale_de_la_norma(store):
+    """La regla, dicha al revés: ninguna tarjeta repite la nota común."""
+    plan = finde.plan_de_preparacion(store, dias=7, hoy=DOMINGO)
+    assert all(t.conservacion != plan.conservacion_comun for t in plan.tareas)
+
+
+def test_con_pocas_repeticiones_no_se_saca_nada_arriba(store):
+    """Umbral en la mitad: con dos de cinco, la repetición todavía no molesta
+    y sacarla arriba obligaría a mirar dos sitios por cada tarea."""
+    plan = finde.plan_de_preparacion(store, dias=3, hoy=DOMINGO)
+    assert plan.conservacion_comun == ""
+    assert any(t.conservacion for t in plan.tareas), "y la del salmón sigue en su tarjeta"
