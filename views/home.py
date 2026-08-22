@@ -379,6 +379,7 @@ class HomeView:
         else:
             mini = ft.Icon(ft.Icons.ADD_A_PHOTO_OUTLINED, color=C.text_muted, size=26)
 
+        guardadas = "guardada" if total == 1 else "guardadas"
         if de_hoy:
             titulo, tono = "Foto de hoy hecha", C.success
             pie = f"{plural(total, 'foto')} en la galería · toca para verlas"
@@ -387,7 +388,10 @@ class HomeView:
             pie = (
                 "toca para añadirla — misma luz, misma pose"
                 if total == 0
-                else f"toca para añadirla · {plural(total, 'foto')} guardadas"
+                # El participio concuerda con el número, igual que el sustantivo:
+                # `plural()` daba «1 foto» y el «guardadas» fijo de al lado lo
+                # deshacía en la misma frase.
+                else f"toca para añadirla · {plural(total, 'foto')} {guardadas}"
             )
 
         return ft.Container(
@@ -875,6 +879,13 @@ class HomeView:
                         fila_dias,
                         error,
                         ft.Row([primary_button("Añadir aviso", on_click=_guarda, expand=True)]),
+                        # El botón de diagnóstico va AQUÍ y no al final: la
+                        # lista de abajo crece con cada aviso, y detrás de
+                        # quince filas de scroll está justo donde no se
+                        # encuentra la herramienta que se busca cuando algo no
+                        # suena. Aquí se ve sin desplazar, siempre.
+                        ghost_button("Probar un aviso ahora", on_click=_prueba, expand=True),
+                        prueba_msg,
                         ft.Container(height=6),
                         ft.Text(
                             "TODOS LOS AVISOS",
@@ -884,9 +895,6 @@ class HomeView:
                         ),
                         lista,
                         ft.Text(entrega, size=10, color=C.text_muted),
-                        ft.Container(height=10),
-                        ghost_button("Probar un aviso ahora", on_click=_prueba, expand=True),
-                        prueba_msg,
                     ],
                     spacing=8,
                     tight=True,

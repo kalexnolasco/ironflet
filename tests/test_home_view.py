@@ -404,3 +404,40 @@ def test_sin_lado_android_el_dialogo_no_alarma(monkeypatch, tmp_path):
     pintado, _ = _dialogo_avisos(monkeypatch, tmp_path, None)
     assert "batería" not in pintado
     assert "APAGADAS" not in pintado
+
+
+def _tarjeta_foto(monkeypatch, cuantas: int) -> str:
+    """La tarjeta FOTO de Inicio con N fotos guardadas y ninguna de hoy."""
+    import fotos as fotos_module
+    import views.home as home_module
+
+    monkeypatch.setattr(fotos_module, "para_fecha", lambda *a, **k: None)
+    page = MagicMock()
+    page.width = 400
+    page.height = 800
+    page.data = {
+        "refresh_current": lambda: None,
+        "navigate_to": lambda i, **k: None,
+        "photos_view": None,
+    }
+    store = FakeStore()
+    store.get_photos = lambda: [
+        {"date": f"2026-08-{10 + i:02d}", "file": f"{i}.jpg"} for i in range(cuantas)
+    ]
+    return " | ".join(texts(home_module.HomeView(page, store)._photo_tile()))
+
+
+def test_una_sola_foto_no_esta_guardadas(monkeypatch):
+    """«1 foto guardadas»: `plural()` acertaba y el participio de al lado no.
+
+    La concordancia no acaba en el sustantivo — cualquier palabra que vaya con
+    el número tiene que seguirle, y un literal fijo al lado de un `plural()`
+    deshace lo que este hace en la misma frase.
+    """
+    pintado = _tarjeta_foto(monkeypatch, 1)
+    assert "1 foto guardada" in pintado
+    assert "guardadas" not in pintado
+
+
+def test_varias_fotos_si_estan_guardadas(monkeypatch):
+    assert "2 fotos guardadas" in _tarjeta_foto(monkeypatch, 2)
