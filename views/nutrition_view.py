@@ -28,6 +28,7 @@ from datetime import date, datetime, timedelta
 
 import flet as ft
 
+import finde
 from dates import day_name, month_name
 from nutrition import (
     MEALS,
@@ -202,6 +203,17 @@ class NutritionView:
         #: message and not the screen.
         self._error: Exception | None = None
 
+        #: `""` (the diary), `"compra"` or `"prep"`. The weekend screens live
+        #: inside Food rather than on the nav bar: they are the same question
+        #: as the diary — what am I eating — asked a week ahead, and a sixth
+        #: bar slot for something used two days a week is a bad trade.
+        self.finde: str = ""
+
+        #: What is already in the trolley. Kept on the instance and not in the
+        #: database on purpose: it is true for the length of one shop, and a
+        #: ticked list that survives until next Saturday is worse than none.
+        self._cogido: set[str] = set()
+
     # ── view contract ────────────────────────────────────────
     def on_show(self):
         """Deliberately empty.
@@ -215,6 +227,10 @@ class NutritionView:
         if self._dialog is not None:
             self._close_dialog()
             return True
+        if self.finde:
+            self.finde = ""
+            self._refresh()
+            return True
         if self.day != date.today():
             self.day = date.today()
             self._refresh()
@@ -222,6 +238,9 @@ class NutritionView:
         return False
 
     def build(self) -> ft.Control:
+        if self.finde:
+            return self._build_finde()
+
         # Every read below can fail, and each one degrades to an empty dict via
         # `_read`. That is deliberately not the whole answer: a screen of zeroes
         # is a lie, so the failure is also remembered and stated at the top.
@@ -254,6 +273,15 @@ class NutritionView:
             self._macros_card(totals, targets),
             ft.Container(height=Space.x4),
         ]
+
+        # El sábado y el domingo la entrada al finde va arriba, porque es lo que
+        # se viene a hacer ese día. El resto de la semana baja al final: sigue
+        # accesible — se puede mirar la lista un jueves — sin empujar el diario,
+        # que es para lo que se abre esta pantalla los otros cinco días.
+        entrada = self._finde_entrada()
+        if entrada is not None and self._es_finde():
+            blocks += [entrada, ft.Container(height=Space.x4)]
+
         if empty:
             blocks += [self._empty_state(targets), ft.Container(height=Space.x4)]
         else:
@@ -263,6 +291,9 @@ class NutritionView:
         blocks.append(ft.Container(height=Space.x2))
         blocks += [self._meal_card(m, totals, entries_by_meal[m]) for m in MEALS]
         blocks.append(ft.Container(height=Space.x4))
+
+        if entrada is not None and not self._es_finde():
+            blocks += [entrada, ft.Container(height=Space.x4)]
 
         return ft.Column(
             blocks,
@@ -1192,4 +1223,338 @@ class NutritionView:
             ],
             spacing=0,
             tight=True,
+        )
+
+    # ── el finde: la compra y la preparación ─────────────────
+    # Dos pantallas dentro de Comida, no una sexta pestaña. Lo que dibujan sale
+    # entero de `finde.py`: aquí no se suma un gramo ni se decide un orden, para
+    # que las reglas — cuánto, en qué orden, qué aguanta en la nevera — sigan
+    # comprobándose en pytest y no solo en la tienda.
+
+    def _es_finde(self, hoy: date | None = None) -> bool:
+        dia = hoy or date.today()
+        return finde.es_dia_de_compra(dia) or finde.es_dia_de_prep(dia)
+
+    def _abrir_finde(self, cual: str):
+        self.finde = cual
+        self._cogido = set()
+        self._refresh()
+
+    def _finde_entrada(self) -> ft.Control | None:
+        """La tarjeta que lleva a las dos pantallas.
+
+        Cambia de tono según el día: el sábado y el domingo dice qué toca hoy;
+        el resto de la semana es una fila discreta. Devuelve `None` si algo
+        falla al leerlo — una tarjeta rota no debe costar el diario.
+        """
+        hoy = date.today()
+        try:
+            compra = finde.lista_de_la_compra(self.store, hoy=hoy)
+        except Exception:
+            return None
+        if not compra.articulos:
+            return None
+
+        es_sabado = finde.es_dia_de_compra(hoy)
+        es_domingo = finde.es_dia_de_prep(hoy)
+
+        if es_sabado:
+            titulo, sub, destino = (
+                "Hoy toca la compra",
+                f"{len(compra.articulos)} cosas para la semana",
+                "compra",
+            )
+        elif es_domingo:
+            plan = finde.plan_de_preparacion(self.store, hoy=hoy)
+            titulo = "Hoy toca cocinar"
+            sub = f"{plural(len(plan.tareas), 'paso')} · unos {plan.minutos_totales} min"
+            destino = "prep"
+        else:
+            titulo, sub, destino = (
+                "El finde",
+                "La compra del sábado y el prep del domingo",
+                "compra",
+            )
+
+        fila = ft.Container(
+            content=ft.Row(
+                [
+                    ft.Text("🛒" if destino == "compra" else "🍳", size=20),
+                    ft.Column(
+                        [
+                            ft.Text(titulo, size=13, weight=ft.FontWeight.W_700, color=C.text),
+                            ft.Text(sub, size=11, color=C.text_secondary),
+                        ],
+                        spacing=1,
+                        expand=True,
+                        tight=True,
+                    ),
+                    ft.Icon(ft.Icons.CHEVRON_RIGHT, size=18, color=C.text_muted),
+                ],
+                spacing=Space.x3,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
+            on_click=lambda _: self._abrir_finde(destino),
+            ink=True,
+            padding=ft.padding.symmetric(vertical=10, horizontal=12),
+            border_radius=Radius.md,
+        )
+        return card(fila, padding=0)
+
+    def _finde_cabecera(self, titulo: str, subtitulo: str) -> ft.Control:
+        return ft.Row(
+            [
+                ft.Container(
+                    content=ft.Icon(ft.Icons.ARROW_BACK, size=20, color=C.text),
+                    on_click=lambda _: self.handle_back(),
+                    ink=True,
+                    width=36,
+                    height=36,
+                    alignment=ft.alignment.center,
+                    border_radius=Radius.sm,
+                    tooltip="Volver al diario",
+                ),
+                ft.Column(
+                    [
+                        ft.Text(titulo, size=17, weight=ft.FontWeight.W_800, color=C.text),
+                        ft.Text(subtitulo, size=11, color=C.text_secondary),
+                    ],
+                    spacing=0,
+                    expand=True,
+                    tight=True,
+                ),
+            ],
+            spacing=Space.x2,
+            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+        )
+
+    def _finde_pestanas(self) -> ft.Control:
+        def boton(clave: str, texto: str) -> ft.Control:
+            activa = self.finde == clave
+            return ft.Container(
+                content=ft.Text(
+                    texto,
+                    size=12,
+                    weight=ft.FontWeight.W_700 if activa else ft.FontWeight.W_500,
+                    color=C.on_accent if activa else C.text_secondary,
+                    text_align=ft.TextAlign.CENTER,
+                ),
+                bgcolor=C.accent if activa else C.bg_sunken,
+                padding=ft.padding.symmetric(vertical=8),
+                border_radius=Radius.sm,
+                on_click=lambda _: self._abrir_finde(clave),
+                ink=not activa,
+                expand=True,
+            )
+
+        return ft.Row(
+            [boton("compra", "Sábado · Compra"), boton("prep", "Domingo · Cocina")],
+            spacing=Space.x2,
+        )
+
+    def _build_finde(self) -> ft.Control:
+        hoy = date.today()
+        try:
+            if self.finde == "prep":
+                cuerpo = self._finde_prep(finde.plan_de_preparacion(self.store, hoy=hoy))
+                titulo, sub = "Domingo", "Qué cocinar, cuánto y en qué orden"
+            else:
+                cuerpo = self._finde_compra(finde.lista_de_la_compra(self.store, hoy=hoy))
+                titulo, sub = "Sábado", "La compra de la semana"
+        except Exception as exc:
+            cuerpo = [db_error_card(exc, on_retry=self._refresh)]
+            titulo, sub = "El finde", "No se pudo calcular"
+
+        return ft.Column(
+            [
+                self._finde_cabecera(titulo, sub),
+                ft.Container(height=Space.x3),
+                self._finde_pestanas(),
+                ft.Container(height=Space.x4),
+                *cuerpo,
+                ft.Container(height=Space.x4),
+            ],
+            scroll=ft.ScrollMode.AUTO,
+            horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+            expand=True,
+            spacing=0,
+            tight=True,
+        )
+
+    # ── sábado ───────────────────────────────────────────────
+
+    def _toggle_cogido(self, slug: str):
+        self._cogido.symmetric_difference_update({slug})
+        self._refresh()
+
+    def _finde_compra(self, compra) -> list[ft.Control]:
+        bloques: list[ft.Control] = []
+
+        if compra.aviso:
+            bloques += [
+                ft.Container(
+                    content=ft.Text(
+                        compra.aviso, size=11, color=C.warning, weight=ft.FontWeight.W_600
+                    ),
+                    border=ft.border.all(1, C.warning),
+                    border_radius=Radius.sm,
+                    padding=10,
+                ),
+                ft.Container(height=Space.x3),
+            ]
+
+        total = len(compra.articulos)
+        hechos = len([a for a in compra.articulos if a.slug in self._cogido])
+        bloques += [
+            ft.Row(
+                [
+                    ft.Text(
+                        f"{hechos} de {total}" if hechos else plural(total, "cosa"),
+                        size=12,
+                        weight=ft.FontWeight.W_700,
+                        color=C.accent if hechos == total else C.text_secondary,
+                    ),
+                    ft.Container(expand=True),
+                    muted_text(f"{compra.dias} días · {round(compra.kcal_objetivo)} kcal", size=11),
+                ],
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
+            ft.Container(height=Space.x3),
+        ]
+
+        for seccion, articulos in compra.por_seccion():
+            filas: list[ft.Control] = [
+                ft.Container(
+                    content=ft.Text(
+                        seccion.upper(),
+                        size=10,
+                        weight=ft.FontWeight.W_700,
+                        color=C.text_muted,
+                    ),
+                    padding=ft.padding.only(left=4, bottom=6),
+                ),
+            ]
+            for art in articulos:
+                filas.append(self._fila_compra(art))
+            bloques += [
+                card(ft.Column(filas, spacing=0, tight=True)),
+                ft.Container(height=Space.x3),
+            ]
+
+        return bloques
+
+    def _fila_compra(self, art) -> ft.Control:
+        cogido = art.slug in self._cogido
+        return ft.Container(
+            content=ft.Row(
+                [
+                    ft.Icon(
+                        ft.Icons.CHECK_CIRCLE if cogido else ft.Icons.RADIO_BUTTON_UNCHECKED,
+                        size=18,
+                        color=C.accent if cogido else C.border_strong,
+                    ),
+                    ft.Text(
+                        art.nombre,
+                        size=13,
+                        color=C.text_muted if cogido else C.text,
+                        weight=ft.FontWeight.W_500,
+                        expand=True,
+                        max_lines=1,
+                        overflow=ft.TextOverflow.ELLIPSIS,
+                    ),
+                    ft.Text(
+                        art.cantidad(),
+                        size=13,
+                        weight=ft.FontWeight.W_700,
+                        color=C.text_muted if cogido else C.accent,
+                    ),
+                ],
+                spacing=Space.x2,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
+            on_click=lambda _, s=art.slug: self._toggle_cogido(s),
+            ink=True,
+            padding=ft.padding.symmetric(vertical=9, horizontal=4),
+            border_radius=Radius.sm,
+        )
+
+    # ── domingo ──────────────────────────────────────────────
+
+    def _finde_prep(self, plan) -> list[ft.Control]:
+        bloques: list[ft.Control] = [
+            ft.Row(
+                [
+                    ft.Text(
+                        f"{plan.minutos_totales} min",
+                        size=12,
+                        weight=ft.FontWeight.W_700,
+                        color=C.accent,
+                    ),
+                    muted_text("de reloj, no de sumar los pasos", size=11),
+                ],
+                spacing=Space.x2,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
+            ft.Container(height=Space.x3),
+        ]
+
+        for i, tarea in enumerate(plan.tareas, 1):
+            bloques += [self._tarjeta_tarea(i, tarea), ft.Container(height=Space.x2)]
+
+        if plan.consejo:
+            bloques += [
+                ft.Container(height=Space.x2),
+                ft.Container(
+                    content=ft.Text(plan.consejo, size=11, color=C.text_secondary, italic=True),
+                    padding=ft.padding.symmetric(horizontal=4),
+                ),
+            ]
+        return bloques
+
+    def _tarjeta_tarea(self, numero: int, tarea) -> ft.Control:
+        cuerpo: list[ft.Control] = [
+            ft.Text(tarea.titulo, size=13, weight=ft.FontWeight.W_700, color=C.text),
+            ft.Text(tarea.detalle, size=11, color=C.text_secondary),
+        ]
+        if tarea.conservacion:
+            cuerpo.append(ft.Container(height=4))
+            cuerpo.append(
+                ft.Row(
+                    [
+                        ft.Icon(ft.Icons.AC_UNIT, size=13, color=C.warning),
+                        ft.Text(
+                            tarea.conservacion,
+                            size=10,
+                            color=C.warning,
+                            weight=ft.FontWeight.W_600,
+                            expand=True,
+                        ),
+                    ],
+                    spacing=4,
+                    vertical_alignment=ft.CrossAxisAlignment.START,
+                )
+            )
+
+        return card(
+            ft.Row(
+                [
+                    ft.Container(
+                        content=ft.Text(
+                            str(numero),
+                            size=12,
+                            weight=ft.FontWeight.W_800,
+                            color=C.on_accent,
+                        ),
+                        width=24,
+                        height=24,
+                        bgcolor=C.accent,
+                        border_radius=12,
+                        alignment=ft.alignment.center,
+                    ),
+                    ft.Column(cuerpo, spacing=1, expand=True, tight=True),
+                    ft.Text(f"{tarea.minutos}′", size=11, color=C.text_muted),
+                ],
+                spacing=Space.x3,
+                vertical_alignment=ft.CrossAxisAlignment.START,
+            )
         )

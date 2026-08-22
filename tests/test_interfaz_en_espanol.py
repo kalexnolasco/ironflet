@@ -140,7 +140,7 @@ def test_ningun_texto_de_pantalla_en_ingles(fichero):
             continue
         # Un literal con `{}` puede ser una plantilla con nombres de ejercicio
         # dentro; se mira igual, porque la parte fija sí es texto de pantalla.
-        for palabra in set(m.group(1).lower() for m in _RE_INGLESA.finditer(literal)):
+        for palabra in {m.group(1).lower() for m in _RE_INGLESA.finditer(literal)}:
             culpables.append(f"«{palabra}» en {literal!r}")
     assert not culpables, f"{fichero.relative_to(RAIZ)} pinta texto en inglés:\n  " + "\n  ".join(
         culpables

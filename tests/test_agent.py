@@ -1066,6 +1066,45 @@ def test_commit_de_objetivos_escribe_targets_versionados(store):
     assert nutrition.targets_for(store, date(2026, 8, 23)) != objetivo
 
 
+def test_weekend_plan_relata_lo_que_calcula_la_app(store):
+    """Las cantidades salen de `finde.py`, las mismas que ve en la pantalla.
+
+    La alternativa era darle el menú y los objetivos y dejar que el modelo
+    multiplicase por siete. Lo hace mal a veces, en silencio, y el error se
+    descubre en la caja del súper. Misma política que con `progression.py`:
+    el número se transmite, no se reopina.
+    """
+    import finde
+
+    ctx = agent._Context(store=store, today=HOY)
+    texto = agent._tool_weekend_plan(ctx)
+
+    compra = finde.lista_de_la_compra(store, hoy=HOY)
+    pollo = next(a for a in compra.articulos if a.slug == "chicken_breast")
+    assert pollo.cantidad() in texto
+    assert "Carnicería y pescadería" in texto
+    assert "Sunday prep" in texto
+    # Y lo que no aguanta la semana, dicho: es el dato que cambia una decisión.
+    assert "congela" in texto.lower()
+
+
+def test_weekend_plan_acota_los_dias(store):
+    ctx = agent._Context(store=store, today=HOY)
+    assert "for 14 days" in agent._tool_weekend_plan(ctx, days=99)
+    assert "for 1 days" in agent._tool_weekend_plan(ctx, days=-3)
+    assert "for 7 days" in agent._tool_weekend_plan(ctx, days="no soy un número")
+
+
+def test_weekend_plan_traslada_el_aviso_de_un_objetivo_imposible(store):
+    """Si la lista trae un aviso, el coach tiene que verlo — y decirlo."""
+    import nutrition
+
+    nutrition.set_targets(store, kcal=900, protein=115, fat=30, carbs=80, starts_on="2026-08-01")
+    ctx = agent._Context(store=store, today=HOY)
+    texto = agent._tool_weekend_plan(ctx)
+    assert "WARNING" in texto and "entrenador" in texto
+
+
 def test_progress_photos_lista_fechas_sin_bytes(store, tmp_path):
     import fotos as fotos_mod
 

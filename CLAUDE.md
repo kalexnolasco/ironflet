@@ -52,7 +52,7 @@ CI (`.github/workflows/ci.yml`) runs, on Python 3.12:
 uv sync --group dev
 uv run ruff check .
 uv run ruff format --check .
-uv run pytest -q          # 1856 tests, 1 skipped (a network test, opt-in)
+uv run pytest -q          # 1905 tests, 1 skipped (a network test, opt-in)
 ```
 
 ## Architecture
@@ -250,6 +250,45 @@ file (`widget_pin.request`) because **Flet exposes no `MethodChannel` to
 Python**; `main.dart` sees it on the same three-second poll, deletes it and
 calls Kotlin. Deleted *before* the call: a file left behind would ask to pin
 the widget every three seconds forever.
+
+### El finde — `finde.py`
+
+Alex compra los sábados y cocina los domingos para toda la semana, y pidió que
+la app le ayudase con eso. Los datos ya estaban: `nutrition.TEMPLATE_DAY` lleva
+el menú del plan con sus gramos por comida. Faltaba multiplicarlo por siete,
+agruparlo por alimento y decirlo en unidades de supermercado.
+
+Vive dentro de **Comida** (`NutritionView.finde`: `""`, `"compra"` o `"prep"`),
+no en la barra: es la misma pregunta que el diario — qué como — hecha con una
+semana de antelación, y una sexta ranura para algo que se usa dos días por
+semana es mal negocio. El sábado y el domingo la entrada va arriba del diario;
+el resto de la semana, al final.
+
+Tres decisiones que no son obvias:
+
+- **Las secciones del supermercado están escritas a mano** (`_SECCION`). Se
+  puede deducir el macro dominante y agrupar por ahí, sin mantenimiento — y
+  saldría mal: el plátano y el arroz son los dos hidratos y están en pasillos
+  distintos. Una lista de la compra se ordena por dónde están las cosas en la
+  tienda, que es un hecho del mundo y no de la tabla nutricional.
+- **El escalado respeta la proteína.** La lista se ajusta a los objetivos
+  vigentes (`targets_for`, los que el coach pudo cambiar el lunes), pero el
+  plan dice qué recortar cuando hay que bajar: «el aceite de la cena, nunca la
+  proteína». Los alimentos proteicos se dejan intactos y el ajuste recae sobre
+  el resto. Por debajo de `_FACTOR_MINIMO` (0.5) ya no se escala: se avisa. Sin
+  ese suelo, un objetivo de 900 kcal producía «63 g de manzana para la semana»
+  — aritméticamente correcto y completamente inútil.
+- **`_COCINADO` lleva los días que aguanta cada cosa en la nevera**, y ese
+  tercer número es el que hace honesto el plan del domingo. Sin él mandaba
+  cocinar salmón el domingo para comerlo el sábado siguiente.
+
+El coach lo relata, no lo recalcula (`_tool_weekend_plan`): darle el menú y los
+objetivos y dejar que multiplique es un error que se descubre en la caja del
+súper. Misma política que con `progression.py`.
+
+Lo tachado en la lista vive en la instancia de la vista, no en la base de
+datos: es verdad durante una compra, y una lista a medias que sobrevive hasta
+el sábado siguiente es peor que ninguna.
 
 ### Reminders → Android notifications — `notificaciones.py`
 
@@ -453,11 +492,11 @@ Pinned to `flet[all]>=0.25,<0.30` — `flet[all]`, not plain `flet`, because web
 
 ## Tests
 
-`.venv/bin/python -m pytest -q` — **1856 tests**, `testpaths = ["tests"]`, `asyncio_mode = "auto"`:
+`.venv/bin/python -m pytest -q` — **1905 tests**, `testpaths = ["tests"]`, `asyncio_mode = "auto"`:
 
-`test_agent.py`, `test_analytics.py`, `test_asset_manager.py`, `test_backup.py`, `test_chart_baseline.py`, `test_column_migration.py`, `test_day_screen.py`, `test_data_view_counts.py`, `test_dialog_layout.py`, `test_draft_dates.py`, `test_draft_substitution.py`, `test_exercise_images.py`, `test_exercise_key.py`, `test_flet_reconnect.py`, `test_fotos.py`, `test_gcal.py`, `test_gym_tools.py`, `test_health.py`, `test_help_dialog.py`, `test_history_notes.py`, `test_history_view.py`, `test_home_view.py`, `test_image_delivery.py`, `test_interfaz_en_espanol.py`, `test_layout_movil.py`, `test_notificaciones.py`, `test_nutrition.py`, `test_nutrition_view.py`, `test_percent_table.py`, `test_prefill_por_fecha.py`, `test_profile_db_down.py`, `test_puente_dart.py`, `test_program_week.py`, `test_progression.py`, `test_routine_builder.py`, `test_session_duration.py`, `test_session_plan.py`, `test_set_types.py`, `test_shared_ui.py`, `test_smoke.py`, `test_sqlite_backend.py`, `test_storage_metrics.py`, `test_substitutions.py`, `test_theme.py`, `test_timer_sound.py`, `test_weight_trend.py`, `test_widget.py`, `test_workout_date.py`, `test_workout_draft.py`, `test_workout_exercise_date.py`, `test_workout_notes.py`, `test_workout_notes_swap.py`, `test_workout_plan_rows.py`, `test_workout_resume.py`, `test_workout_session_time.py`, `test_workout_tools.py`, `test_workout_zen.py`.
+`test_agent.py`, `test_analytics.py`, `test_asset_manager.py`, `test_backup.py`, `test_chart_baseline.py`, `test_column_migration.py`, `test_day_screen.py`, `test_data_view_counts.py`, `test_dialog_layout.py`, `test_draft_dates.py`, `test_draft_substitution.py`, `test_exercise_images.py`, `test_exercise_key.py`, `test_finde.py`, `test_finde_view.py`, `test_flet_reconnect.py`, `test_fotos.py`, `test_gcal.py`, `test_gym_tools.py`, `test_health.py`, `test_help_dialog.py`, `test_history_notes.py`, `test_history_view.py`, `test_home_view.py`, `test_image_delivery.py`, `test_interfaz_en_espanol.py`, `test_layout_movil.py`, `test_notificaciones.py`, `test_nutrition.py`, `test_nutrition_view.py`, `test_percent_table.py`, `test_prefill_por_fecha.py`, `test_profile_db_down.py`, `test_puente_dart.py`, `test_program_week.py`, `test_progression.py`, `test_routine_builder.py`, `test_session_duration.py`, `test_session_plan.py`, `test_set_types.py`, `test_shared_ui.py`, `test_smoke.py`, `test_sqlite_backend.py`, `test_storage_metrics.py`, `test_substitutions.py`, `test_theme.py`, `test_timer_sound.py`, `test_weight_trend.py`, `test_widget.py`, `test_workout_date.py`, `test_workout_draft.py`, `test_workout_exercise_date.py`, `test_workout_notes.py`, `test_workout_notes_swap.py`, `test_workout_plan_rows.py`, `test_workout_resume.py`, `test_workout_session_time.py`, `test_workout_tools.py`, `test_workout_zen.py`.
 
-A clean run is `1856 passed, 1 skipped` and needs **nothing installed but the dev group** — no Docker, no server. The single skip is a network test in `test_asset_manager.py` (opt in with `IRONFLET_NETWORK_TESTS=1`). Until 0.12 this section warned to judge a run by its skip count, because 211 tests — everything touching storage — skipped silently without PostgreSQL; that trap is gone with the server.
+A clean run is `1905 passed, 1 skipped` and needs **nothing installed but the dev group** — no Docker, no server. The single skip is a network test in `test_asset_manager.py` (opt in with `IRONFLET_NETWORK_TESTS=1`). Until 0.12 this section warned to judge a run by its skip count, because 211 tests — everything touching storage — skipped silently without PostgreSQL; that trap is gone with the server.
 
 `tests/conftest.py` gives each pytest process its own SQLite file in the system temp dir, for the same reason it used to create a database per pid: the fixtures wipe rows, and two concurrent runs deleting each other's data mid-query produced red runs with a different set of failures each time, in files unrelated to whatever was being changed.
 
