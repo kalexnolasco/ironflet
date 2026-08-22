@@ -29,9 +29,11 @@ from theme import (
     PALETTES,
     C,
     Radius,
+    Space,
     apply_theme,
     card,
     ghost_button,
+    muted_text,
     primary_button,
     section_title,
 )
@@ -660,6 +662,131 @@ class ProfileView:
 
     def _set_widget_msg(self, nivel: str, texto: str):
         self._widget_msg = (nivel, texto)
+
+    # ── lo que el entrenador recuerda ────────────────────────
+
+    def _memoria_section(self) -> ft.Control:
+        """La lista de hechos, con una papelera por línea y un campo para añadir.
+
+        Editable a mano y no solo por el chat, por dos razones: quitar algo que
+        ya no es verdad — una lesión curada — no debería costar convencer a un
+        modelo, y **ver la lista entera es la única forma de saber qué sabe de
+        ti**. Una memoria que solo se escribe desde la conversación es una
+        memoria que nadie audita.
+        """
+        import memoria
+
+        try:
+            hechos = memoria.leer(self.store)
+        except Exception as exc:
+            return db_error_card(exc, on_retry=self.page.data["refresh_current"])
+
+        cuerpo: list[ft.Control] = []
+
+        if hechos:
+            cuerpo.append(
+                muted_text(
+                    f"{plural(len(hechos), 'cosa')} que el entrenador tiene presente "
+                    "en cada conversación.",
+                    size=11,
+                )
+            )
+            cuerpo.append(ft.Container(height=8))
+            for h in hechos:
+                cuerpo.append(self._fila_memoria(h))
+        else:
+            cuerpo.append(
+                ft.Text(
+                    "El entrenador todavía no sabe nada de ti que no esté en tus datos: "
+                    "ni a qué hora entrenas, ni qué no comes, ni qué rodilla te molesta. "
+                    "Escríbelo aquí, o cuéntaselo en el chat y te ofrecerá guardarlo.",
+                    size=11,
+                    color=C.text_secondary,
+                )
+            )
+            cuerpo.append(ft.Container(height=8))
+
+        campo = ft.TextField(
+            hint_text="Entreno a las 7:00, antes de trabajar",
+            dense=True,
+            expand=True,
+            max_length=memoria.MAX_LARGO,
+            border_color=C.border,
+            color=C.text,
+            text_size=12,
+        )
+        categoria = ft.Dropdown(
+            value="rutina",
+            width=132,
+            dense=True,
+            text_size=11,
+            border_color=C.border,
+            color=C.text,
+            options=[ft.dropdown.Option(clave, nombre) for clave, nombre in memoria.CATEGORIAS],
+        )
+
+        def _anadir(_):
+            texto = (campo.value or "").strip()
+            if not texto:
+                return
+            try:
+                memoria.anadir(self.store, texto, categoria.value or "otro")
+            except Exception:
+                return
+            self.page.data["refresh_current"]()
+
+        lleno = len(hechos) >= memoria.MAX_HECHOS
+        if lleno:
+            cuerpo.append(
+                ft.Text(
+                    f"Son ya {memoria.MAX_HECHOS}, el máximo. Viajan en cada pregunta que le "
+                    "haces y las pagas: quita alguna antes de añadir otra.",
+                    size=11,
+                    color=C.warning,
+                )
+            )
+        else:
+            cuerpo.append(ft.Row([campo, categoria], spacing=8))
+            cuerpo.append(ft.Container(height=8))
+            cuerpo.append(ghost_button("Añadir", on_click=_anadir, expand=True))
+
+        return card(*cuerpo)
+
+    def _fila_memoria(self, hecho) -> ft.Control:
+        import memoria
+
+        def _borrar(_):
+            memoria.borrar(self.store, hecho.texto)
+            self.page.data["refresh_current"]()
+
+        return ft.Container(
+            content=ft.Row(
+                [
+                    ft.Column(
+                        [
+                            ft.Text(hecho.texto, size=12, color=C.text),
+                            muted_text(hecho.etiqueta(), size=10),
+                        ],
+                        spacing=1,
+                        expand=True,
+                        tight=True,
+                    ),
+                    ft.Container(
+                        content=ft.Icon(ft.Icons.DELETE_OUTLINE, size=17, color=C.text_muted),
+                        on_click=_borrar,
+                        ink=True,
+                        width=32,
+                        height=32,
+                        alignment=ft.alignment.center,
+                        border_radius=Radius.sm,
+                        tooltip="Que lo olvide",
+                    ),
+                ],
+                spacing=Space.x2,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
+            padding=ft.padding.symmetric(vertical=5),
+        )
 
     def _backup_section(self) -> ft.Control:
         return ft.Row(
@@ -1699,6 +1826,10 @@ class ProfileView:
                 section_title("Entrenador"),
                 ft.Container(height=4),
                 self._coach_section(),
+                ft.Container(height=14),
+                section_title("Lo que recuerda de ti"),
+                ft.Container(height=4),
+                self._memoria_section(),
                 ft.Container(height=14),
                 section_title("Calendario de Google"),
                 ft.Container(height=4),

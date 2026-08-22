@@ -52,7 +52,7 @@ CI (`.github/workflows/ci.yml`) runs, on Python 3.12:
 uv sync --group dev
 uv run ruff check .
 uv run ruff format --check .
-uv run pytest -q          # 1905 tests, 1 skipped (a network test, opt-in)
+uv run pytest -q          # 1948 tests, 1 skipped (a network test, opt-in)
 ```
 
 ## Architecture
@@ -251,6 +251,46 @@ Python**; `main.dart` sees it on the same three-second poll, deletes it and
 calls Kotlin. Deleted *before* the call: a file left behind would ask to pin
 the widget every three seconds forever.
 
+### La memoria del coach — `memoria.py`
+
+Hasta 0.14 el coach empezaba de cero en cada arranque. Sabía leer el historial,
+el peso y la comida — todo lo que está en la base de datos — pero no sabía que
+Alex entrena a las siete antes de trabajar, que no come pescado, que la rodilla
+izquierda protesta en sentadilla profunda. Eso había que contárselo cada vez, y
+por eso no se le contaba.
+
+**Hechos, no conversación.** Guardar el chat sería un blob creciendo en
+`preferencias` y un mes de charla re-facturado en cada pregunta. Lo que cambia
+el producto son veinte líneas: las que uno le diría a un entrenador nuevo el
+primer día. Por eso caben enteras en el prompt.
+
+**Y por eso van en el prompt y no en una herramienta.** `build_system_prompt`
+está escrito para ser idéntico byte a byte entre peticiones — así funciona la
+caché de OpenRouter — y los hechos son **la única excepción deliberada**:
+invalidan la caché cuando se edita uno, que pasa unas pocas veces en la vida
+del producto y no una vez al día como pasaría con la fecha. A cambio, el coach
+nunca puede *no* saberlos, cosa que una herramienta que el modelo decide si
+llama no puede prometer. `about_me` existe igualmente, pero para lo contrario:
+comprobar, antes de proponer un hecho nuevo, que no contradice a uno viejo.
+
+**El coach no escribe aquí** (trampa 14): `propose_memory` pinta una tarjeta y
+Alex toca Guardar. Es la propuesta donde más obvio resulta por qué — un modelo
+que escribe en su propia memoria acaba recordando cosas que nadie le dijo, y
+nadie sabría cuáles hasta leerlas en Ajustes.
+
+Los topes (`MAX_HECHOS = 30`, `MAX_LARGO = 200`) no son higiene: esto viaja en
+**cada** pregunta y Alex lo paga. Al llenarse, `anadir` empuja el más viejo en
+vez de fallar — un límite que rompe la escritura es un límite que se descubre
+en el peor momento. La herramienta sí se planta y manda a Ajustes, que es donde
+se decide qué sobra.
+
+Editable a mano en Ajustes → «Lo que recuerda de ti», y no solo desde el chat:
+quitar algo que ya no es verdad no debería costar convencer a un modelo, y ver
+la lista entera es la única forma de saber qué sabe de ti.
+
+`memoria.PREF` **no** va en `SECRET_PREF_KEYS` — al revés que la clave de la
+API. Esto es exactamente lo que uno quiere conservar al cambiar de móvil.
+
 ### El finde — `finde.py`
 
 Alex compra los sábados y cocina los domingos para toda la semana, y pidió que
@@ -402,6 +442,17 @@ Things that break quietly if you do not know them:
 12. **Building the APK from a clean git worktree.** `assets/exercises/` is gitignored, so the worktree has no frames — which is fine (they download at runtime) but means the build cannot be used to check anything about images.
 13. **Reading `get_last_sets()` without a date while back-dating.** It returns the newest row in the table, so logging Monday on Wednesday prefills from Wednesday. Pass `before=` the date being logged.
 14. **Giving the coach a tool that writes.** The whole safety story of that feature is that no tool can reach the database — a *proposal* goes on screen and Alex's tap is what writes. One helpful tool that saves directly deletes the guarantee, and nothing fails.
+
+    The guard that protects it, `test_ninguna_herramienta_escribe`, said "every
+    tool" and ran **six of fifteen**: its list was hand-written and nobody
+    updated it when photos, calendar, reminders and targets arrived. It now
+    iterates `_READ_TOOLS` / `_PROPOSE_TOOLS` directly, and a companion test
+    fails if a tool has no arguments in `ARGUMENTOS_DE_PRUEBA` — so a new tool
+    goes red before it can pass by not being run. Two things to know when
+    adding one: give it arguments that make it **do something** (a tool that
+    refuses itself on line two never reaches the line where it would write, and
+    passes the guard by not executing), and note that `propose_calendar_event`
+    needs the fake Google credentials the guard sets for exactly that reason.
 15. **Adding a pref that holds a secret without listing it in `SECRET_PREF_KEYS`.** Both exporters copy `preferencias` verbatim into a file people mail themselves.
 16. **Calling `save_workout()` from anything re-submittable.** It always INSERTs. Use `replace_workout()`; see the note in Storage.
 17. **Reading `function.arguments` as an object.** OpenRouter sends it as a JSON **string**. Parse it, or every tool runs with no arguments and the coach reports that it cannot find the exercise — which reads like a matching bug, not a parsing one.
@@ -492,11 +543,11 @@ Pinned to `flet[all]>=0.25,<0.30` — `flet[all]`, not plain `flet`, because web
 
 ## Tests
 
-`.venv/bin/python -m pytest -q` — **1905 tests**, `testpaths = ["tests"]`, `asyncio_mode = "auto"`:
+`.venv/bin/python -m pytest -q` — **1948 tests**, `testpaths = ["tests"]`, `asyncio_mode = "auto"`:
 
-`test_agent.py`, `test_analytics.py`, `test_asset_manager.py`, `test_backup.py`, `test_chart_baseline.py`, `test_column_migration.py`, `test_day_screen.py`, `test_data_view_counts.py`, `test_dialog_layout.py`, `test_draft_dates.py`, `test_draft_substitution.py`, `test_exercise_images.py`, `test_exercise_key.py`, `test_finde.py`, `test_finde_view.py`, `test_flet_reconnect.py`, `test_fotos.py`, `test_gcal.py`, `test_gym_tools.py`, `test_health.py`, `test_help_dialog.py`, `test_history_notes.py`, `test_history_view.py`, `test_home_view.py`, `test_image_delivery.py`, `test_interfaz_en_espanol.py`, `test_layout_movil.py`, `test_notificaciones.py`, `test_nutrition.py`, `test_nutrition_view.py`, `test_percent_table.py`, `test_prefill_por_fecha.py`, `test_profile_db_down.py`, `test_puente_dart.py`, `test_program_week.py`, `test_progression.py`, `test_routine_builder.py`, `test_session_duration.py`, `test_session_plan.py`, `test_set_types.py`, `test_shared_ui.py`, `test_smoke.py`, `test_sqlite_backend.py`, `test_storage_metrics.py`, `test_substitutions.py`, `test_theme.py`, `test_timer_sound.py`, `test_weight_trend.py`, `test_widget.py`, `test_workout_date.py`, `test_workout_draft.py`, `test_workout_exercise_date.py`, `test_workout_notes.py`, `test_workout_notes_swap.py`, `test_workout_plan_rows.py`, `test_workout_resume.py`, `test_workout_session_time.py`, `test_workout_tools.py`, `test_workout_zen.py`.
+`test_agent.py`, `test_analytics.py`, `test_asset_manager.py`, `test_backup.py`, `test_chart_baseline.py`, `test_column_migration.py`, `test_day_screen.py`, `test_data_view_counts.py`, `test_dialog_layout.py`, `test_draft_dates.py`, `test_draft_substitution.py`, `test_exercise_images.py`, `test_exercise_key.py`, `test_finde.py`, `test_finde_view.py`, `test_flet_reconnect.py`, `test_fotos.py`, `test_gcal.py`, `test_gym_tools.py`, `test_health.py`, `test_help_dialog.py`, `test_history_notes.py`, `test_history_view.py`, `test_home_view.py`, `test_image_delivery.py`, `test_interfaz_en_espanol.py`, `test_layout_movil.py`, `test_memoria.py`, `test_notificaciones.py`, `test_nutrition.py`, `test_nutrition_view.py`, `test_percent_table.py`, `test_prefill_por_fecha.py`, `test_profile_db_down.py`, `test_puente_dart.py`, `test_program_week.py`, `test_progression.py`, `test_routine_builder.py`, `test_session_duration.py`, `test_session_plan.py`, `test_set_types.py`, `test_shared_ui.py`, `test_smoke.py`, `test_sqlite_backend.py`, `test_storage_metrics.py`, `test_substitutions.py`, `test_theme.py`, `test_timer_sound.py`, `test_weight_trend.py`, `test_widget.py`, `test_workout_date.py`, `test_workout_draft.py`, `test_workout_exercise_date.py`, `test_workout_notes.py`, `test_workout_notes_swap.py`, `test_workout_plan_rows.py`, `test_workout_resume.py`, `test_workout_session_time.py`, `test_workout_tools.py`, `test_workout_zen.py`.
 
-A clean run is `1905 passed, 1 skipped` and needs **nothing installed but the dev group** — no Docker, no server. The single skip is a network test in `test_asset_manager.py` (opt in with `IRONFLET_NETWORK_TESTS=1`). Until 0.12 this section warned to judge a run by its skip count, because 211 tests — everything touching storage — skipped silently without PostgreSQL; that trap is gone with the server.
+A clean run is `1948 passed, 1 skipped` and needs **nothing installed but the dev group** — no Docker, no server. The single skip is a network test in `test_asset_manager.py` (opt in with `IRONFLET_NETWORK_TESTS=1`). Until 0.12 this section warned to judge a run by its skip count, because 211 tests — everything touching storage — skipped silently without PostgreSQL; that trap is gone with the server.
 
 `tests/conftest.py` gives each pytest process its own SQLite file in the system temp dir, for the same reason it used to create a database per pid: the fixtures wipe rows, and two concurrent runs deleting each other's data mid-query produced red runs with a different set of failures each time, in files unrelated to whatever was being changed.
 

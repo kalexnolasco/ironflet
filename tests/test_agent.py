@@ -86,11 +86,61 @@ class TiendaDeSoloLectura:
         return getattr(self._real, name)
 
 
+#: Argumentos con los que llamar a cada herramienta en el guard de abajo, de
+#: forma que **haga algo** en vez de rechazar la llamada por falta de datos.
+#: Una herramienta que se rechaza a sí misma nunca llega a la línea donde
+#: escribiría, y pasar el guard sin haberse ejecutado es exactamente lo que
+#: hacía que la invariante pareciera comprobada.
+ARGUMENTOS_DE_PRUEBA: dict[str, dict] = {
+    # lectura
+    "today": {},
+    "exercise_history": {"exercise": "Barbell Bench Press"},
+    "recent_training": {"days": 30},
+    "body_weight": {"days": 60},
+    "nutrition": {},
+    "list_exercises": {},
+    "progress_photos": {"days": 60},
+    "calendar_events": {"days": 7},
+    "weekend_plan": {"days": 7},
+    "about_me": {},
+    # propuesta
+    "propose_workout_log": {
+        "exercise": "Barbell Bench Press",
+        "sets": [{"weight": 62.5, "reps": 8}],
+    },
+    "propose_body_weight": {"kg": 73.8},
+    "propose_week_targets": {"kcal": 2500, "protein_g": 180, "fat_g": 70, "carbs_g": 260},
+    "propose_reminder": {"text": "Beber agua", "time_hhmm": "10:00", "repeat": "daily"},
+    "propose_calendar_event": {"title": "Entreno", "day": HOY.isoformat(), "time_hhmm": "07:00"},
+    "propose_memory": {"fact": "Entrena a las 7:00", "category": "rutina"},
+}
+
+
+def test_el_guard_de_escritura_cubre_todas_las_herramientas():
+    """El guard de abajo decía «every tool» y probaba seis de quince.
+
+    La lista estaba escrita a mano y nadie la actualizó al añadir fotos,
+    calendario, avisos ni objetivos: la invariante que sostiene toda la
+    seguridad del coach se comprobaba sobre un subconjunto que ya no
+    representaba nada. Esto lo hace exhaustivo por construcción — añadir una
+    herramienta sin darle argumentos aquí pone este test en rojo antes de que
+    el otro pueda dar un falso verde.
+    """
+    declaradas = set(agent._READ_TOOLS) | set(agent._PROPOSE_TOOLS)
+    faltan = declaradas - set(ARGUMENTOS_DE_PRUEBA)
+    sobran = set(ARGUMENTOS_DE_PRUEBA) - declaradas
+    assert not faltan, f"sin argumentos de prueba: {sorted(faltan)}"
+    assert not sobran, f"argumentos para herramientas que ya no existen: {sorted(sobran)}"
+
+
 def test_ninguna_herramienta_escribe(store, claves):
     """THE ONE. Every tool, run for real, against a store that refuses writes.
 
     Asserted structurally rather than by reading the code, because "no tool
     writes" is the kind of invariant a helpful future edit breaks in one line.
+
+    «Every tool» de verdad: la lista sale de los registros y el test de arriba
+    falla si alguna se queda sin argumentos.
     """
     store.set_pref("routine", "cambiatufisico")
     store.save_workout(
@@ -104,32 +154,33 @@ def test_ninguna_herramienta_escribe(store, claves):
     )
     store.save_weight(74.0, AYER.isoformat())
 
+    # El calendario, conectado con credenciales de mentira: sin esto
+    # `propose_calendar_event` se rechaza a sí misma en la segunda línea y sale
+    # del guard sin haber tocado nada — verde por no haberse ejecutado.
+    import gcal
+
+    store.set_pref(gcal.CLIENT_ID_PREF, "id")
+    store.set_pref(gcal.CLIENT_SECRET_PREF, "sec")
+    store.set_pref(gcal.REFRESH_PREF, "ref")
+
     blindada = TiendaDeSoloLectura(store)
     ctx = agent._Context(store=blindada, today=HOY, entries=store.get_all())
 
-    llamadas = {
-        "today": {},
-        "exercise_history": {"exercise": "Barbell Bench Press"},
-        "recent_training": {"days": 30},
-        "body_weight": {"days": 60},
-        "nutrition": {},
-        "list_exercises": {},
-    }
-    for nombre, kwargs in llamadas.items():
-        salida = agent._READ_TOOLS[nombre](ctx, **kwargs)
-        assert isinstance(salida, str) and salida
+    for nombre, fn in agent._READ_TOOLS.items():
+        salida = fn(ctx, **ARGUMENTOS_DE_PRUEBA[nombre])
+        assert isinstance(salida, str) and salida, f"{nombre} no devolvió nada"
 
-    proponer = {
-        "propose_workout_log": {
-            "exercise": "Barbell Bench Press",
-            "sets": [{"weight": 62.5, "reps": 8}],
-        },
-        "propose_body_weight": {"kg": 73.8},
-    }
-    for nombre, kwargs in proponer.items():
-        texto, propuesta = agent._PROPOSE_TOOLS[nombre](ctx, **kwargs)
+    for nombre, fn in agent._PROPOSE_TOOLS.items():
+        texto, propuesta = fn(ctx, **ARGUMENTOS_DE_PRUEBA[nombre])
         assert propuesta is not None, f"{nombre} produced no proposal"
-        assert "NOT saved" in texto, f"{nombre} did not tell the model it is unsaved"
+        # «NOT saved» o «NOT created» según lo que se proponga — un aviso no se
+        # guarda, se crea. Lo que no puede faltar en ninguno es el hecho: nada
+        # ha pasado todavía, y hace falta un toque suyo. Si el resultado de la
+        # herramienta no lo dice, el modelo le anuncia que está hecho.
+        assert "NOT saved" in texto or "NOT created" in texto, (
+            f"{nombre} did not tell the model it is unsaved"
+        )
+        assert "tap Save" in texto, f"{nombre} did not say a tap of his is needed"
 
     assert blindada.intentos == []
 

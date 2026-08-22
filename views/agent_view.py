@@ -319,6 +319,19 @@ class AgentView:
             detail = "objetivo diario"
             warn = ""
             note = p.note or ""
+        elif isinstance(p, agent.MemoryProposal):
+            # El cuerpo es la frase entera y a tamaño grande, como los números
+            # de las otras tarjetas: esto es exactamente lo que hay que leer
+            # antes de guardar, porque a partir de aquí viaja en cada
+            # conversación y corregirlo es ir a buscarlo a Ajustes.
+            import memoria as _memoria
+
+            title = "Que lo recuerde"
+            when = date.today()
+            body = p.texto
+            detail = _memoria.Hecho(texto=p.texto, categoria=p.categoria).etiqueta().lower()
+            warn = ""
+            note = "Lo tendré presente en todas las conversaciones. Se edita en Ajustes."
         else:
             title = "Peso corporal"
             when = p.day
@@ -405,6 +418,60 @@ class AgentView:
             padding=14,
         )
 
+    #: Lo que se le envía al coach cuando Alex toca «Que me conozcas». Es un
+    #: mensaje suyo, no una instrucción escondida: aparece en la conversación
+    #: como cualquier otro y se puede leer, corregir y repetir.
+    ENTREVISTA = (
+        "Quiero que me conozcas. Pregúntame lo que te haga falta saber de mí para "
+        "entrenarme mejor — de una en una, no todo de golpe — y ve ofreciéndome guardar "
+        "lo que valga la pena recordar."
+    )
+
+    def _invitacion_a_conocerte(self, ask) -> list[ft.Control]:
+        """La entrevista inicial, ofrecida solo mientras no sepa nada.
+
+        Desaparece con el primer hecho guardado. Un botón que sigue ahí después
+        de usarlo invita a repetir la entrevista, y la segunda vuelta es el
+        coach preguntando cosas que ya tiene apuntadas.
+        """
+        try:
+            import memoria
+
+            if not memoria.vacia(self.store):
+                return []
+        except Exception:
+            return []
+
+        return [
+            ft.Container(
+                content=ft.Column(
+                    [
+                        ft.Text(
+                            "Todavía no sé nada de ti",
+                            size=13,
+                            weight=ft.FontWeight.W_800,
+                            color=C.text,
+                        ),
+                        ft.Text(
+                            "Veo tus entrenos y tu comida, pero no a qué hora entrenas, "
+                            "qué no comes o qué te molesta. Cuéntamelo una vez y no "
+                            "vuelvo a preguntarlo.",
+                            size=11,
+                            color=C.text_secondary,
+                        ),
+                        ft.Container(height=8),
+                        primary_button("Que me conozcas", on_click=ask(self.ENTREVISTA)),
+                    ],
+                    spacing=2,
+                    tight=True,
+                ),
+                bgcolor=C.accent_soft,
+                border_radius=10,
+                padding=12,
+            ),
+            ft.Container(height=10),
+        ]
+
     def _starters(self) -> ft.Control:
         def ask(text):
             def go(_):
@@ -415,6 +482,7 @@ class AgentView:
 
         return ft.Column(
             [
+                *self._invitacion_a_conocerte(ask),
                 ft.Text(
                     "Pregunta por tu entreno, o cuenta qué has hecho.",
                     size=12,

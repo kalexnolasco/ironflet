@@ -660,12 +660,36 @@ class CalendarEventProposal:
         return f"{self.day.isoformat()} · {self.hhmm} ({self.duration_min} min)"
 
 
+@dataclass(frozen=True)
+class MemoryProposal:
+    """Algo que el coach ha aprendido de Alex y propone recordar.
+
+    Es la pieza que faltaba para que dejase de preguntar lo mismo cada vez. Y
+    es, con diferencia, la propuesta que más obviamente tenía que pasar por la
+    tarjeta: un modelo que escribe solo en su propia memoria acaba recordando
+    cosas que nadie le dijo, y nadie sabría cuáles hasta leerlas en Ajustes.
+    """
+
+    texto: str
+    #: Una de `memoria.CATEGORIAS`. Un valor raro cae en "otro" al guardar.
+    categoria: str = "otro"
+
+    kind: str = "memory"
+
+    def summary(self) -> str:
+        import memoria
+
+        etiqueta = memoria.Hecho(texto=self.texto, categoria=self.categoria).etiqueta()
+        return f"{etiqueta} · lo recordaré en cada conversación"
+
+
 Proposal = (
     WorkoutProposal
     | WeightProposal
     | MealTargetsProposal
     | ReminderProposal
     | CalendarEventProposal
+    | MemoryProposal
 )
 
 
@@ -683,6 +707,11 @@ def commit_proposal(store: Any, proposal: Proposal) -> str:
     if isinstance(proposal, WeightProposal):
         store.save_weight(proposal.kg, proposal.day.isoformat())
         return f"Guardados {proposal.kg:g} kg en {proposal.day.isoformat()}."
+    if isinstance(proposal, MemoryProposal):
+        import memoria
+
+        memoria.anadir(store, proposal.texto, proposal.categoria)
+        return "Apuntado. Lo tendré presente a partir de ahora."
     if isinstance(proposal, CalendarEventProposal):
         import gcal
 
@@ -1274,6 +1303,76 @@ def _tool_propose_reminder(
     return (told, propuesta)
 
 
+def _tool_propose_memory(
+    ctx: _Context, fact: str = "", category: str = "otro", **_
+) -> tuple[str, MemoryProposal | None]:
+    """El coach propone recordar algo de Alex para siempre.
+
+    Rechaza lo que la base de datos ya sabe mejor que una nota: el peso de
+    ayer, las series del martes, las calorías de hoy. Todo eso tiene una
+    herramienta que lo lee al día, y guardarlo como «hecho» es congelar un
+    número que mañana será mentira — el fallo silencioso, otra vez.
+    """
+    import memoria
+
+    limpio = " ".join(str(fact or "").split())
+    if not limpio:
+        return ("Refused: the fact is empty.", None)
+    if len(limpio) > memoria.MAX_LARGO:
+        return (
+            f"Refused: {memoria.MAX_LARGO} characters max — this must be a fact, "
+            "not a paragraph. Split it or shorten it.",
+            None,
+        )
+
+    ya = memoria.leer(ctx.store)
+    if any(h.texto.lower() == limpio.lower() for h in ya):
+        return ("Already remembered, word for word. Nothing to show him.", None)
+    if len(ya) >= memoria.MAX_HECHOS:
+        return (
+            f"Refused: already at {memoria.MAX_HECHOS} facts, the maximum. Ask him to "
+            "drop one in Ajustes → El coach first, or propose replacing a stale one.",
+            None,
+        )
+
+    propuesta = MemoryProposal(texto=limpio, categoria=str(category or "otro").strip().lower())
+    told = (
+        f"Shown to the user as a confirmation card: remember '{limpio[:80]}'. NOT saved. "
+        "He has to tap Save. Once saved it travels in every future conversation, so keep "
+        "it to things that stay true — schedules, foods he avoids, injuries, goals — and "
+        "never to numbers the tools already read live (weight, sets, calories)."
+    )
+    return (told, propuesta)
+
+
+def _tool_about_me(ctx: _Context, **_) -> str:
+    """Lo que ya está apuntado, para que el coach no lo proponga dos veces.
+
+    Los hechos ya viajan en el prompt de sistema, así que esta herramienta es
+    redundante para *usarlos*. Existe para lo otro: antes de proponer uno
+    nuevo, comprobar si contradice a uno viejo. «Entrena a las 7» y «entrena
+    después de trabajar» pueden coexistir en la lista sin que nada falle, y el
+    coach quedaría a la vez informado y confundido.
+    """
+    import memoria
+
+    hechos = memoria.leer(ctx.store)
+    if not hechos:
+        return (
+            "Nothing remembered about him yet. If the conversation is going anywhere "
+            "personal, this is the moment to ask — one question at a time, not a form — "
+            "and offer propose_memory for each answer worth keeping."
+        )
+    lineas = [f"{len(hechos)} remembered facts (also in your system prompt):"]
+    lineas += [f"- [{h.categoria}] {h.texto}" for h in hechos]
+    lineas.append(
+        "Before proposing a new one, check it does not contradict these — a list holding "
+        "both sides of a contradiction is worse than a shorter list. Propose replacing "
+        "instead, and tell him which one you would drop."
+    )
+    return "\n".join(lineas)
+
+
 def _parse_future_day(raw: str | None, today: date) -> date:
     """Fecha de hoy en adelante (hasta un año). El espejo de `_parse_day`.
 
@@ -1383,6 +1482,7 @@ _READ_TOOLS: dict[str, Callable[..., str]] = {
     "progress_photos": _tool_progress_photos,
     "calendar_events": _tool_calendar_events,
     "weekend_plan": _tool_weekend_plan,
+    "about_me": _tool_about_me,
 }
 
 _PROPOSE_TOOLS: dict[str, Callable[..., tuple[str, Proposal | None]]] = {
@@ -1391,6 +1491,7 @@ _PROPOSE_TOOLS: dict[str, Callable[..., tuple[str, Proposal | None]]] = {
     "propose_week_targets": _tool_propose_week_targets,
     "propose_reminder": _tool_propose_reminder,
     "propose_calendar_event": _tool_propose_calendar_event,
+    "propose_memory": _tool_propose_memory,
 }
 
 
@@ -1559,6 +1660,50 @@ def _tool_declarations() -> list[dict]:
             },
         },
         {
+            "name": "about_me",
+            "description": (
+                "The facts he has asked you to remember about him — schedules, foods he "
+                "avoids, injuries, goals. They are already in your system prompt, so call "
+                "this only before proposing a NEW one, to check it does not contradict or "
+                "duplicate what is there."
+            ),
+            "parameters": {"type": "object", "properties": {}},
+        },
+        {
+            "name": "propose_memory",
+            "description": (
+                "Show him a confirmation card offering to remember one fact about him "
+                "FOREVER — it will travel in every future conversation. Does NOT save; he "
+                "taps Save. Use it when he tells you something durable you would otherwise "
+                "ask again next week: when and where he trains, what he will not eat, an "
+                "injury and what aggravates it, a goal, how his week is organised. Never "
+                "for numbers the tools read live (weight, sets, calories) — those change, "
+                "and a remembered number becomes a lie. One card at a time."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "fact": {
+                        "type": "string",
+                        "description": (
+                            "One short sentence, in his language, written as a standing "
+                            "fact: 'Entrena a las 7:00, antes de trabajar'. Max 200 chars."
+                        ),
+                    },
+                    "category": {
+                        "type": "string",
+                        "enum": ["rutina", "comida", "cuerpo", "objetivo", "otro"],
+                        "description": (
+                            "rutina = schedules and how the week runs; comida = food "
+                            "preferences and restrictions; cuerpo = injuries and niggles; "
+                            "objetivo = what he is training for."
+                        ),
+                    },
+                },
+                "required": ["fact"],
+            },
+        },
+        {
             "name": "weekend_plan",
             "description": (
                 "The week's shopping list (grouped by supermarket aisle, in kilos and grams) "
@@ -1680,6 +1825,12 @@ def build_system_prompt(store: Any, today: date | None = None) -> str:
     requests and the prompt cache keeps working. Interpolating today's date here
     would invalidate the cached prefix on every calendar day; `today` puts it in
     the tool result instead.
+
+    The remembered facts (`memoria.py`) ARE interpolated, and that is a
+    considered exception rather than a slip. They invalidate the cache when he
+    edits one — a few times in the life of the product, not once a day — and in
+    exchange the coach can never *fail* to know them, which is exactly what a
+    tool the model decides whether to call cannot promise.
     """
     profile: dict = {}
     with contextlib.suppress(Exception):  # a dead DB still leaves a usable coach
@@ -1694,10 +1845,34 @@ def build_system_prompt(store: Any, today: date | None = None) -> str:
         who.append(f"Sex: {profile['sex']}.")
     person = " ".join(who)
 
+    hechos = ""
+    with contextlib.suppress(Exception):
+        import memoria
+
+        hechos = memoria.para_prompt(store)
+    if hechos:
+        sobre_el = (
+            "\n\nWhat he has told you about himself, and asked you to remember. Treat it "
+            "as true unless he says otherwise, and do not ask again for anything already "
+            "here:\n"
+            f"{hechos}\n\n"
+            "If something he says today contradicts one of these, say so plainly and offer "
+            "propose_memory with the corrected version — never keep both.\n\n"
+        )
+    else:
+        sobre_el = (
+            "\n\nYou know nothing about him beyond his data yet — not his schedule, not "
+            "what he will not eat, not which joints complain. When any of that comes up "
+            "naturally, offer propose_memory so you stop having to ask. If he asks you to "
+            "get to know him, ask ONE question at a time and offer a card per answer; a "
+            "questionnaire in a chat bubble is not a conversation.\n\n"
+        )
+
     return (
         "You are the training coach built into IronFlet, a weight-training and food log "
         "that belongs to one person. Everything you can see is his own data. "
-        f"{person}\n\n"
+        f"{person}"
+        f"{sobre_el}"
         "Reply in whatever language he writes in — he usually writes Spanish. "
         "Keep answers short: he is normally standing in a gym between two sets, holding "
         "the phone in one hand. A couple of sentences is usually the whole answer. "
