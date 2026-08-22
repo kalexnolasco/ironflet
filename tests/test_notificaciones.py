@@ -320,3 +320,85 @@ def test_sync_traga_disco_roto(store, tmp_path):
     imposible.parent.parent.parent.write_text("soy un fichero, no un directorio")
     payload = notif.sync(store, now=_utc(2026, 1, 15), target=imposible)
     assert len(payload) == 1  # devuelto igualmente; la escritura falló en silencio
+
+
+# ── el tercer interruptor: la optimización de batería ───────────────────
+
+
+class TestDiagnosticoDeBateria:
+    """«No me suena» en un móvil de verdad casi nunca es el permiso.
+
+    El permiso puede estar concedido, la alarma puede ser exacta, y aun así el
+    sistema mata la app y le cancela las alarmas porque el fabricante la metió
+    en la lista de optimización. Es la causa número uno, y la única que un
+    emulador no reproduce nunca — por eso pasó todo un pase de pruebas sin
+    aparecer.
+    """
+
+    def test_el_estado_trae_el_tercer_interruptor(self, tmp_path):
+        import json
+
+        import notificaciones
+
+        f = tmp_path / "notif_status.json"
+        f.write_text(
+            json.dumps({"granted": True, "exact": True, "battery_optimised": True}),
+            encoding="utf-8",
+        )
+        estado = notificaciones.estado_android(target=f)
+        assert estado["battery_optimised"] is True
+        assert estado["granted"] is True, "los otros dos siguen ahí"
+
+    def test_un_estado_de_una_version_vieja_no_alarma(self, tmp_path):
+        """Sin la clave, `False`: no alarmar de algo que no se sabe.
+
+        Un `notif_status.json` escrito por la versión anterior no la tiene, y
+        durante los segundos que tarda Dart en reescribirlo la pantalla no
+        puede acusar al móvil de algo que no ha comprobado.
+        """
+        import json
+
+        import notificaciones
+
+        f = tmp_path / "notif_status.json"
+        f.write_text(json.dumps({"granted": True, "exact": True}), encoding="utf-8")
+        assert notificaciones.estado_android(target=f)["battery_optimised"] is False
+
+
+class TestPeticionesAlLadoAndroid:
+    """Ficheros y no un canal: Flet no expone `MethodChannel` a Python."""
+
+    def test_probar_aviso_deja_su_nota(self, tmp_path):
+        import notificaciones
+
+        nota = tmp_path / notificaciones.PETICION_PRUEBA
+        assert notificaciones.probar_aviso(target=nota) is True
+        assert nota.exists()
+
+    def test_abrir_ajustes_bateria_deja_su_nota(self, tmp_path):
+        import notificaciones
+
+        nota = tmp_path / notificaciones.PETICION_BATERIA
+        assert notificaciones.abrir_ajustes_bateria(target=nota) is True
+        assert nota.exists()
+
+    def test_las_dos_notas_son_ficheros_distintos(self):
+        """Compartirlo haría que probar un aviso abriese los ajustes."""
+        import notificaciones
+
+        assert notificaciones.PETICION_PRUEBA != notificaciones.PETICION_BATERIA
+
+    def test_sin_android_no_se_pide_nada(self, monkeypatch):
+        import notificaciones
+
+        monkeypatch.delenv("FLET_APP_STORAGE_DATA", raising=False)
+        assert notificaciones.probar_aviso() is False
+        assert notificaciones.abrir_ajustes_bateria() is False
+
+    def test_con_android_la_nota_cae_donde_dart_sondea(self, monkeypatch, tmp_path):
+        """Junto a `notifications.json`, que es el directorio que Dart mira."""
+        import notificaciones
+
+        monkeypatch.setenv("FLET_APP_STORAGE_DATA", str(tmp_path))
+        assert notificaciones.probar_aviso() is True
+        assert (tmp_path / notificaciones.PETICION_PRUEBA).exists()

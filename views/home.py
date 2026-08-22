@@ -806,6 +806,62 @@ class HomeView:
                     )
                 )
 
+            # LA CAUSA NÚMERO UNO de «no me suena» en un móvil de verdad, y la
+            # que el emulador nunca reproduce: el sistema mete la app en la
+            # lista de optimización de batería y le cancela las alarmas. El
+            # permiso puede estar concedido y la alarma ser exacta, y aun así
+            # no llegar nada. Se avisa aunque los otros dos estén bien, porque
+            # es independiente de ellos.
+            if estado.get("battery_optimised"):
+                avisos_sistema.append(
+                    ft.Container(
+                        content=ft.Column(
+                            [
+                                ft.Text(
+                                    "Tu móvil está «optimizando» la batería de IronFlet, "
+                                    "y eso le cancela las alarmas: los avisos no sonarán "
+                                    "aunque el permiso esté dado.",
+                                    size=11,
+                                    color=C.warning,
+                                    weight=ft.FontWeight.W_700,
+                                ),
+                                ft.Container(height=6),
+                                ghost_button(
+                                    "Quitar la optimización",
+                                    on_click=lambda _: _abre_bateria(),
+                                    expand=True,
+                                ),
+                            ],
+                            spacing=0,
+                            tight=True,
+                        ),
+                        border=ft.border.all(1, C.warning),
+                        border_radius=10,
+                        padding=10,
+                    )
+                )
+
+        def _abre_bateria():
+            notificaciones.abrir_ajustes_bateria()
+            self.page.close(dlg)
+
+        def _prueba(_):
+            # Separa «la app no programa» de «Android no entrega». Las dos se
+            # ven igual desde fuera —silencio— y llevan a sitios opuestos, así
+            # que sin este botón no hay forma de saber cuál de las dos es.
+            if notificaciones.probar_aviso():
+                prueba_msg.value = (
+                    "Enviado. Si en unos segundos no ves nada en la barra, el "
+                    "problema es el permiso o el canal, no los horarios."
+                )
+                prueba_msg.color = C.text_secondary
+            else:
+                prueba_msg.value = "Aquí no hay avisos del sistema que probar."
+                prueba_msg.color = C.text_muted
+            self.page.update()
+
+        prueba_msg = ft.Text("", size=10, color=C.text_muted)
+
         dlg = ft.AlertDialog(
             bgcolor=C.bg_surface,
             title=ft.Text("Avisos", size=16, weight=ft.FontWeight.W_900, color=C.text),
@@ -828,6 +884,9 @@ class HomeView:
                         ),
                         lista,
                         ft.Text(entrega, size=10, color=C.text_muted),
+                        ft.Container(height=10),
+                        ghost_button("Probar un aviso ahora", on_click=_prueba, expand=True),
+                        prueba_msg,
                     ],
                     spacing=8,
                     tight=True,

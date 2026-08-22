@@ -281,7 +281,51 @@ def estado_android(target: Path | str | None = None) -> dict | None:
     return {
         "granted": bool(datos.get("granted", True)),
         "exact": bool(datos.get("exact", True)),
+        # Ausente en un `notif_status.json` escrito por una versión anterior:
+        # `False` es el defecto correcto porque no alarmar de algo que no se
+        # sabe es mejor que alarmar sin motivo.
+        "battery_optimised": bool(datos.get("battery_optimised", False)),
     }
+
+
+#: Notas que se le dejan a Dart, en el mismo directorio y con el mismo
+#: mecanismo que `notifications.json`. Flet no expone `MethodChannel` a Python,
+#: así que un fichero es toda la forma que hay de pedirle algo al lado Android.
+PETICION_PRUEBA = "notif_test.request"
+PETICION_BATERIA = "battery_opt.request"
+
+
+def _peticion(nombre: str, target: Path | str | None = None) -> bool:
+    """Deja una nota para Dart. Devuelve si se pudo dejar."""
+    if target is not None:
+        ruta = Path(target)
+    else:
+        raiz = os.environ.get("FLET_APP_STORAGE_DATA")
+        if not raiz:
+            return False
+        ruta = Path(raiz) / nombre
+    try:
+        ruta.parent.mkdir(parents=True, exist_ok=True)
+        ruta.write_text("1", encoding="utf-8")
+        return True
+    except OSError:
+        return False
+
+
+def probar_aviso(target: Path | str | None = None) -> bool:
+    """Pide un aviso inmediato. Es lo que convierte «no suena» en un dato.
+
+    Sin esto no hay forma de separar «la app no programa la alarma» de
+    «Android no la entrega»: desde fuera las dos son silencio, y llevan a
+    sitios opuestos. Este no pasa por el planificador, así que si suena y los
+    programados no, el problema está en la batería o en las alarmas exactas.
+    """
+    return _peticion(PETICION_PRUEBA, target)
+
+
+def abrir_ajustes_bateria(target: Path | str | None = None) -> bool:
+    """Pide abrir la pantalla donde se quita la optimización de batería."""
+    return _peticion(PETICION_BATERIA, target)
 
 
 def sync(store: Any, now: datetime | None = None, target: Path | str | None = None) -> list[dict]:

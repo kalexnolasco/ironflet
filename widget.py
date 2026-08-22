@@ -20,8 +20,8 @@ sitio donde vivan datos.
 
 ## Por qué el payload es texto ya formateado
 
-El JSON lleva `"82,4 kg"`, no `{"kg": 82.4}`. Kotlin no repite ninguna decisión
-de formato — ni la coma decimal, ni el redondeo, ni cómo se dice "hoy toca
+El JSON lleva `"82.4 kg"`, no `{"kg": 82.4}`. Kotlin no repite ninguna decisión
+de formato — ni el separador decimal, ni el redondeo, ni cómo se dice "hoy toca
 descansar". Toda esa lógica está en Python, donde hay tests, y el widget solo
 pinta cadenas. Es el mismo reparto que con los avisos, donde la aritmética de
 cron vive aquí y Dart recibe instantes planos: **las dos mitades no pueden
@@ -77,14 +77,22 @@ def _destino_por_defecto() -> Path | None:
 
 
 def _num(valor: float, decimales: int = 0) -> str:
-    """`82.4` → `"82,4"`. Coma decimal, y sin `.0` cuando es entero."""
+    """`82.4` → `"82.4"`. Punto decimal, y sin `.0` cuando es entero.
+
+    Punto y no coma **porque es lo que usa el resto de la app**: Inicio pone
+    «80.5 kg», Ajustes «25.8» de IMC, la gráfica «82.4». Un widget con coma al
+    lado de una app con punto es la misma cifra escrita de dos formas en la
+    misma pantalla de inicio. Decisión de Alex, y la correcta: la coherencia
+    dentro del producto pesa más que la convención del idioma cuando solo se
+    puede tener una.
+    """
     texto = f"{valor:.{decimales}f}"
     if decimales:
         texto = texto.rstrip("0").rstrip(".")
-    return texto.replace(".", ",")
+    return texto
 
 
-def _linea_entreno(store: Any, hoy: date) -> str:
+def _linea_entreno(store: Any, dia: date) -> str:
     """«Chest-Biceps», «✓ Chest-Biceps», «Descanso» o «Abre IronFlet».
 
     El nombre del día va tal cual, en inglés: sale de `week_rotation` y es el
@@ -101,13 +109,18 @@ def _linea_entreno(store: Any, hoy: date) -> str:
     from program_week import REST_LABEL, current_program_week
 
     try:
-        semana = current_program_week(store)
+        semana = current_program_week(store, today=dia)
         foco = semana.today_focus
     except Exception:
         return VACIO["entreno"]
 
     try:
-        hecho = bool(store.get_today())
+        # `get_workouts_on(hoy)`, no `get_today()`: esta función recibe el día
+        # y tiene que respetarlo. Con `get_today()` el parámetro no hacía nada
+        # —daba igual mientras el día pedido fuera el de hoy, que es siempre en
+        # producción— y el widget habría dicho «no has entrenado» al pedirle
+        # cualquier otra fecha.
+        hecho = bool(store.get_workouts_on(dia))
     except Exception:
         hecho = False
 

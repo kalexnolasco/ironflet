@@ -22,6 +22,16 @@
          inexactas y Doze retrasa un aviso de 17:30 hasta un cuarto de hora,
          que en el movil de Alex se leyo como "no suena". -->
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+    <!-- La causa numero uno de "no me suena" en un movil de verdad, y la que
+         el emulador nunca reproduce: el fabricante mete la app en la lista de
+         optimizacion de bateria y el sistema le cancela las alarmas. La app no
+         puede saltarselo, pero con este permiso SI puede preguntar si esta
+         optimizada y abrir la pantalla exacta donde se quita, en vez de
+         mandar a nadie a buscarla por seis menus.
+
+         Google Play restringe este permiso a casos justificados; esta APK va
+         por sideload a un solo movil, asi que no le aplica. -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <!-- {% set manifest_application = cookiecutter.pyproject.get('tool', {}).get('flet', {}).get('android', {}).get('manifest_application', {}) %} -->
     <application

@@ -327,3 +327,80 @@ def test_una_sola_sesion_no_dice_sesiones(home):
     pintado = texts(view.build())
     assert "Sesión" in pintado
     assert "Sesiones" not in pintado
+
+
+# ── el diálogo de avisos nombra el interruptor que falla ────────────────
+
+
+def _dialogo_avisos(monkeypatch, tmp_path, estado):
+    """Abre el diálogo de avisos con un estado del sistema dado.
+
+    Devuelve el texto que pinta. El diálogo se construye con `page.open`, así
+    que se captura ahí en vez de por un valor de retorno.
+    """
+    import notificaciones
+    import views.home as home_module
+
+    monkeypatch.setattr(home_module, "current_program_week", lambda store: unknown_week())
+    monkeypatch.setattr(home_module, "day_totals", lambda store, day: {})
+    monkeypatch.setattr(home_module, "targets_for", lambda store, day: {})
+    monkeypatch.setattr(notificaciones, "estado_android", lambda *a, **k: estado)
+
+    abiertos = []
+    page = MagicMock()
+    page.width = 400
+    page.height = 800
+    page.open = abiertos.append
+    page.data = {"refresh_current": lambda: None, "navigate_to": lambda i, **k: None}
+
+    store = FakeStore()
+    store.get_all_reminders = lambda: []
+    store.bot_delivers_reminders = lambda: False
+    store.get_reminders_today = lambda *a, **k: []
+    view = home_module.HomeView(page, store)
+    view._open_reminders()
+    assert abiertos, "el diálogo tiene que abrirse"
+    return " | ".join(texts(abiertos[0])), abiertos[0]
+
+
+def test_avisa_de_la_optimizacion_de_bateria(monkeypatch, tmp_path):
+    """El interruptor que ningún emulador reproduce y que apaga los avisos.
+
+    El permiso concedido y la alarma exacta: los dos en verde, y aun así el
+    sistema cancela las alarmas. Si la pantalla se calla aquí, no queda dónde
+    enterarse.
+    """
+    pintado, _ = _dialogo_avisos(
+        monkeypatch,
+        tmp_path,
+        {"granted": True, "exact": True, "battery_optimised": True},
+    )
+    assert "batería" in pintado, f"no menciona la batería: {pintado}"
+    assert "Quitar la optimización" in pintado, "y hay que llevar al ajuste, no solo avisar"
+
+
+def test_sin_optimizacion_no_dice_nada_de_bateria(monkeypatch, tmp_path):
+    """Un aviso que sale siempre deja de leerse."""
+    pintado, _ = _dialogo_avisos(
+        monkeypatch,
+        tmp_path,
+        {"granted": True, "exact": True, "battery_optimised": False},
+    )
+    assert "batería" not in pintado
+
+
+def test_el_boton_de_probar_esta_siempre(monkeypatch, tmp_path):
+    """Es lo que convierte «no me suena» en un dato, así que no depende de nada."""
+    pintado, _ = _dialogo_avisos(
+        monkeypatch,
+        tmp_path,
+        {"granted": True, "exact": True, "battery_optimised": False},
+    )
+    assert "Probar un aviso ahora" in pintado
+
+
+def test_sin_lado_android_el_dialogo_no_alarma(monkeypatch, tmp_path):
+    """En el escritorio no hay interruptores del sistema de los que hablar."""
+    pintado, _ = _dialogo_avisos(monkeypatch, tmp_path, None)
+    assert "batería" not in pintado
+    assert "APAGADAS" not in pintado

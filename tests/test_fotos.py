@@ -152,10 +152,24 @@ def test_importar_zip_ignora_lo_que_no_es_foto(store, carpeta, tmp_path):
 
 
 def test_estado_android_lee_el_fichero_de_dart(tmp_path):
+    """Igualdad exacta a propósito: el contrato con Dart es este y solo este.
+
+    Los tres interruptores del sistema que Python no puede ver por su cuenta.
+    Un fichero de una versión anterior no traía `battery_optimised`, y ahí el
+    defecto es `False` — no alarmar de algo que no se ha comprobado.
+    """
     fichero = tmp_path / "notif_status.json"
     assert notif.estado_android(target=fichero) is None  # aún no existe
-    fichero.write_text('{"granted": false, "exact": true}')
+    fichero.write_text('{"granted": false, "exact": true, "battery_optimised": true}')
     estado = notif.estado_android(target=fichero)
-    assert estado == {"granted": False, "exact": True}
+    assert estado == {"granted": False, "exact": True, "battery_optimised": True}
+
+    fichero.write_text('{"granted": false, "exact": true}')  # como lo escribía 0.13
+    assert notif.estado_android(target=fichero) == {
+        "granted": False,
+        "exact": True,
+        "battery_optimised": False,
+    }
+
     fichero.write_text("esto no es json")
     assert notif.estado_android(target=fichero) is None

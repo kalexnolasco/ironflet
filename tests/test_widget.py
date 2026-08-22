@@ -34,13 +34,18 @@ def store(tmp_path) -> Storage:
 # ── el formato lo decide Python, no Kotlin ──────────────────────────────
 
 
-def test_los_numeros_llevan_coma_decimal():
-    """El JSON viaja con «82,4 kg», no con 82.4.
+def test_los_numeros_usan_el_mismo_punto_que_la_app():
+    """El JSON viaja con «82.4 kg» ya formateado, no con el número suelto.
 
-    Si Kotlin recibiera el número, tendría que decidir la coma, el redondeo y
-    la unidad — tres decisiones duplicadas y sin tests.
+    Punto y no coma: es lo que pinta el resto de la app, y el widget vive en
+    la misma pantalla de inicio desde la que se abre. Dos formas de escribir
+    la misma cifra a dos centímetros una de otra es peor que cualquiera de las
+    dos.
+
+    Si Kotlin recibiera el número tendría que decidir el separador, el
+    redondeo y la unidad — tres decisiones duplicadas y sin tests.
     """
-    assert widget._num(82.4, 1) == "82,4"
+    assert widget._num(82.4, 1) == "82.4"
     assert widget._num(2550) == "2550"
 
 
@@ -50,7 +55,7 @@ def test_un_entero_no_arrastra_el_decimal():
 
 def test_el_peso_sale_con_su_unidad(store):
     store.save_weight(82.4, HOY.isoformat())
-    assert widget.payload(store, HOY)["peso"] == "82,4 kg"
+    assert widget.payload(store, HOY)["peso"] == "82.4 kg"
 
 
 def test_sin_pesaje_la_linea_queda_vacia_y_no_a_cero(store):
@@ -165,7 +170,7 @@ def test_sync_escribe_json_utf8_legible(store, tmp_path):
 
     leido = json.loads(destino.read_text(encoding="utf-8"))
     assert leido == escrito
-    assert leido["peso"] == "82,4 kg"
+    assert leido["peso"] == "82.4 kg"
 
 
 def test_sync_no_deja_el_temporal_atras(store, tmp_path):
@@ -241,3 +246,58 @@ def test_un_destino_imposible_para_la_nota_devuelve_false(tmp_path):
         assert widget.pedir_colocacion(target=carpeta / "x" / widget.FICHERO_PIN) is False
     finally:
         carpeta.chmod(0o700)
+
+
+# ── el día que se pide es el día que se mira ────────────────────────────
+
+
+def test_el_visto_mira_el_dia_pedido_y_no_el_de_hoy(store):
+    """`payload(store, dia)` tiene que respetar ese `dia` entero.
+
+    No lo hacía: la línea de entreno llamaba a `store.get_today()`, que usa la
+    fecha del sistema, así que el parámetro no hacía nada. Invisible en
+    producción —el widget siempre pide hoy— y visible en cuanto un test con
+    fecha fija se ejecutó al día siguiente y el ✓ desapareció.
+
+    Se comprueba con AYER a propósito: si vuelve a mirar el reloj del sistema,
+    esto falla siempre y no solo a medianoche.
+    """
+    from datetime import timedelta
+
+    ayer = HOY - timedelta(days=1)
+    store.save_workout(
+        WorkoutEntry(
+            date=ayer.isoformat(),
+            exercise="Squat",
+            muscle_group="Legs",
+            phase=1,
+            sets=[{"weight": 100.0, "reps": 5}],
+        )
+    )
+
+    assert widget.payload(store, ayer)["entreno"].startswith("✓"), (
+        "con la sesión de ayer registrada, el payload de AYER lleva visto"
+    )
+    assert not widget.payload(store, HOY)["entreno"].startswith("✓"), (
+        "y el de hoy no, que no se entrenó"
+    )
+
+
+def test_storage_sabe_dar_los_entrenos_de_un_dia(store):
+    """El método que hizo falta para lo de arriba, por su cuenta."""
+    from datetime import timedelta
+
+    ayer = HOY - timedelta(days=1)
+    store.save_workout(
+        WorkoutEntry(
+            date=ayer.isoformat(),
+            exercise="Squat",
+            muscle_group="Legs",
+            phase=1,
+            sets=[{"weight": 100.0, "reps": 5}],
+        )
+    )
+    assert len(store.get_workouts_on(ayer)) == 1
+    assert store.get_workouts_on(HOY) == []
+    # Y sin fecha sigue siendo hoy, que es lo que `get_today()` promete.
+    assert store.get_workouts_on() == store.get_today()

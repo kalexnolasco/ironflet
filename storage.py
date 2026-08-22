@@ -1674,14 +1674,26 @@ class Storage:
             )
         return self._to_entries(filas)
 
-    def get_today(self) -> list[WorkoutEntry]:
+    def get_workouts_on(self, on_date: date | str | None = None) -> list[WorkoutEntry]:
+        """Las filas de un día concreto. Sin fecha, las de hoy.
+
+        Existe porque `get_today()` no se puede parametrizar sin que su nombre
+        mienta, y quien necesita otro día no debe tener que traerse `get_all()`
+        entero para filtrarlo en Python. `widget.py` lo necesitaba: aceptaba un
+        `hoy` y luego llamaba a `get_today()`, así que el parámetro no hacía
+        nada — invisible mientras nadie pidiera otro día, y visible en cuanto
+        un test que fijaba la fecha se ejecutó al día siguiente.
+        """
+        dia = _fecha(on_date) if on_date else _hoy()
         with self._Session() as s:
             filas = list(
-                s.scalars(
-                    select(Entreno).where(Entreno.fecha == _hoy()).order_by(Entreno.id.desc())
-                )
+                s.scalars(select(Entreno).where(Entreno.fecha == dia).order_by(Entreno.id.desc()))
             )
         return self._to_entries(filas)
+
+    def get_today(self) -> list[WorkoutEntry]:
+        """Las de hoy. Se queda como la forma corta de lo de arriba."""
+        return self.get_workouts_on()
 
     def get_week_stats(self) -> dict:
         """Sessions / sets / volume over the trailing 7 days.

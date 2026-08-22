@@ -131,18 +131,85 @@ Future<void> _checkWidgetPinRequest() async {
 
 Future<void> _writeNotifStatus(
     AndroidFlutterLocalNotificationsPlugin? android, bool exact) async {
-  // Report both permissions back to the Python side, which cannot see them.
-  // Home's reminders dialog reads this file and tells the user exactly which
-  // system toggle is off instead of the app looking silently broken.
+  // Report the three system switches back to the Python side, which cannot
+  // see any of them. Home's reminders dialog reads this file and names the
+  // exact toggle that is off, instead of the app looking silently broken.
+  //
+  // `battery` es el tercero y el que faltaba: el permiso puede estar
+  // concedido, la alarma puede ser exacta, y aun así el sistema mata la app y
+  // le cancela las alarmas porque el fabricante la metió en la lista de
+  // optimización. Es la causa número uno de «no me suena» en un móvil de
+  // verdad, y la única que un emulador nunca reproduce.
   try {
     final granted = await android?.areNotificationsEnabled() ?? true;
+    var optimised = false;
+    try {
+      optimised =
+          await _widgetChannel.invokeMethod<bool>("battery_optimised") ?? false;
+    } catch (e) {
+      // Canal no disponible (arranque temprano): mejor no alarmar que alarmar
+      // sin saber. `false` deja la pantalla callada, que es el estado por
+      // defecto correcto.
+      debugPrint("battery status unavailable: $e");
+    }
     await File(path.join(File(_notifJsonPath).parent.path, "notif_status.json"))
         .writeAsString(jsonEncode({
       "granted": granted,
       "exact": exact,
+      "battery_optimised": optimised,
       "updated": DateTime.now().toUtc().toIso8601String(),
     }));
   } catch (_) {}
+}
+
+/// Un aviso AHORA MISMO, a petición de Python.
+///
+/// Es lo que convierte «no me suena» en un dato. Sin esto no hay forma de
+/// separar «la app no programa la alarma» de «Android no la entrega»: las dos
+/// se ven igual desde fuera —silencio— y llevan a sitios opuestos.
+///
+/// No pasa por `zonedSchedule`: se muestra directamente, así que si esta suena
+/// y las programadas no, el problema es del planificador o de la batería, y si
+/// tampoco suena esta, es del permiso o del canal.
+Future<void> _checkNotifTestRequest() async {
+  if (_notifJsonPath.isEmpty) return;
+  try {
+    final f =
+        File(path.join(File(_notifJsonPath).parent.path, "notif_test.request"));
+    if (!await f.exists()) return;
+    await f.delete(); // antes de disparar: un fichero que sobreviva a un
+    // fallo pediría una notificación cada tres segundos.
+    await _notifPlugin.show(
+      999000,
+      "Prueba de IronFlet",
+      "Si ves esto, los avisos llegan.",
+      const NotificationDetails(
+        android: AndroidNotificationDetails(
+          'recordatorios',
+          'Recordatorios',
+          channelDescription: 'Avisos de entreno, pesaje y comidas',
+          importance: Importance.high,
+          priority: Priority.high,
+        ),
+      ),
+    );
+  } catch (e) {
+    debugPrint("notification test failed: $e");
+  }
+}
+
+/// Abre la pantalla del sistema donde se quita la optimización de batería.
+Future<void> _checkBatteryRequest() async {
+  if (_notifJsonPath.isEmpty) return;
+  try {
+    final f = File(
+        path.join(File(_notifJsonPath).parent.path, "battery_opt.request"));
+    if (!await f.exists()) return;
+    await f.delete();
+    await _widgetChannel.invokeMethod("battery_settings");
+  } catch (e) {
+    debugPrint("battery settings failed: $e");
+  }
 }
 
 Future<void> _syncNotifications() async {
@@ -450,6 +517,8 @@ Future prepareApp() async {
         _syncNotifications();
         _syncWidget();
         _checkWidgetPinRequest();
+        _checkNotifTestRequest();
+        _checkBatteryRequest();
       });
     }
 
