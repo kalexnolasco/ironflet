@@ -4,6 +4,80 @@ Todos los cambios notables de IronFlet.
 El formato sigue [Keep a Changelog](https://keepachangelog.com/) y el proyecto
 usa [SemVer](https://semver.org/).
 
+## [0.15.0] — 2026-08-22
+
+**El finde resuelto, y un entrenador que se acuerda de quién eres.**
+
+### Añadido
+
+- **La compra del sábado y la cocina del domingo** (`finde.py`), dentro de
+  Comida. Los datos ya estaban —`nutrition.TEMPLATE_DAY` lleva el menú del plan
+  con sus gramos—; faltaba multiplicarlos por siete, agruparlos por alimento y
+  decirlos en unidades de supermercado.
+
+  La lista va **ordenada por el recorrido de la tienda**, y esas secciones están
+  escritas a mano a propósito: se puede deducir el macro dominante y agrupar por
+  ahí, sin mantenimiento, y saldría mal — el plátano y el arroz son los dos
+  hidratos y están en pasillos distintos. Una lista de la compra se ordena por
+  dónde están las cosas, que es un hecho del mundo y no de la tabla nutricional.
+
+  Se ajusta a tus calorías **sin tocar la proteína**, que es lo que dice el
+  plan («el aceite de la cena, nunca la proteína»); el recorte recae entero
+  sobre los hidratos y las grasas. Y tiene suelo: por debajo de la mitad ya no
+  escala, avisa. Sin él, un objetivo de 900 kcal mandaba comprar 63 g de manzana
+  para la semana — aritméticamente correcto y completamente inútil.
+
+  El domingo, qué cocinar y en qué orden: primero lo que más tarda, porque el
+  horno trabaja solo. Los minutos son de reloj, no la suma de los pasos. Cada
+  receta lleva **los días que aguanta en la nevera**, y ese número es el que
+  hace honesto el plan: sin él, la primera versión mandaba cocinar el domingo un
+  salmón que se comía el sábado siguiente.
+
+  El coach lo relata en vez de recalcularlo (`weekend_plan`). Darle el menú y
+  los objetivos y dejar que multiplique es un error que se descubre en la caja
+  del súper.
+- **El entrenador se acuerda de quién eres** (`memoria.py`). Hechos, no
+  conversación: a qué hora entrenas, qué no comes, qué rodilla te molesta.
+  Guardar el chat sería un blob creciendo sin límite y un mes de charla
+  re-facturado en cada pregunta; lo que cambia el producto son veinte líneas.
+
+  Van en el **prompt de sistema** y no detrás de una herramienta, que es la
+  única excepción deliberada a un prompt escrito para ser idéntico byte a byte:
+  se paga en caché invalidada al editar uno —unas pocas veces en la vida del
+  producto— y a cambio el coach nunca puede *no* saberlos.
+
+  Él **propone**, tú guardas, como todo lo demás. Es la tarjeta donde más obvio
+  resulta por qué: un modelo que escribe en su propia memoria acaba recordando
+  cosas que nadie le dijo, y nadie sabría cuáles hasta leerlas en Ajustes.
+  Se editan en **Ajustes → Lo que recuerda de ti**, con una papelera por línea,
+  y la primera vez el chat ofrece una entrevista corta en vez de adivinar.
+- `tests/test_finde.py` (34), `test_finde_view.py` (20) y `test_memoria.py`
+  (47).
+
+### Arreglado
+
+- **La leche salía en kilos.** «Leche semidesnatada 1,81 kg» es correcto y no lo
+  dice nadie en una tienda: la tabla nutricional está en gramos porque las
+  etiquetas europeas lo están. La lista deshace esa conversión — leche y aceite
+  en litros.
+- **La misma nota de congelar, cuatro veces** en el plan del domingo. Ocupaba
+  media pantalla y se dejaba de leer, incluida la única distinta —la del
+  salmón—, que es justo la que cambia lo que haces. Ahora lo que le toca a la
+  mayoría se dice una vez arriba y en la tarjeta solo queda la excepción.
+- **Añadir un hecho te devolvía al principio de Ajustes.** `refresh_current()`
+  reconstruye la pantalla entera, así que tras cada uno había que volver a bajar
+  cinco pantallas. La memoria se mudó a un diálogo, que se redibuja solo a sí
+  mismo. Y dentro de él, un botón que medía 350 px de alto: `expand` reparte el
+  eje del padre y el de una `Column` es el vertical (trampa 31).
+- **El guard que garantiza que ninguna herramienta del coach escribe** decía
+  «every tool» y probaba **seis de quince**. Su lista estaba escrita a mano y
+  nadie la actualizó al añadir fotos, calendario, avisos ni objetivos: la
+  invariante que sostiene toda la seguridad de esa función se comprobaba sobre
+  un subconjunto que ya no representaba nada. Ahora recorre los registros, y un
+  test hermano se pone rojo si una herramienta nueva se queda sin argumentos de
+  prueba. Con eso saltó `propose_calendar_event`, que se rechazaba a sí misma
+  antes de tocar nada y pasaba por no haberse ejecutado.
+
 ## [0.14.0] — 2026-08-21
 
 **Un widget en la pantalla de inicio y gráficas de verdad.**

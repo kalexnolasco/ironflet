@@ -18,6 +18,9 @@ Tres cosas que condicionan casi todo lo demás:
 - **No necesita nada levantado.** El almacenamiento es un fichero SQLite y los
   tests crean el suyo en el temporal. Hasta 0.12 esto pedía PostgreSQL en
   Docker y compartía base con el bot de Telegram; en 0.13 se jubilaron los dos.
+- **El coach no escribe nada.** Lee, propone, y lo que se guarda lo guarda
+  Alex tocando un botón. Es la regla 5 de la lista de abajo y condiciona cómo
+  se añade cualquier función suya, incluida su propia memoria.
 
 ## Setup
 
@@ -31,7 +34,7 @@ uv run pre-commit install        # hook de lint + formato
 Y ya está: no hay contenedor que levantar ni assets que vendorizar.
 
 ```bash
-make check     # lint + los 1716 tests
+make check     # lint + los 1961 tests
 make run       # la app en el escritorio, contra un SQLite local
 make apk       # el APK (las tres ABIs)
 make install   # adb install al dispositivo conectado
@@ -52,7 +55,7 @@ La app de verdad es la APK.
 
 ### La suite no se salta nada
 
-Son **1716 pruebas** y corren todas con `make test`, sin Docker y sin
+Son **1961 pruebas** y corren todas con `make test`, sin Docker y sin
 variables de entorno. `tests/conftest.py` le da a cada proceso su propio
 fichero SQLite en el temporal.
 
@@ -74,7 +77,7 @@ IRONFLET_NETWORK_TESTS=1 make test
 - Prefiere funciones y helpers cortos, sin estado global. Para estado de UI,
   usa variables en la clase `View` y `page.data["refresh_current"]()`.
 
-## Las cuatro reglas que se rompen en silencio
+## Las cinco reglas que se rompen en silencio
 
 Ninguna de estas lanza una excepción cuando la incumples. Por eso están aquí.
 
@@ -94,8 +97,8 @@ en las dos paletas.
 pelado **es** la clave con la que se guarda cada serie en `entrenos.ejercicio`.
 Si la normalización cambia, no salta nada: las filas simplemente dejan de
 cuadrar con las ya guardadas y el historial del que depende todo el plan se
-parte en dos. Congelado en `tests/test_exercise_key.py` (282 cadenas de rutina
-colapsan en exactamente 104 claves). Un fallo ahí es un incidente de
+parte en dos. Congelado en `tests/test_exercise_key.py` (219 cadenas de rutina
+colapsan en exactamente 100 claves). Un fallo ahí es un incidente de
 integridad de datos, no una nota de formato.
 
 **4. `create_all()` no añade columnas a una tabla que ya existe.** Nadie
@@ -116,6 +119,23 @@ Y una herencia de aquella época: las filas que escribió el bot no llevan las
 claves opcionales `"rir"` ni `"type"` en sus series. Léelas siempre con
 `.get()`, y trata una serie sin `"type"` como **normal** — nunca como
 calentamiento, porque eso reescribiría el tonelaje.
+
+**5. Ninguna herramienta del coach escribe en la base.** Toda la historia de
+seguridad de esa función es esa: el modelo *propone*, la vista pinta una
+tarjeta y el toque de Alex en Guardar es lo único que escribe. `commit_proposal`
+es la única función que escribe y ninguna herramienta llega a ella, así que la
+garantía es estructural y no una frase en el prompt que un modelo pueda
+ignorar. Una herramienta servicial que guarde directamente la borra, y nada
+falla.
+
+Se protege con `test_ninguna_herramienta_escribe`, que las corre todas contra
+una tienda que revienta ante cualquier escritura. Dos cosas que aprender de la
+vez que ese guard mintió: decía «every tool» y probaba **seis de quince**
+porque su lista estaba escrita a mano, así que ahora recorre los registros y un
+test hermano se pone rojo si una herramienta nueva no tiene argumentos en
+`ARGUMENTOS_DE_PRUEBA`. Y esos argumentos tienen que hacer que la herramienta
+**haga algo**: una que se rechaza a sí misma en la segunda línea nunca llega a
+donde escribiría, y pasa el guard por no haberse ejecutado.
 
 ## Añadir una rutina nueva
 
