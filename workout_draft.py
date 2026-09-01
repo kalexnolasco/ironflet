@@ -918,7 +918,11 @@ def decode_draft(
     )
 
 
-def fit_to_routine(draft: WorkoutDraft, routine: Routine | None = None) -> WorkoutDraft | None:
+def fit_to_routine(
+    draft: WorkoutDraft,
+    routine: Routine | None = None,
+    extra_keys: tuple[str, ...] = (),
+) -> WorkoutDraft | None:
     """Re-point a draft at the routine as it is *now*, or reject it.
 
     A draft is a bundle of pointers into `data.ROUTINES`, and Alex can change
@@ -939,6 +943,13 @@ def fit_to_routine(draft: WorkoutDraft, routine: Routine | None = None) -> Worko
       dates go with them, in the same pass and by the same key: a date left
       behind would be a Monday attached to nothing, waiting to be inherited by
       whatever exercise is next given that name.
+
+    `extra_keys` are the movements Alex added mid-session (`extras.py`). They
+    are not in the routine and never will be — that is the whole point of an
+    extra — so without them this function would do exactly what it promises
+    above and **silently drop the rows he had just typed into one**. They count
+    as part of the day for this pass only; the caller supplies them because
+    this module reads no storage.
 
     Returns a new draft; the input is not mutated.
     """
@@ -962,6 +973,7 @@ def fit_to_routine(draft: WorkoutDraft, routine: Routine | None = None) -> Worko
         return None
 
     keys = [exercise_key(x) for x in days[day_idx].exercises]
+    keys += [k for k in extra_keys if k and k not in keys]
     if not keys:
         return None
     if draft.exercise and draft.exercise in keys:
@@ -1088,6 +1100,21 @@ class DraftStore:
         with contextlib.suppress(Exception):
             self._store.set_pref(self._key, "")
 
+    def _extra_keys(self) -> tuple[str, ...]:
+        """Los ejercicios que Alex añadió hoy a mano, como claves.
+
+        Vive aquí y no en `fit_to_routine` porque ese módulo no lee
+        almacenamiento — es lo que le deja probarse con datos a mano. Falla a
+        vacío: sin extras el ajuste se comporta como siempre.
+        """
+        try:
+            import extras
+            from exercises import exercise_key
+
+            return tuple(exercise_key(x) for x in extras.de_hoy(self._store))
+        except Exception:
+            return ()
+
     # ── read ──────────────────────────────────────────────────
     def load(self, routine: Routine | None = None) -> WorkoutDraft | None:
         """The restorable draft, or `None`.
@@ -1117,7 +1144,7 @@ class DraftStore:
         if draft is None:
             self.clear()
             return None
-        fitted = fit_to_routine(draft, routine)
+        fitted = fit_to_routine(draft, routine, extra_keys=self._extra_keys())
         if fitted is None or fitted.is_empty():
             self.clear()
             return None

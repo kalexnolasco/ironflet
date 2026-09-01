@@ -52,7 +52,7 @@ CI (`.github/workflows/ci.yml`) runs, on Python 3.12:
 uv sync --group dev
 uv run ruff check .
 uv run ruff format --check .
-uv run pytest -q          # 1961 tests, 1 skipped (a network test, opt-in)
+uv run pytest -q          # 2025 tests, 1 skipped (a network test, opt-in)
 ```
 
 ## Architecture
@@ -250,6 +250,52 @@ file (`widget_pin.request`) because **Flet exposes no `MethodChannel` to
 Python**; `main.dart` sees it on the same three-second poll, deletes it and
 calls Kotlin. Deleted *before* the call: a file left behind would ask to pin
 the widget every three seconds forever.
+
+### El catálogo grande y los extras — `catalogo.py` + `extras.py`
+
+Alex pidió «más ejercicios, pueden haber miles» y poder «agregar entrenos en
+plena rutina». La sorpresa del primero: **ya estaban**. La app lleva desde 0.6
+bajando fotos de [Free Exercise DB](https://github.com/yuhonas/free-exercise-db)
+(Unlicense, dominio público) — 876 movimientos con músculo, equipo, nivel y
+foto. Lo que faltaba no era la fuente, era que la app los conociese:
+`EXERCISE_CATALOG` lista 67 nombres a mano y ese era todo el vocabulario.
+
+**Qué viaja en el APK.** `assets/exercise_db.json`, 174 KB con nombre, músculos,
+equipo, nivel y mecánica; las instrucciones se quedaron fuera (700 de los
+873 KB del original) porque no las pinta nadie. Las **imágenes no viajan**:
+876 × 2 × 72 KB son 126 MB, cuatro veces la app entera. Se bajan de una en una
+la primera vez que hacen falta — `asset_manager.descargar_uno()`, que expone
+el `_repair_slug` que ya existía. Sin eso un ejercicio recién añadido no
+tendría foto **nunca**, tampoco al reinstalar, porque `missing_slugs()` mide
+contra `EXERCISE_IMAGE` y ese slug no está ahí.
+
+**La regla que evita partir historiales.** Los nombres de la base no son los de
+la app: ella dice `Barbell Bench Press` y la base dice `Barbell Bench Press -
+Medium Grip`. De 114 nombres que la app usa, **13 coinciden literalmente**. Y
+el nombre *es* la clave del historial (trampa 2), así que ofrecer el de la base
+al lado del de casa abriría dos historias del mismo movimiento sin que nada
+fallara. Manda el de la app: `EXERCISE_IMAGE` se lee **al revés** (slug →
+nombre de casa) y es la única tabla que dice qué movimiento de la base es «el
+mismo» que uno nuestro. En un empate de slug gana el nombre que alguna rutina
+prescribe, que es bajo el que ya hay series guardadas.
+
+**Los extras valen solo para hoy.** Es lo que los separa de editar la rutina:
+mañana el plan vuelve a ser el que era sin que nadie deshaga nada. Entran al
+final de la lista porque la vista piensa en posiciones (`ex_idx`) y meter uno
+en medio movería el ejercicio que está en pantalla bajo el dedo; lo que sí está
+indexado por nombre —el borrador y las sustituciones— no se entera.
+
+`_current_day()` es el único punto que cambió, y por eso el resto de la vista
+no se enteró: devuelve el día **más** los extras. `extras.dia_con_extras()`
+**copia** el `TrainingDay` siempre, incluso sin extras — el de `data.ROUTINES`
+es compartido y mutable, y añadirle algo lo dejaría en el plan de las 24
+semanas, en todas las fases que reusan ese día.
+
+Dos cosas que se descubrieron probando en el emulador y no leyendo el código:
+el buscador arranca filtrado por el grupo del día (abrirlo en «Abs Triset» por
+orden alfabético es abrirlo en el sitio menos útil), y **si el filtro deja cero
+resultados se busca sin él y se dice** — «crunch» un día de pecho contestaba
+«nada» teniendo 21 respuestas en abdomen.
 
 ### La memoria del coach — `memoria.py`
 
@@ -550,17 +596,28 @@ Things that break quietly if you do not know them:
     ve. Es el mismo parámetro queriendo decir cosas distintas según quién lo
     lea, igual que el `wrap=True` de la trampa 27.
 
+32. **Un ejercicio que no está en la rutina y sí en el borrador.**
+    `fit_to_routine` descarta toda fila cuya clave no esté en el día de la
+    rutina — es lo que impide que los pesos del press acaben bajo una
+    sentadilla— y **un extra nunca lo está**, por definición. Sin su
+    `extra_keys`, las series recién tecleadas en un ejercicio añadido a mano
+    desaparecían al reabrir la app, en silencio y con toda la lógica haciendo
+    exactamente lo que promete. Perder un borrador se lee como «no había nada
+    guardado», así que no hay nada que investigar. `DraftStore._extra_keys()`
+    los aporta; `workout_draft.py` no lee almacenamiento a propósito, que es lo
+    que le deja probarse con datos a mano.
+
 ### Flet version caveat
 
 Pinned to `flet[all]>=0.25,<0.30` — `flet[all]`, not plain `flet`, because web mode needs `flet-web` and a bare `uv sync` would otherwise uninstall it. The API (`ft.Colors`, `ft.Icons`, `page.run_task`, `ft.NavigationBarDestination`, `ft.ColorScheme`) matches 0.25–0.29. If a newer Flet release renames something, update the pin rather than silently adapting to a new API.
 
 ## Tests
 
-`.venv/bin/python -m pytest -q` — **1961 tests**, `testpaths = ["tests"]`, `asyncio_mode = "auto"`:
+`.venv/bin/python -m pytest -q` — **2025 tests**, `testpaths = ["tests"]`, `asyncio_mode = "auto"`:
 
-`test_agent.py`, `test_analytics.py`, `test_asset_manager.py`, `test_backup.py`, `test_chart_baseline.py`, `test_column_migration.py`, `test_day_screen.py`, `test_data_view_counts.py`, `test_dialog_layout.py`, `test_draft_dates.py`, `test_draft_substitution.py`, `test_exercise_images.py`, `test_exercise_key.py`, `test_finde.py`, `test_finde_view.py`, `test_flet_reconnect.py`, `test_fotos.py`, `test_gcal.py`, `test_gym_tools.py`, `test_health.py`, `test_help_dialog.py`, `test_history_notes.py`, `test_history_view.py`, `test_home_view.py`, `test_image_delivery.py`, `test_interfaz_en_espanol.py`, `test_layout_movil.py`, `test_memoria.py`, `test_notificaciones.py`, `test_nutrition.py`, `test_nutrition_view.py`, `test_percent_table.py`, `test_prefill_por_fecha.py`, `test_profile_db_down.py`, `test_puente_dart.py`, `test_program_week.py`, `test_progression.py`, `test_routine_builder.py`, `test_session_duration.py`, `test_session_plan.py`, `test_set_types.py`, `test_shared_ui.py`, `test_smoke.py`, `test_sqlite_backend.py`, `test_storage_metrics.py`, `test_substitutions.py`, `test_theme.py`, `test_timer_sound.py`, `test_weight_trend.py`, `test_widget.py`, `test_workout_date.py`, `test_workout_draft.py`, `test_workout_exercise_date.py`, `test_workout_notes.py`, `test_workout_notes_swap.py`, `test_workout_plan_rows.py`, `test_workout_resume.py`, `test_workout_session_time.py`, `test_workout_tools.py`, `test_workout_zen.py`.
+`test_agent.py`, `test_analytics.py`, `test_asset_manager.py`, `test_backup.py`, `test_catalogo.py`, `test_chart_baseline.py`, `test_column_migration.py`, `test_day_screen.py`, `test_data_view_counts.py`, `test_dialog_layout.py`, `test_draft_dates.py`, `test_draft_substitution.py`, `test_exercise_images.py`, `test_exercise_key.py`, `test_extras.py`, `test_finde.py`, `test_finde_view.py`, `test_flet_reconnect.py`, `test_fotos.py`, `test_gcal.py`, `test_gym_tools.py`, `test_health.py`, `test_help_dialog.py`, `test_history_notes.py`, `test_history_view.py`, `test_home_view.py`, `test_image_delivery.py`, `test_interfaz_en_espanol.py`, `test_layout_movil.py`, `test_memoria.py`, `test_notificaciones.py`, `test_nutrition.py`, `test_nutrition_view.py`, `test_percent_table.py`, `test_prefill_por_fecha.py`, `test_profile_db_down.py`, `test_puente_dart.py`, `test_program_week.py`, `test_progression.py`, `test_routine_builder.py`, `test_session_duration.py`, `test_session_plan.py`, `test_set_types.py`, `test_shared_ui.py`, `test_smoke.py`, `test_sqlite_backend.py`, `test_storage_metrics.py`, `test_substitutions.py`, `test_theme.py`, `test_timer_sound.py`, `test_weight_trend.py`, `test_widget.py`, `test_workout_date.py`, `test_workout_draft.py`, `test_workout_exercise_date.py`, `test_workout_extras_view.py`, `test_workout_notes.py`, `test_workout_notes_swap.py`, `test_workout_plan_rows.py`, `test_workout_resume.py`, `test_workout_session_time.py`, `test_workout_tools.py`, `test_workout_zen.py`.
 
-A clean run is `1961 passed, 1 skipped` and needs **nothing installed but the dev group** — no Docker, no server. The single skip is a network test in `test_asset_manager.py` (opt in with `IRONFLET_NETWORK_TESTS=1`). Until 0.12 this section warned to judge a run by its skip count, because 211 tests — everything touching storage — skipped silently without PostgreSQL; that trap is gone with the server.
+A clean run is `2025 passed, 1 skipped` and needs **nothing installed but the dev group** — no Docker, no server. The single skip is a network test in `test_asset_manager.py` (opt in with `IRONFLET_NETWORK_TESTS=1`). Until 0.12 this section warned to judge a run by its skip count, because 211 tests — everything touching storage — skipped silently without PostgreSQL; that trap is gone with the server.
 
 `tests/conftest.py` gives each pytest process its own SQLite file in the system temp dir, for the same reason it used to create a database per pid: the fixtures wipe rows, and two concurrent runs deleting each other's data mid-query produced red runs with a different set of failures each time, in files unrelated to whatever was being changed.
 

@@ -1,6 +1,6 @@
 [project]
 name = "ironflet"
-version = "0.15.0"
+version = "0.16.0"
 description = "App de Android para entrenos, comidas y progreso, con entrenador dentro. Python + Flet, todo local."
 readme = "README.md"
 license = { file = "LICENSE" }

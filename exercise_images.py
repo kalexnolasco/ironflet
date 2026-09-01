@@ -211,6 +211,26 @@ def _inline(path_text: str) -> str | None:
         return None
 
 
+def _slug_de(key: str) -> str:
+    """El slug de un ejercicio: primero la tabla de casa, luego el catálogo.
+
+    `EXERCISE_IMAGE` sigue mandando — es la que decide qué foto le corresponde
+    a cada nombre de la app. El respaldo existe para los movimientos que solo
+    conoce `catalogo.py`, que son los que Alex puede añadir a mitad de sesión y
+    que esta tabla nunca va a nombrar: son 875 y ella tiene 87.
+    """
+    directo = EXERCISE_IMAGE.get(key)
+    if directo:
+        return directo
+    try:
+        import catalogo
+
+        e = catalogo.por_nombre(key)
+        return e.slug if e else ""
+    except Exception:
+        return ""
+
+
 def image_props(key: str, frame: int = 0) -> dict:
     """Kwargs for `ft.Image` that render `key` on every platform.
 
@@ -224,7 +244,7 @@ def image_props(key: str, frame: int = 0) -> dict:
     it was invisible because `ft.Image` renders an empty box rather than
     complaining.
     """
-    slug = EXERCISE_IMAGE.get(key)
+    slug = _slug_de(key)
     if not slug:
         return {}
     from asset_manager import image_path

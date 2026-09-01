@@ -4,6 +4,48 @@ Todos los cambios notables de IronFlet.
 El formato sigue [Keep a Changelog](https://keepachangelog.com/) y el proyecto
 usa [SemVer](https://semver.org/).
 
+## [0.16.0] — 2026-09-01
+
+**875 ejercicios y poder añadir uno a mitad de sesión.**
+
+### Añadido
+
+- **«+ Ejercicio», junto a Terminar sesión.** La máquina está ocupada, o
+  acabas la última serie con ganas de meter algo más. Hasta ahora la única
+  salida era editar la rutina: cambiar el plan de 24 semanas para arreglar un
+  martes. Un extra **vale solo para hoy** — mañana el plan vuelve a ser el que
+  era sin que nadie deshaga nada.
+- **El catálogo pasa de 67 ejercicios a 875.** Y la sorpresa fue que ya
+  estaban: la app lleva desde 0.6 bajando fotos de Free Exercise DB (dominio
+  público), 876 movimientos con músculo, equipo, nivel y foto. No faltaba la
+  fuente, faltaba que la app los conociera. Viajan 174 KB de datos dentro del
+  APK; las fotos no —serían 126 MB, cuatro veces la app— y se bajan de una en
+  una la primera vez que hacen falta.
+- El buscador arranca **filtrado por lo que se entrena hoy**, y si ese filtro
+  deja cero resultados busca sin él y lo dice.
+
+### Arreglado
+
+- **Un extra podía perder las series recién tecleadas.** `fit_to_routine`
+  descarta toda fila cuya clave no esté en la rutina —es lo que impide que los
+  pesos del press acaben bajo una sentadilla— y un extra nunca lo está, por
+  definición. Al reabrir la app desaparecían, en silencio y con toda la lógica
+  haciendo lo que promete. Trampa 32.
+- **Buscar «crunch» un día de pecho decía «Nada con ese nombre»** teniendo 21
+  respuestas en abdomen. Salió del emulador, no de leer el código.
+- En el mismo sitio: el teclado dejaba la lista en dos filas (fuera el
+  autofocus, el camino corto casi nunca es escribir) y los chips de grupo
+  ocupaban dos filas, que era un resultado menos.
+
+### Cómo no se rompió el historial
+
+Los nombres de la base no son los de la app —ella dice `Barbell Bench Press` y
+la base `Barbell Bench Press - Medium Grip`; de 114 nombres, 13 coinciden— y el
+nombre **es** la clave con la que se guarda cada serie. Ofrecer los dos habría
+abierto dos historias del mismo movimiento sin que nada fallara. Manda el de
+casa: `EXERCISE_IMAGE` se lee al revés y es la única tabla que sabe qué
+movimiento de la base es el mismo que uno nuestro.
+
 ## [0.15.0] — 2026-08-22
 
 **El finde resuelto, y un entrenador que se acuerda de quién eres.**

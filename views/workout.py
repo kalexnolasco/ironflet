@@ -10,6 +10,7 @@ from datetime import date, timedelta
 
 import flet as ft
 
+import extras
 from analytics import Record, detect_new_records
 from components.timer import RestTimer
 from data import active_routine
@@ -281,6 +282,10 @@ class WorkoutView:
         self.phase_id: int = 0
         self.day_idx: int = -1
         self.ex_idx: int = 0
+        #: El buscador de ejercicios, cuando está abierto. `handle_back` lo
+        #: mira antes que nada: sin esto, un back con el diálogo puesto sale de
+        #: la pantalla del ejercicio y lo deja flotando sobre la lista del día.
+        self._add_dialog: ft.AlertDialog | None = None
         # Draft rows are kept PER EXERCISE. One shared `self.sets` list was the
         # bug behind "I changed exercise and it reset": stepping to the next
         # movement threw the half-typed rows on the floor, unsaved and without
@@ -430,6 +435,9 @@ class WorkoutView:
         Abandoning a session is `_ask_discard`, an explicit button behind a
         confirmation, and nothing else.
         """
+        if self._add_dialog is not None:
+            self._cerrar_add(self._add_dialog)
+            return True
         if self.finished:
             self._reset()
             self.page.data["refresh_current"]()
@@ -2634,6 +2642,27 @@ class WorkoutView:
             self.page.data["refresh_current"]()
 
     def _current_day(self):
+        """El día que se está entrenando, **con los extras de hoy al final**.
+
+        Un solo punto, y por eso el resto de la vista no se enteró del cambio:
+        piensa en posiciones sobre `day.exercises`, así que un ejercicio más al
+        final es una posición más y ya está — la navegación, el total, el
+        borrador y el guardado siguen igual.
+
+        `extras.dia_con_extras` **copia** el `TrainingDay`. Devolver el de
+        `data.ROUTINES` y añadirle algo aquí lo dejaría en el plan para
+        siempre, en todas las fases que reusan ese día.
+        """
+        dia = self._routine_day()
+        if dia is None:
+            return None
+        return extras.dia_con_extras(dia, self.store)
+
+    def _routine_day(self):
+        """El día tal como lo prescribe la rutina, sin extras.
+
+        Lo que hace falta para saber dónde acaba el plan y empieza lo de hoy.
+        """
         days = active_routine().days_for_phase(self.phase_id)
         if self.phase_id and 0 <= self.day_idx < len(days):
             return days[self.day_idx]
@@ -3289,6 +3318,349 @@ class WorkoutView:
         day = self._current_day()
         total = len(day.exercises) if day else 0
         return self.ex_idx + 1 >= total
+
+    # ── Añadir un ejercicio a la sesión de hoy ────────────────
+
+    def _ask_add_exercise(self, _=None):
+        """El buscador de los 875, y la lista de lo ya añadido hoy.
+
+        **La búsqueda es la función, no la lista.** Un desplegable de 875
+        entradas no se navega: se escriben tres letras y se toca. Por eso el
+        campo va arriba, enfocado, y los chips de grupo debajo para el caso en
+        que no se sepa cómo se llama lo que se busca — «algo de hombro».
+        """
+        import catalogo
+
+        resultados = ft.Column(spacing=0, tight=True, scroll=ft.ScrollMode.AUTO, expand=True)
+        # Arranca filtrado por lo que se está entrenando hoy. Abrirlo en «Abs
+        # Triset, Alternate DB Curl» — los dos primeros de 875 por orden
+        # alfabético — es abrirlo en el sitio menos útil posible.
+        estado = {"q": "", "grupo": self._grupo_del_dia()}
+
+        # Sin `autofocus`. Con el teclado abierto de entrada, de la lista se
+        # veían **dos filas**: el diálogo conserva su altura y el teclado se
+        # come la mitad de abajo. Y el camino más corto casi nunca es escribir
+        # — es «algo de pecho», que son los chips de aquí al lado.
+        campo = ft.TextField(
+            hint_text="Busca: curl, press, sentadilla…",
+            dense=True,
+            border_color=C.border,
+            color=C.text,
+            text_size=13,
+            prefix_icon=ft.Icons.SEARCH,
+        )
+
+        def pintar():
+            ya = {x.lower() for x in extras.de_hoy(self.store)}
+            en_el_dia = {
+                exercise_key(x).lower()
+                for x in (self._routine_day().exercises if self._routine_day() else [])
+            }
+            filas: list[ft.Control] = []
+
+            actuales = extras.de_hoy(self.store)
+            if actuales:
+                filas.append(
+                    ft.Container(
+                        content=ft.Text(
+                            f"AÑADIDOS HOY · {len(actuales)}",
+                            size=10,
+                            weight=ft.FontWeight.W_700,
+                            color=C.text_muted,
+                        ),
+                        padding=ft.padding.only(bottom=4, top=2),
+                    )
+                )
+                filas += [self._fila_extra_puesto(n, pintar) for n in actuales]
+                filas.append(ft.Divider(height=12, color=C.border))
+
+            encontrados = catalogo.buscar(estado["q"], estado["grupo"], limite=40)
+
+            # El grupo viene preseleccionado por el día que se entrena, y eso
+            # crea un callejón: buscar «crunch» un día de pecho no devuelve
+            # nada, porque los crunch son de abdomen. Antes de decir que no hay
+            # nada se mira sin el filtro — y si ahí sí hay, se enseña y se dice
+            # por qué. Un buscador que contesta «nada» teniendo la respuesta es
+            # peor que uno lento.
+            fuera_del_grupo = False
+            if not encontrados and estado["q"] and estado["grupo"]:
+                encontrados = catalogo.buscar(estado["q"], "", limite=40)
+                fuera_del_grupo = bool(encontrados)
+
+            if fuera_del_grupo:
+                filas.append(
+                    ft.Container(
+                        content=ft.Text(
+                            f"Nada de {estado['grupo']} con ese nombre. Esto es de otros grupos:",
+                            size=11,
+                            color=C.text_secondary,
+                        ),
+                        padding=ft.padding.only(bottom=6, top=2),
+                    )
+                )
+            elif not encontrados:
+                filas.append(
+                    ft.Container(
+                        content=ft.Text(
+                            "Nada con ese nombre. Prueba en inglés: los ejercicios se "
+                            "guardan con su nombre original para que el historial no se "
+                            "parta en dos.",
+                            size=11,
+                            color=C.text_secondary,
+                        ),
+                        padding=10,
+                    )
+                )
+            for e in encontrados:
+                puesto = e.nombre.lower() in ya
+                en_plan = e.nombre.lower() in en_el_dia
+                filas.append(self._fila_catalogo(e, puesto, en_plan, pintar))
+
+            resultados.controls = filas
+            self.page.update()
+
+        def al_escribir(_):
+            estado["q"] = campo.value or ""
+            pintar()
+
+        campo.on_change = al_escribir
+
+        def chip_grupo(clave: str, etiqueta: str) -> ft.Control:
+            activo = estado["grupo"] == clave
+
+            def elegir(_):
+                estado["grupo"] = "" if activo else clave
+                pintar()
+
+            return ft.Container(
+                content=ft.Text(
+                    etiqueta,
+                    size=11,
+                    color=C.on_accent if activo else C.text_secondary,
+                    weight=ft.FontWeight.W_700 if activo else ft.FontWeight.W_500,
+                ),
+                bgcolor=C.accent if activo else C.bg_sunken,
+                padding=ft.padding.symmetric(horizontal=10, vertical=5),
+                border_radius=Radius.sm,
+                on_click=elegir,
+                ink=True,
+            )
+
+        # Una fila con scroll, no `wrap`: envueltos ocupaban dos filas y cada
+        # fila de aquí arriba es un resultado menos abajo.
+        grupos = ft.Row(
+            [chip_grupo(g, g) for g in catalogo.grupos()],
+            spacing=5,
+            scroll=ft.ScrollMode.AUTO,
+            tight=True,
+        )
+
+        dlg = ft.AlertDialog(
+            modal=False,
+            bgcolor=C.bg_surface,
+            title=ft.Text(
+                "Añadir a la sesión de hoy", size=16, weight=ft.FontWeight.W_900, color=C.text
+            ),
+            content=ft.Container(
+                content=ft.Column(
+                    [
+                        campo,
+                        grupos,
+                        ft.Container(height=4),
+                        resultados,
+                    ],
+                    spacing=8,
+                    tight=True,
+                ),
+                width=dialog_width(self.page),
+                height=dialog_height(self.page, 460),
+            ),
+            actions=[
+                ft.TextButton(
+                    "Listo",
+                    on_click=lambda _: self._cerrar_add(dlg),
+                    style=ft.ButtonStyle(color=C.accent),
+                )
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+            on_dismiss=lambda _: self.page.data["refresh_current"](),
+        )
+        self._add_dialog = dlg
+        pintar()
+        self.page.open(dlg)
+
+    def _grupo_del_dia(self) -> str:
+        """El grupo muscular que toca hoy, sacado del nombre del día.
+
+        Los días se llaman «Chest - Biceps», «Shoulder - Leg»: la primera
+        mitad es el grupo principal y coincide con las claves de
+        `EXERCISE_CATALOG` porque **es el mismo vocabulario** — `TrainingDay.
+        name` va literal a `entrenos.grupo` (trampa 22) y por eso está en
+        inglés. Vacío si no reconoce nada, que deja el buscador sin filtro.
+        """
+        dia = self._routine_day()
+        if dia is None:
+            return ""
+        import catalogo
+
+        cabeza = dia.name.split("-")[0].strip().split("+")[0].strip()
+        return cabeza if cabeza in catalogo.grupos() else ""
+
+    def _cerrar_add(self, dlg):
+        self._add_dialog = None
+        self.page.close(dlg)
+        # Solo ahora: la pantalla de detrás tiene que contar los ejercicios
+        # nuevos, y refrescarla con cada añadido cerraría el diálogo encima.
+        self.page.data["refresh_current"]()
+
+    def _fila_catalogo(self, e, puesto: bool, en_plan: bool, al_cambiar) -> ft.Control:
+        """Un resultado de la búsqueda. Dice si ya está y por qué no se puede."""
+        if en_plan:
+            nota, activo = "ya está en el plan de hoy", False
+        elif puesto:
+            nota, activo = "añadido", False
+        else:
+            nota, activo = e.descripcion(), True
+
+        def anadir(_):
+            if extras.anadir(self.store, e.nombre):
+                self._olvidar_cache_ejercicios()
+                self._bajar_foto(e.slug)
+                al_cambiar()
+
+        return ft.Container(
+            content=ft.Row(
+                [
+                    ft.Column(
+                        [
+                            ft.Text(
+                                e.nombre,
+                                size=12,
+                                weight=ft.FontWeight.W_600,
+                                color=C.text if activo else C.text_muted,
+                                max_lines=1,
+                                overflow=ft.TextOverflow.ELLIPSIS,
+                            ),
+                            ft.Text(nota, size=10, color=C.text_muted),
+                        ],
+                        spacing=1,
+                        expand=True,
+                        tight=True,
+                    ),
+                    ft.Icon(
+                        ft.Icons.ADD_CIRCLE_OUTLINE if activo else ft.Icons.CHECK,
+                        size=18,
+                        color=C.accent if activo else C.text_muted,
+                    ),
+                ],
+                spacing=8,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
+            on_click=anadir if activo else None,
+            ink=activo,
+            padding=ft.padding.symmetric(vertical=7, horizontal=4),
+            border_radius=Radius.sm,
+        )
+
+    def _fila_extra_puesto(self, nombre: str, al_cambiar) -> ft.Control:
+        """Un extra ya añadido, con su papelera — salvo si ya tiene series.
+
+        Quitar uno registrado dejaría la fila en `entrenos` sin nada en
+        pantalla que la explique. El historial se edita en Historial, que es
+        donde borrar algo cuesta lo que tiene que costar.
+        """
+        guardado = self._extra_ya_guardado(nombre)
+
+        def quitar(_):
+            if extras.quitar(self.store, nombre):
+                self._olvidar_cache_ejercicios()
+                al_cambiar()
+
+        return ft.Container(
+            content=ft.Row(
+                [
+                    ft.Text(nombre, size=12, color=C.text, expand=True, max_lines=1),
+                    ft.Text("guardado", size=10, color=C.success)
+                    if guardado
+                    else ft.Container(
+                        content=ft.Icon(ft.Icons.CLOSE, size=15, color=C.text_muted),
+                        on_click=quitar,
+                        ink=True,
+                        width=28,
+                        height=28,
+                        alignment=ft.alignment.center,
+                        border_radius=Radius.sm,
+                        tooltip="Quitarlo de hoy",
+                    ),
+                ],
+                spacing=8,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
+            padding=ft.padding.symmetric(vertical=4, horizontal=4),
+        )
+
+    def _extra_ya_guardado(self, nombre: str) -> bool:
+        """¿Hay ya una fila de hoy para ese ejercicio?"""
+        try:
+            clave = exercise_key(nombre)
+            return any(
+                exercise_key(e.exercise) == clave
+                for e in self.store.get_workouts_on(self.session_date())
+            )
+        except Exception:
+            return False
+
+    def _bajar_foto(self, slug: str):
+        """Pide la foto del ejercicio recién añadido, sin esperar.
+
+        El tarball trae los 87 slugs del catálogo de casa, así que un ejercicio
+        de los otros 788 no tendría foto nunca — tampoco al reinstalar, porque
+        `missing_slugs()` mide contra `EXERCISE_IMAGE` y ese slug no está ahí.
+
+        En segundo plano y sin decir nada: se está en mitad de un entreno y una
+        foto que no llega no puede interrumpir eso. Sin red simplemente no hay
+        foto, que es como estaba antes.
+        """
+        if not slug:
+            return
+        with contextlib.suppress(Exception):
+            import asset_manager
+
+            self.page.run_task(asset_manager.descargar_uno, slug)
+
+    def _olvidar_cache_ejercicios(self):
+        """Los índices se han movido: todo lo memoizado por posición miente.
+
+        Un extra entra al final, así que en teoría no mueve nada — pero quitar
+        uno de en medio sí, y estos diccionarios están indexados por posición
+        (`_sets_by_ex`, `_last_sets_cache`). Vaciar lo memoizado cuesta una
+        consulta; equivocarse cuesta pintar las series de un ejercicio bajo el
+        nombre de otro.
+        """
+        self._last_sets_cache.clear()
+        with contextlib.suppress(AttributeError):
+            self._rec_cache.clear()
+
+    def _session_button(self, icono, texto: str, tinte: str, ayuda: str, accion) -> ft.Control:
+        """Un botón de los que actúan sobre la sesión entera, no sobre la serie."""
+        return ft.Container(
+            content=ft.Row(
+                [
+                    ft.Icon(icono, size=15, color=tinte),
+                    ft.Text(texto, size=12, weight=ft.FontWeight.W_700, color=tinte),
+                ],
+                spacing=6,
+                tight=True,
+                alignment=ft.MainAxisAlignment.CENTER,
+            ),
+            border=ft.border.all(1, tinte),
+            border_radius=Radius.md,
+            padding=ft.padding.symmetric(horizontal=14, vertical=10),
+            alignment=ft.alignment.center,
+            tooltip=ayuda,
+            on_click=accion,
+            ink=True,
+        )
 
     # ── Finishing: on screen from the first exercise ──────────
     def _ask_finish(self, _):
@@ -5567,36 +5939,30 @@ class WorkoutView:
             ],
             spacing=8,
         )
-        # Its own row, centred and narrower than Save: it ends the session, so
-        # it must be findable at a glance and awkward to hit by accident. The
-        # confirmation in `_ask_finish` is the real guard; this is the first one.
+        # Su propia fila, centrada y más estrecha que Guardar: las dos son
+        # acciones sobre la *sesión* y no sobre la serie, así que viven lejos
+        # de Guardar. Terminar además tiene que ser incómodo de tocar sin
+        # querer — la confirmación de `_ask_finish` es el guardia de verdad,
+        # esto es el primero.
         finish_row = ft.Row(
             [
-                ft.Container(
-                    content=ft.Row(
-                        [
-                            ft.Icon(ft.Icons.FLAG_ROUNDED, size=15, color=finish_tint),
-                            ft.Text(
-                                finish_label,
-                                size=12,
-                                weight=ft.FontWeight.W_700,
-                                color=finish_tint,
-                            ),
-                        ],
-                        spacing=6,
-                        tight=True,
-                        alignment=ft.MainAxisAlignment.CENTER,
-                    ),
-                    border=ft.border.all(1, finish_tint),
-                    border_radius=Radius.md,
-                    padding=ft.padding.symmetric(horizontal=18, vertical=10),
-                    alignment=ft.alignment.center,
-                    tooltip="Cerrar la sesión — lo no guardado se escribe antes",
-                    on_click=self._ask_finish,
-                    ink=True,
-                )
+                self._session_button(
+                    ft.Icons.ADD_ROUNDED,
+                    "Ejercicio",
+                    C.text_secondary,
+                    "Añadir un ejercicio a la sesión de hoy",
+                    self._ask_add_exercise,
+                ),
+                self._session_button(
+                    ft.Icons.FLAG_ROUNDED,
+                    finish_label,
+                    finish_tint,
+                    "Cerrar la sesión — lo no guardado se escribe antes",
+                    self._ask_finish,
+                ),
             ],
             alignment=ft.MainAxisAlignment.CENTER,
+            spacing=8,
         )
 
         session_label = ft.Text(

@@ -270,6 +270,28 @@ async def _repair_slug(client: httpx.AsyncClient, slug: str) -> bool:
     return ok
 
 
+async def descargar_uno(slug: str) -> bool:
+    """Baja las fotos de UN ejercicio, ahora. `True` si la primera llegó.
+
+    Para lo que Alex añade a mitad de sesión: el tarball se armó con el
+    catálogo de casa (87 slugs) y no trae ninguno de los otros 788, así que sin
+    esto un ejercicio recién añadido no tendría foto **nunca** — ni al
+    reinstalar, porque `missing_slugs()` mide contra `EXERCISE_IMAGE` y ese
+    slug no está ahí.
+
+    Silenciosa a propósito: se llama desde la pantalla de entreno, donde una
+    foto que no llega no puede interrumpir nada. Sin red, se queda sin foto y
+    el ejercicio funciona igual.
+    """
+    if not slug or _has_slug(slug):
+        return True
+    try:
+        async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as client:
+            return await _repair_slug(client, slug)
+    except Exception:
+        return False
+
+
 async def _download_tarball(client: httpx.AsyncClient) -> Path | None:
     """Stream the release tarball to disk, resuming a previous partial file.
 

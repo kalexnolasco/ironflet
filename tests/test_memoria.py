@@ -425,9 +425,7 @@ def test_el_boton_de_anadir_no_se_come_el_dialogo(ajustes, store):
     import flet as ft
 
     dlg = _abrir_dialogo(ajustes)
-    boton = next(
-        c for c in _walk(dlg) if getattr(c, "on_click", None) and "Añadir" in _textos(c)
-    )
+    boton = next(c for c in _walk(dlg) if getattr(c, "on_click", None) and "Añadir" in _textos(c))
 
     padres = [
         c
