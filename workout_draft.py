@@ -1101,17 +1101,26 @@ class DraftStore:
             self._store.set_pref(self._key, "")
 
     def _extra_keys(self) -> tuple[str, ...]:
-        """Los ejercicios que Alex añadió hoy a mano, como claves.
+        """Los ejercicios de hoy que la rutina no prescribe, como claves.
+
+        Los que añadió a mano (`extras.py`) y los de la rutina de abdomen
+        (`abdomen.py`), que son los dos casos de algo que está en la sesión y
+        no en el día. Sin ellos, `fit_to_routine` tira sus series al restaurar
+        — trampa 32.
 
         Vive aquí y no en `fit_to_routine` porque ese módulo no lee
         almacenamiento — es lo que le deja probarse con datos a mano. Falla a
-        vacío: sin extras el ajuste se comporta como siempre.
+        vacío: sin nada de esto el ajuste se comporta como siempre.
         """
         try:
+            import abdomen
             import extras
             from exercises import exercise_key
 
-            return tuple(exercise_key(x) for x in extras.de_hoy(self._store))
+            nombres = list(extras.de_hoy(self._store))
+            if abdomen.activo(self._store):
+                nombres += abdomen.de_hoy(self._store)
+            return tuple(exercise_key(x) for x in nombres)
         except Exception:
             return ()
 

@@ -4,6 +4,42 @@ Todos los cambios notables de IronFlet.
 El formato sigue [Keep a Changelog](https://keepachangelog.com/) y el proyecto
 usa [SemVer](https://semver.org/).
 
+## [0.17.0] — 2026-09-01
+
+**Abdomen todos los días, que el plan ya pedía y la app no daba.**
+
+### Añadido
+
+- **Abdomen cada día** (`abdomen.py`), que se enciende en Ajustes. Al final de
+  cada entreno, y los días de descanso en Inicio — porque «cada día» son siete
+  y se entrenan cuatro o cinco.
+
+  No era una función nueva: era **un agujero**. El calendario de la fase 1 dice
+  «+ Abs» cinco veces por semana y los tres días que se entrenan de verdad no
+  llevan un solo ejercicio de abdomen en su lista. El «+ Abs» vivía en el
+  calendario, que es texto de distribución y no llega a la pantalla de entreno.
+
+  Tres al día por defecto, uno de cada tipo —flexión, inferior y oblicuos—, que
+  rotan solos y no repiten del día anterior. Barajar los 93 ejercicios de
+  abdomen del catálogo habría dado días con tres crunches.
+
+### Arreglado
+
+- **La lista de días prometía siete ejercicios y entregaba diez.** Contaba los
+  de la rutina y no los de la sesión; la diferencia no se veía hasta estar
+  dentro. Ahora dice «7 ejercicios + 3 de abdomen».
+- **El chip «Atrás» de la cabecera llevaba a los días de una fase que no se
+  estaba entrenando.** Su docstring prometía «lo mismo que el botón físico» y
+  había dejado de cumplirlo: repetía las tres líneas de `handle_back` en vez de
+  llamarlo, y no se enteró de que había una sesión de solo abdomen de la que
+  salir. Ahora delega.
+- Un nombre inventado en el pool de abdomen —`Hanging Leg Raise`, que no existe
+  en el catálogo— habría abierto un historial paralelo. Lo cazó su test antes
+  de llegar a ninguna parte.
+- Un fixture nuevo recargaba `views.workout` sin necesitarlo y rompía
+  `test_workout_exercise_date`, un test que nadie había tocado. Solo fallaba en
+  la suite entera. Trampa 33.
+
 ## [0.16.0] — 2026-09-01
 
 **875 ejercicios y poder añadir uno a mitad de sesión.**

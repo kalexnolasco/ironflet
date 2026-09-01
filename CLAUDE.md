@@ -52,7 +52,7 @@ CI (`.github/workflows/ci.yml`) runs, on Python 3.12:
 uv sync --group dev
 uv run ruff check .
 uv run ruff format --check .
-uv run pytest -q          # 2025 tests, 1 skipped (a network test, opt-in)
+uv run pytest -q          # 2074 tests, 1 skipped (a network test, opt-in)
 ```
 
 ## Architecture
@@ -250,6 +250,48 @@ file (`widget_pin.request`) because **Flet exposes no `MethodChannel` to
 Python**; `main.dart` sees it on the same three-second poll, deletes it and
 calls Kotlin. Deleted *before* the call: a file left behind would ask to pin
 the widget every three seconds forever.
+
+### Abdomen todos los días — `abdomen.py`
+
+Alex: «debe haber una sección especial para abdominales, la idea es hacer cada
+día». No era un capricho, era **un agujero**: el `week_rotation` de su fase 1
+dice «+ Abs» cinco veces por semana y los tres `TrainingDay` de esa fase
+—`Chest - Biceps`, `Back - Triceps`, `Shoulder - Leg`— no llevan un solo
+ejercicio de abdomen. El «+ Abs» vive en el calendario, que es texto de
+distribución y no llega nunca a la pantalla de entreno. El plan lo prometía y
+la sesión no lo entregaba.
+
+**Rota por función, no al azar.** Barajar los 93 ejercicios de abdomen del
+catálogo daría días con tres crunches. El abdomen hace tres trabajos —flexión,
+inferior, y oblicuos/antiextensión— y un día completo toca los tres, así que
+`FAMILIAS` está partido en tres pools de cinco y cada día sale uno de cada.
+
+Dos ruedas que giran por separado, y ahí estuvo el fallo del primer intento:
+atarlas daba [A, B, C] el día D y [B, C, D] el D+1 —la plancha tres días
+seguidos— con todos los tests en verde, porque cada día tenía sus tres familias
+en su sitio. `arranque` decide el **orden** de las familias (para que con menos
+de tres al día no se coma siempre la misma) y el **ejercicio** se elige por la
+familia y el día, nunca por la posición. La promesa «ninguno repite del día
+anterior» vale con el número por defecto; con cinco al día son cinco de quince
+y manda el tamaño del pool.
+
+**Determinista sobre la fecha**: abrir la app dos veces un martes da lo mismo.
+
+Vive en tres sitios y ninguno es la barra: se añade al final de cada día en la
+sesión (`dia_con_abdomen`, que **copia** el `TrainingDay` como
+`extras.dia_con_extras` y por la misma razón), tiene su propia sesión para los
+días sin pesas (`dia_suelto`, que Home arranca con
+`WorkoutView.empezar_abdomen()`), y se enciende en Ajustes. **Apagado de
+fábrica**: encendido por defecto sería meterle tres ejercicios en la sesión a
+quien nunca los pidió.
+
+`dia_suelto` se llama **«Abs»**, no «Abdomen»: ese nombre va literal a
+`entrenos.grupo` (trampa 22) y es el vocabulario que la app ya usa. Un segundo
+nombre para lo mismo parte la agrupación de Historial en dos.
+
+Y los nombres del pool son los del catálogo, comprobados por un test que ya
+cazó uno inventado —`Hanging Leg Raise`, que no existe— antes de que llegara a
+ninguna parte.
 
 ### El catálogo grande y los extras — `catalogo.py` + `extras.py`
 
@@ -607,17 +649,27 @@ Things that break quietly if you do not know them:
     los aporta; `workout_draft.py` no lee almacenamiento a propósito, que es lo
     que le deja probarse con datos a mano.
 
+33. **`sys.modules.pop("views.…")` en un fixture que no stubbea nada.**
+    `test_finde_view` y `test_workout_extras_view` recargan su vista a
+    propósito: `test_nutrition_view` deja un stub de `nutrition` puesto y hay
+    que deshacerlo. Copiar ese patrón donde no hace falta rompe al vecino —
+    `test_abdomen` va primero por orden alfabético y dejaba el módulo recién
+    recargado debajo de `test_workout_exercise_date`, que hace `monkeypatch`
+    sobre el que él ya tenía cargado. El fallo **solo aparece en la suite
+    entera**: el fichero solo pasa, y el rojo sale en un test que nadie ha
+    tocado.
+
 ### Flet version caveat
 
 Pinned to `flet[all]>=0.25,<0.30` — `flet[all]`, not plain `flet`, because web mode needs `flet-web` and a bare `uv sync` would otherwise uninstall it. The API (`ft.Colors`, `ft.Icons`, `page.run_task`, `ft.NavigationBarDestination`, `ft.ColorScheme`) matches 0.25–0.29. If a newer Flet release renames something, update the pin rather than silently adapting to a new API.
 
 ## Tests
 
-`.venv/bin/python -m pytest -q` — **2025 tests**, `testpaths = ["tests"]`, `asyncio_mode = "auto"`:
+`.venv/bin/python -m pytest -q` — **2074 tests**, `testpaths = ["tests"]`, `asyncio_mode = "auto"`:
 
-`test_agent.py`, `test_analytics.py`, `test_asset_manager.py`, `test_backup.py`, `test_catalogo.py`, `test_chart_baseline.py`, `test_column_migration.py`, `test_day_screen.py`, `test_data_view_counts.py`, `test_dialog_layout.py`, `test_draft_dates.py`, `test_draft_substitution.py`, `test_exercise_images.py`, `test_exercise_key.py`, `test_extras.py`, `test_finde.py`, `test_finde_view.py`, `test_flet_reconnect.py`, `test_fotos.py`, `test_gcal.py`, `test_gym_tools.py`, `test_health.py`, `test_help_dialog.py`, `test_history_notes.py`, `test_history_view.py`, `test_home_view.py`, `test_image_delivery.py`, `test_interfaz_en_espanol.py`, `test_layout_movil.py`, `test_memoria.py`, `test_notificaciones.py`, `test_nutrition.py`, `test_nutrition_view.py`, `test_percent_table.py`, `test_prefill_por_fecha.py`, `test_profile_db_down.py`, `test_puente_dart.py`, `test_program_week.py`, `test_progression.py`, `test_routine_builder.py`, `test_session_duration.py`, `test_session_plan.py`, `test_set_types.py`, `test_shared_ui.py`, `test_smoke.py`, `test_sqlite_backend.py`, `test_storage_metrics.py`, `test_substitutions.py`, `test_theme.py`, `test_timer_sound.py`, `test_weight_trend.py`, `test_widget.py`, `test_workout_date.py`, `test_workout_draft.py`, `test_workout_exercise_date.py`, `test_workout_extras_view.py`, `test_workout_notes.py`, `test_workout_notes_swap.py`, `test_workout_plan_rows.py`, `test_workout_resume.py`, `test_workout_session_time.py`, `test_workout_tools.py`, `test_workout_zen.py`.
+`test_abdomen.py`, `test_agent.py`, `test_analytics.py`, `test_asset_manager.py`, `test_backup.py`, `test_catalogo.py`, `test_chart_baseline.py`, `test_column_migration.py`, `test_day_screen.py`, `test_data_view_counts.py`, `test_dialog_layout.py`, `test_draft_dates.py`, `test_draft_substitution.py`, `test_exercise_images.py`, `test_exercise_key.py`, `test_extras.py`, `test_finde.py`, `test_finde_view.py`, `test_flet_reconnect.py`, `test_fotos.py`, `test_gcal.py`, `test_gym_tools.py`, `test_health.py`, `test_help_dialog.py`, `test_history_notes.py`, `test_history_view.py`, `test_home_view.py`, `test_image_delivery.py`, `test_interfaz_en_espanol.py`, `test_layout_movil.py`, `test_memoria.py`, `test_notificaciones.py`, `test_nutrition.py`, `test_nutrition_view.py`, `test_percent_table.py`, `test_prefill_por_fecha.py`, `test_profile_db_down.py`, `test_puente_dart.py`, `test_program_week.py`, `test_progression.py`, `test_routine_builder.py`, `test_session_duration.py`, `test_session_plan.py`, `test_set_types.py`, `test_shared_ui.py`, `test_smoke.py`, `test_sqlite_backend.py`, `test_storage_metrics.py`, `test_substitutions.py`, `test_theme.py`, `test_timer_sound.py`, `test_weight_trend.py`, `test_widget.py`, `test_workout_date.py`, `test_workout_draft.py`, `test_workout_exercise_date.py`, `test_workout_extras_view.py`, `test_workout_notes.py`, `test_workout_notes_swap.py`, `test_workout_plan_rows.py`, `test_workout_resume.py`, `test_workout_session_time.py`, `test_workout_tools.py`, `test_workout_zen.py`.
 
-A clean run is `2025 passed, 1 skipped` and needs **nothing installed but the dev group** — no Docker, no server. The single skip is a network test in `test_asset_manager.py` (opt in with `IRONFLET_NETWORK_TESTS=1`). Until 0.12 this section warned to judge a run by its skip count, because 211 tests — everything touching storage — skipped silently without PostgreSQL; that trap is gone with the server.
+A clean run is `2074 passed, 1 skipped` and needs **nothing installed but the dev group** — no Docker, no server. The single skip is a network test in `test_asset_manager.py` (opt in with `IRONFLET_NETWORK_TESTS=1`). Until 0.12 this section warned to judge a run by its skip count, because 211 tests — everything touching storage — skipped silently without PostgreSQL; that trap is gone with the server.
 
 `tests/conftest.py` gives each pytest process its own SQLite file in the system temp dir, for the same reason it used to create a database per pid: the fixtures wipe rows, and two concurrent runs deleting each other's data mid-query produced red runs with a different set of failures each time, in files unrelated to whatever was being changed.
 

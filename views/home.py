@@ -1230,6 +1230,98 @@ class HomeView:
             tooltip="Abrir el diario de comida",
         )
 
+    def _abdomen_card(self) -> ft.Control | None:
+        """El abdomen de hoy, o `None` si está apagado.
+
+        Existe porque Alex pidió abdomen «cada día» y entrena cuatro o cinco:
+        dentro de la sesión de pesas ya se añade solo, pero los días de
+        descanso no habría dónde hacerlo. Esta tarjeta es ese sitio, y es la
+        que convierte «cada día» en verdad.
+
+        Cuando ya está hecho lo dice y deja de invitar: una tarjeta que sigue
+        pidiendo algo que acabas de hacer enseña a ignorarla.
+        """
+        import abdomen
+
+        try:
+            if not abdomen.activo(self.store):
+                return None
+            toca = abdomen.de_hoy(self.store)
+        except Exception:
+            return None
+        if not toca:
+            return None
+
+        hechos = self._abdomen_hechos(toca)
+        completo = len(hechos) >= len(toca)
+
+        if completo:
+            titulo, detalle, color = (
+                "Abdomen hecho",
+                "los " + plural(len(toca), "ejercicio"),
+                C.success,
+            )
+        elif hechos:
+            titulo = "Abdomen a medias"
+            detalle = f"{len(hechos)} de {len(toca)} · sigue por {toca[len(hechos)]}"
+            color = C.warning
+        else:
+            titulo = "Abdomen de hoy"
+            detalle = " · ".join(toca)
+            color = C.text_secondary
+
+        nav = self.page.data["navigate_to"]
+
+        def _empezar(_):
+            vista = self.page.data.get("workout_view")
+            if vista is not None:
+                vista.empezar_abdomen()
+            nav(VIEW_WORKOUT)
+
+        return card(
+            ft.Row(
+                [
+                    ft.Text("🔥" if not completo else "✅", size=20),
+                    ft.Column(
+                        [
+                            ft.Text(titulo, size=13, weight=ft.FontWeight.W_700, color=C.text),
+                            ft.Text(
+                                detalle,
+                                size=11,
+                                color=color,
+                                max_lines=2,
+                                overflow=ft.TextOverflow.ELLIPSIS,
+                            ),
+                        ],
+                        spacing=2,
+                        tight=True,
+                        expand=True,
+                    ),
+                    ft.Icon(ft.Icons.CHEVRON_RIGHT, color=C.text_muted, size=18),
+                ],
+                spacing=Space.x3,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
+            padding=14,
+            on_click=_empezar,
+            ink=True,
+            tooltip="Hacer el abdomen de hoy",
+        )
+
+    def _abdomen_hechos(self, toca: tuple[str, ...]) -> list[str]:
+        """Cuáles de los de hoy ya están en `entrenos`.
+
+        Contra el historial y no contra un flag: el flag habría que ponerlo al
+        guardar, y una sesión abandonada a medias lo dejaría mintiendo.
+        """
+        from exercises import exercise_key
+
+        try:
+            hoy = {exercise_key(e.exercise) for e in self.store.get_workouts_on(date.today())}
+        except Exception:
+            return []
+        return [n for n in toca if exercise_key(n) in hoy]
+
     # ── screen ───────────────────────────────────────────────
     def build(self) -> ft.Control:
         try:
@@ -1387,6 +1479,12 @@ class HomeView:
             ft.Container(height=Space.x1),
             self._nutrition_card(),
         ]
+        # Después de la comida y antes de los avisos: es una tarea del día, y
+        # el día de descanso es donde más falta hace.
+        abs_hoy = self._abdomen_card()
+        if abs_hoy is not None:
+            dia.append(ft.Container(height=Space.x1))
+            dia.append(abs_hoy)
         avisos = self._reminders_card()
         if avisos is not None:
             dia.append(ft.Container(height=Space.x1))

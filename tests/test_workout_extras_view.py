@@ -31,7 +31,11 @@ def vista():
 
     page = MagicMock()
     page.width = 400
-    page.data = {"refresh_current": lambda: None, "store": store, "navigate_to": lambda *a, **k: None}
+    page.data = {
+        "refresh_current": lambda: None,
+        "store": store,
+        "navigate_to": lambda *a, **k: None,
+    }
     v = modulo.WorkoutView(page, store)
     v.phase_id = 1
     v.day_idx = 0
@@ -129,9 +133,7 @@ def test_si_de_verdad_no_hay_nada_lo_dice(vista):
 def test_anadir_desde_el_dialogo_lo_mete_en_la_sesion(vista):
     dlg = _dialogo(vista)
     fila = next(
-        c
-        for c in _walk(dlg)
-        if getattr(c, "on_click", None) and "Cable Crossover" in _textos(c)
+        c for c in _walk(dlg) if getattr(c, "on_click", None) and "Cable Crossover" in _textos(c)
     )
     fila.on_click(None)
 

@@ -237,6 +237,10 @@ def main(page: ft.Page):
         # Home's photo tile opens the system picker THROUGH the gallery view,
         # so the picker object and its overlay wiring live in exactly one place.
         "photos_view": photos_view,
+        # Home's abdomen card starts a session that has no phase and no day,
+        # and only the workout view knows how to enter that state. Same reason
+        # as the photo tile: the wiring lives where the state does.
+        "workout_view": workout_view,
         "store": store,
         "refresh_current": lambda: navigate_to(current_tab["idx"]),
         "set_routine": set_routine,

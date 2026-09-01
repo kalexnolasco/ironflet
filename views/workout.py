@@ -10,6 +10,7 @@ from datetime import date, timedelta
 
 import flet as ft
 
+import abdomen
 import extras
 from analytics import Record, detect_new_records
 from components.timer import RestTimer
@@ -286,6 +287,10 @@ class WorkoutView:
         #: mira antes que nada: sin esto, un back con el diálogo puesto sale de
         #: la pantalla del ejercicio y lo deja flotando sobre la lista del día.
         self._add_dialog: ft.AlertDialog | None = None
+        #: Sesión de solo abdomen, para los días sin pesas. Alex pidió abdomen
+        #: «cada día» y entrena cuatro o cinco: sin esto, «cada día» sería «los
+        #: días que voy al gimnasio».
+        self.solo_abdomen: bool = False
         # Draft rows are kept PER EXERCISE. One shared `self.sets` list was the
         # bug behind "I changed exercise and it reset": stepping to the next
         # movement threw the half-typed rows on the floor, unsaved and without
@@ -440,6 +445,16 @@ class WorkoutView:
             return True
         if self.finished:
             self._reset()
+            self.page.data["refresh_current"]()
+            return True
+        if self.solo_abdomen:
+            # No hay lista de días a la que volver — una sesión de abdomen no
+            # sale de ninguna fase—, así que el paso atrás es salir del modo.
+            # Se guarda el borrador primero: lo tecleado es lo mismo de valioso
+            # aquí que en una sesión de pesas.
+            self._persist_draft()
+            self.solo_abdomen = False
+            self.show_phase_list = True
             self.page.data["refresh_current"]()
             return True
         if self._on_exercise_screen():
@@ -2055,6 +2070,10 @@ class WorkoutView:
         self.phase_id = 0
         self.day_idx = -1
         self.ex_idx = 0
+        # Una sesión de abdomen terminada no puede dejar la pantalla en modo
+        # abdomen: la siguiente vez que se abra Entreno habría que salir de
+        # algo que nadie pidió, y la lista de fases no se vería.
+        self.solo_abdomen = False
         self._scope = ()
         self._sets_by_ex = {}
         self._last_sets_cache = {}
@@ -2653,16 +2672,27 @@ class WorkoutView:
         `data.ROUTINES` y añadirle algo aquí lo dejaría en el plan para
         siempre, en todas las fases que reusan ese día.
         """
+        if self.solo_abdomen:
+            # Ya *es* el abdomen: pasarlo por `dia_con_abdomen` lo duplicaría.
+            # Los extras sí se respetan — nada impide meter algo más un día de
+            # descanso.
+            return extras.dia_con_extras(abdomen.dia_suelto(self.store), self.store)
         dia = self._routine_day()
         if dia is None:
             return None
-        return extras.dia_con_extras(dia, self.store)
+        # El orden importa y es siempre el mismo: lo que manda el plan, lo que
+        # se hace cada día, y lo que se añadió hoy. Un ejercicio que cambia de
+        # sitio según qué esté activo es un ejercicio que se busca cada vez.
+        return extras.dia_con_extras(abdomen.dia_con_abdomen(dia, self.store), self.store)
 
     def _routine_day(self):
-        """El día tal como lo prescribe la rutina, sin extras.
+        """El día tal como lo prescribe la rutina, sin extras ni abdomen.
 
         Lo que hace falta para saber dónde acaba el plan y empieza lo de hoy.
+        En una sesión de solo abdomen el «plan» es el propio abdomen.
         """
+        if self.solo_abdomen:
+            return abdomen.dia_suelto(self.store)
         days = active_routine().days_for_phase(self.phase_id)
         if self.phase_id and 0 <= self.day_idx < len(days):
             return days[self.day_idx]
@@ -3489,6 +3519,43 @@ class WorkoutView:
         pintar()
         self.page.open(dlg)
 
+    def empezar_abdomen(self):
+        """Arranca una sesión de solo abdomen. La llama Inicio.
+
+        Elige una fase para que las series prescritas y el descanso salgan de
+        algún sitio: la que ya estuviera puesta, o la primera de la rutina. Un
+        día de abdomen no tiene fase propia y sin ninguna, `progression.py` se
+        queda sin `scheme` que leer.
+        """
+        self.solo_abdomen = True
+        self.show_phase_list = False
+        self.show_day_list = False
+        self.day_idx = 0
+        self.ex_idx = 0
+        self.completed = False
+        self.finished = False
+        if not self.phase_id:
+            fases = active_routine().phases
+            self.phase_id = fases[0].id if fases else 1
+        self._olvidar_cache_ejercicios()
+
+    def _cuenta_del_dia(self, dia) -> str:
+        """«7 ejercicios», o «7 + 3 de abdomen» cuando el abdomen está puesto.
+
+        Contar solo los de la rutina prometía siete y entregaba diez, y la
+        diferencia no se descubría hasta estar dentro. Que el abdomen sea
+        aparte en la frase tampoco es cosmético: es lo que hace evidente de
+        dónde salen los tres que no estaban en el plan.
+        """
+        base = len(dia.exercises)
+        try:
+            extra = len(abdomen.dia_con_abdomen(dia, self.store).exercises) - base
+        except Exception:
+            extra = 0
+        if extra <= 0:
+            return plural(base, "ejercicio")
+        return f"{plural(base, 'ejercicio')} + {extra} de abdomen"
+
     def _grupo_del_dia(self) -> str:
         """El grupo muscular que toca hoy, sacado del nombre del día.
 
@@ -3954,7 +4021,7 @@ class WorkoutView:
                                             color=C.text,
                                         ),
                                         ft.Text(
-                                            plural(len(d.exercises), "ejercicio"),
+                                            self._cuenta_del_dia(d),
                                             size=11,
                                             color=C.text_secondary,
                                         ),
@@ -6040,10 +6107,14 @@ class WorkoutView:
 
         It used to be `_reset_to_days` and it destroyed `ex_idx`, `completed`
         and the running clock. Looking at the day list is not quitting.
+
+        Y ahora *delega*, en vez de repetir esas tres líneas. La copia decía
+        «same promise» y había dejado de cumplirla: `handle_back` aprendió a
+        salir de una sesión de solo abdomen y esto no, así que el chip llevaba
+        a la lista de días de una fase que no se estaba entrenando. Dos sitios
+        que deciden lo mismo terminan decidiendo cosas distintas.
         """
-        self.show_day_list = True
-        self._persist_draft()
-        self.page.data["refresh_current"]()
+        self.handle_back()
 
     def _back_btn(self, label: str, on_click, raw_handler=None) -> ft.Control:
         handler = raw_handler or on_click

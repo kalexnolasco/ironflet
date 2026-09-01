@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 from datetime import date
 
 import flet as ft
@@ -662,6 +663,109 @@ class ProfileView:
 
     def _set_widget_msg(self, nivel: str, texto: str):
         self._widget_msg = (nivel, texto)
+
+    # ── abdomen todos los días ───────────────────────────────
+
+    def _abdomen_section(self) -> ft.Control:
+        """El interruptor, cuántos al día, y lo que toca hoy.
+
+        Enseñar los de hoy no es adorno: es lo único que explica qué significa
+        encender esto. «Añadir abdomen a cada día» es una promesa vaga hasta
+        que se ven los tres nombres que van a aparecer al final de la sesión.
+        """
+        import abdomen
+
+        try:
+            encendido = abdomen.activo(self.store)
+            cuantos = abdomen.por_dia(self.store)
+            hoy = abdomen.de_hoy(self.store)
+        except Exception as exc:
+            return db_error_card(exc, on_retry=self.page.data["refresh_current"])
+
+        def _cambiar(e):
+            abdomen.configurar(self.store, activo=bool(e.control.value))
+            self.page.data["refresh_current"]()
+
+        def _cuantos(e):
+            with contextlib.suppress(TypeError, ValueError):
+                abdomen.configurar(self.store, por_dia=int(e.control.value))
+                self.page.data["refresh_current"]()
+
+        cuerpo: list[ft.Control] = [
+            ft.Row(
+                [
+                    ft.Column(
+                        [
+                            ft.Text(
+                                "Abdomen todos los días",
+                                size=13,
+                                weight=ft.FontWeight.W_700,
+                                color=C.text,
+                            ),
+                            ft.Text(
+                                "Se añade al final de cada entreno, y los días de "
+                                "descanso lo tienes en Inicio.",
+                                size=11,
+                                color=C.text_secondary,
+                            ),
+                        ],
+                        spacing=2,
+                        expand=True,
+                        tight=True,
+                    ),
+                    ft.Switch(value=encendido, on_change=_cambiar, active_color=C.accent),
+                ],
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
+        ]
+
+        if encendido:
+            cuerpo += [
+                ft.Container(height=10),
+                ft.Row(
+                    [
+                        muted_text("Cuántos al día", size=11),
+                        ft.Container(expand=True),
+                        ft.Dropdown(
+                            value=str(cuantos),
+                            width=76,
+                            dense=True,
+                            text_size=12,
+                            border_color=C.border,
+                            color=C.text,
+                            on_change=_cuantos,
+                            options=[
+                                ft.dropdown.Option(str(n))
+                                for n in range(1, abdomen.MAX_POR_DIA + 1)
+                            ],
+                        ),
+                    ],
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                ),
+                ft.Container(height=10),
+                muted_text("HOY TE TOCA", size=10),
+                ft.Container(height=4),
+            ]
+            for nombre in hoy:
+                cuerpo.append(
+                    ft.Row(
+                        [
+                            ft.Text(nombre, size=12, color=C.text, expand=True, max_lines=1),
+                            muted_text(abdomen.familia_de(nombre), size=10),
+                        ],
+                        spacing=8,
+                    )
+                )
+            cuerpo.append(ft.Container(height=6))
+            cuerpo.append(
+                muted_text(
+                    "Rotan solos: uno de cada tipo —flexión, inferior y oblicuos— y "
+                    "ninguno repite del día anterior.",
+                    size=10,
+                )
+            )
+
+        return card(*cuerpo)
 
     # ── lo que el entrenador recuerda ────────────────────────
 
@@ -1914,6 +2018,10 @@ class ProfileView:
                 section_title("Cintura"),
                 ft.Container(height=4),
                 self._waist_section(),
+                ft.Container(height=14),
+                section_title("Abdomen"),
+                ft.Container(height=4),
+                self._abdomen_section(),
                 ft.Container(height=14),
                 section_title("Entrenador"),
                 ft.Container(height=4),
