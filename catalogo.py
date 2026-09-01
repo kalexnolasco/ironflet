@@ -256,6 +256,20 @@ def grupos() -> tuple[str, ...]:
     return tuple(orden + sorted(presentes - set(orden)))
 
 
+def _en_espanol(nombre: str) -> str:
+    """El nombre traducido, o el mismo si no hay traducción.
+
+    Import perezoso: `nombres_es` no puede depender de esto ni al revés en el
+    momento de cargar, y el catálogo se lee antes que casi todo.
+    """
+    try:
+        import nombres_es
+
+        return nombres_es.ejercicio(nombre)
+    except Exception:
+        return nombre
+
+
 def buscar(consulta: str = "", grupo: str = "", limite: int = 60) -> tuple[Ejercicio, ...]:
     """Busca por nombre y filtra por grupo.
 
@@ -273,14 +287,24 @@ def buscar(consulta: str = "", grupo: str = "", limite: int = 60) -> tuple[Ejerc
 
     puntuados = []
     for e in fuente:
-        plano = _sin_tildes(e.nombre)
-        if plano.startswith(q):
-            rango = 0
-        elif f" {q}" in plano:  # empieza una palabra
-            rango = 1
-        elif q in plano:
-            rango = 2
-        else:
+        # **Los dos idiomas.** La lista enseña «Sentadilla» (`nombres_es`), así
+        # que buscar «sentadilla» tiene que encontrarla — y buscar «squat»
+        # también, porque el nombre inglés sigue siendo el de la base y es el
+        # que aparece en cualquier cosa que Alex haya leído antes. Enseñar una
+        # palabra y no encontrarla al escribirla es el peor de los dos mundos.
+        candidatos = [_sin_tildes(e.nombre), _sin_tildes(_en_espanol(e.nombre))]
+        rango = None
+        for plano in candidatos:
+            if plano.startswith(q):
+                r = 0
+            elif f" {q}" in plano:  # empieza una palabra
+                r = 1
+            elif q in plano:
+                r = 2
+            else:
+                continue
+            rango = r if rango is None else min(rango, r)
+        if rango is None:
             continue
         puntuados.append((rango, not e.de_la_casa, len(e.nombre), e.nombre.lower(), e))
     puntuados.sort(key=lambda t: t[:4])

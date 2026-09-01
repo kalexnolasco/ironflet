@@ -31,6 +31,7 @@ from datetime import date, timedelta
 
 import flet as ft
 
+import nombres_es
 from data import ROUTINES, active_routine
 from dates import day_name
 from exercise_details import details_for
@@ -479,7 +480,9 @@ class PlanView:
                         alignment=ft.alignment.center,
                     ),
                     ft.Text(
-                        label,
+                        # El calendario dice «Chest-Biceps + Abs»; `nombres_es`
+                        # lo lee sin tocar `week_rotation`, que es dato.
+                        nombres_es.dia(label),
                         size=13,
                         color=C.text_muted if rest else C.text,
                         weight=ft.FontWeight.W_500 if rest else ft.FontWeight.W_700,
@@ -547,7 +550,12 @@ class PlanView:
             body = [
                 muted_text("Esta fase no ata las sesiones a días fijos. Prescribe:"),
                 ft.Container(height=Space.x1),
-                ft.Row([chip(d.name) for d in days], wrap=True, spacing=6, run_spacing=6),
+                ft.Row(
+                    [chip(nombres_es.dia(d.name)) for d in days],
+                    wrap=True,
+                    spacing=6,
+                    run_spacing=6,
+                ),
             ]
 
         footer: list[ft.Control] = []

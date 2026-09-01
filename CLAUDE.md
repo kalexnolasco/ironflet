@@ -6,7 +6,23 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 IronFlet — weight-training tracker whose **entire user-facing surface is Spanish** (default routine: 7-phase, 24-week periodized program from CambiaTuFísico) with a food diary on top. Built with **Flet** (`flet[all]>=0.25,<0.30`) on Python `>=3.10,<3.13`.
 
-There is **still no translation layer** — the language flipped, the architecture did not. `i18n.py` stays deleted: no `t()`, no `ES` dict, no language toggle, no `lang` preference. All user-visible strings are plain Spanish literals in the views (Alex asked for it: "cambiemos a Español todo lo que ve el usuario"). What stays **English on purpose, because it is data contract rather than chrome**:
+There is **still no translation layer** — the language flipped, the architecture did not. `i18n.py` stays deleted: no `t()`, no `ES` dict, no language toggle, no `lang` preference. All user-visible strings are plain Spanish literals in the views (Alex asked for it: "cambiemos a Español todo lo que ve el usuario").
+
+**`nombres_es.py` no es esa capa, y conviene tener claro por qué.** Traduce
+nombres de *datos* —ejercicios, días, grupos— para pintarlos, exactamente como
+`MEAL_LABELS` traduce `"breakfast"` a «Desayuno» sin que la clave deje de ser
+`breakfast`. Lo hizo falta cuando Alex dijo «todo lo que tiene la apk tiene que
+estar en español… Elliptical»: tenía razón como usuario, y la lista de abajo
+sigue siendo cierta como contrato. La regla en una línea:
+
+    lo que se guarda es inglés · lo que se ve es español · nadie traduce al revés
+
+Ese «nadie traduce al revés» es lo único que hace segura la capa, y por eso
+`tests/test_nombres_es.py` comprueba que ninguna traducción coincide con una
+clave: guardar la traducción por error no se notaría hasta ver el historial
+partido en dos idiomas.
+
+What stays **English on purpose, because it is data contract rather than chrome**:
 
 - **Exercise names and their keys** — `exercise_key()` values are shared with the bot's `entrenos.ejercicio` rows.
 - **`TrainingDay.name`** — written verbatim to `entrenos.grupo` ("Chest-Biceps"); a Spanish day name would split History's grouping vocabulary.
@@ -52,7 +68,7 @@ CI (`.github/workflows/ci.yml`) runs, on Python 3.12:
 uv sync --group dev
 uv run ruff check .
 uv run ruff format --check .
-uv run pytest -q          # 2120 tests, 1 skipped (a network test, opt-in)
+uv run pytest -q          # 2146 tests, 1 skipped (a network test, opt-in)
 ```
 
 ## Architecture
@@ -709,17 +725,28 @@ Things that break quietly if you do not know them:
     entera**: el fichero solo pasa, y el rojo sale en un test que nadie ha
     tocado.
 
+34. **Pintar un nombre de ejercicio sin pasarlo por `nombres_es`.** Desde 0.19
+    la pantalla habla español y la base inglés, así que una vista que pinte
+    `entry.exercise` a pelo enseña «Smith Bench Press» en medio de una pantalla
+    que dice «Press banca en multipower». No falla nada: sale en dos idiomas y
+    ya está. El caso inverso es peor y por eso hay test — guardar lo traducido
+    parte el historial (trampa 2), y solo se ve semanas después.
+
+    Cuando una lista traduce, **su buscador tiene que entender los dos
+    idiomas**: enseñar «Sentadilla» y no encontrarla al escribirla es el peor
+    de los dos mundos. `catalogo.buscar` mira el nombre inglés y el traducido.
+
 ### Flet version caveat
 
 Pinned to `flet[all]>=0.25,<0.30` — `flet[all]`, not plain `flet`, because web mode needs `flet-web` and a bare `uv sync` would otherwise uninstall it. The API (`ft.Colors`, `ft.Icons`, `page.run_task`, `ft.NavigationBarDestination`, `ft.ColorScheme`) matches 0.25–0.29. If a newer Flet release renames something, update the pin rather than silently adapting to a new API.
 
 ## Tests
 
-`.venv/bin/python -m pytest -q` — **2120 tests**, `testpaths = ["tests"]`, `asyncio_mode = "auto"`:
+`.venv/bin/python -m pytest -q` — **2146 tests**, `testpaths = ["tests"]`, `asyncio_mode = "auto"`:
 
-`test_abdomen.py`, `test_agent.py`, `test_analytics.py`, `test_asset_manager.py`, `test_backup.py`, `test_catalogo.py`, `test_chart_baseline.py`, `test_column_migration.py`, `test_day_screen.py`, `test_data_view_counts.py`, `test_dialog_layout.py`, `test_draft_dates.py`, `test_draft_substitution.py`, `test_exercise_images.py`, `test_exercise_key.py`, `test_extras.py`, `test_finde.py`, `test_finde_view.py`, `test_flet_reconnect.py`, `test_fotos.py`, `test_gcal.py`, `test_gym_tools.py`, `test_health.py`, `test_help_dialog.py`, `test_history_notes.py`, `test_history_view.py`, `test_home_view.py`, `test_image_delivery.py`, `test_interfaz_en_espanol.py`, `test_layout_movil.py`, `test_memoria.py`, `test_notificaciones.py`, `test_nutrition.py`, `test_nutrition_view.py`, `test_percent_table.py`, `test_prefill_por_fecha.py`, `test_profile_db_down.py`, `test_puente_dart.py`, `test_program_week.py`, `test_progression.py`, `test_routine_builder.py`, `test_rutinas_nuevas.py`, `test_session_duration.py`, `test_session_plan.py`, `test_set_types.py`, `test_shared_ui.py`, `test_smoke.py`, `test_sqlite_backend.py`, `test_storage_metrics.py`, `test_substitutions.py`, `test_theme.py`, `test_timer_sound.py`, `test_weight_trend.py`, `test_widget.py`, `test_workout_date.py`, `test_workout_draft.py`, `test_workout_exercise_date.py`, `test_workout_extras_view.py`, `test_workout_notes.py`, `test_workout_notes_swap.py`, `test_workout_plan_rows.py`, `test_workout_resume.py`, `test_workout_session_time.py`, `test_workout_tools.py`, `test_workout_zen.py`.
+`test_abdomen.py`, `test_agent.py`, `test_analytics.py`, `test_asset_manager.py`, `test_backup.py`, `test_catalogo.py`, `test_chart_baseline.py`, `test_column_migration.py`, `test_day_screen.py`, `test_data_view_counts.py`, `test_dialog_layout.py`, `test_draft_dates.py`, `test_draft_substitution.py`, `test_exercise_images.py`, `test_exercise_key.py`, `test_extras.py`, `test_finde.py`, `test_finde_view.py`, `test_flet_reconnect.py`, `test_fotos.py`, `test_gcal.py`, `test_gym_tools.py`, `test_health.py`, `test_help_dialog.py`, `test_history_notes.py`, `test_history_view.py`, `test_home_view.py`, `test_image_delivery.py`, `test_interfaz_en_espanol.py`, `test_layout_movil.py`, `test_memoria.py`, `test_nombres_es.py`, `test_notificaciones.py`, `test_nutrition.py`, `test_nutrition_view.py`, `test_percent_table.py`, `test_prefill_por_fecha.py`, `test_profile_db_down.py`, `test_puente_dart.py`, `test_program_week.py`, `test_progression.py`, `test_routine_builder.py`, `test_rutinas_nuevas.py`, `test_session_duration.py`, `test_session_plan.py`, `test_set_types.py`, `test_shared_ui.py`, `test_smoke.py`, `test_sqlite_backend.py`, `test_storage_metrics.py`, `test_substitutions.py`, `test_theme.py`, `test_timer_sound.py`, `test_weight_trend.py`, `test_widget.py`, `test_workout_date.py`, `test_workout_draft.py`, `test_workout_exercise_date.py`, `test_workout_extras_view.py`, `test_workout_notes.py`, `test_workout_notes_swap.py`, `test_workout_plan_rows.py`, `test_workout_resume.py`, `test_workout_session_time.py`, `test_workout_tools.py`, `test_workout_zen.py`.
 
-A clean run is `2120 passed, 1 skipped` and needs **nothing installed but the dev group** — no Docker, no server. The single skip is a network test in `test_asset_manager.py` (opt in with `IRONFLET_NETWORK_TESTS=1`). Until 0.12 this section warned to judge a run by its skip count, because 211 tests — everything touching storage — skipped silently without PostgreSQL; that trap is gone with the server.
+A clean run is `2146 passed, 1 skipped` and needs **nothing installed but the dev group** — no Docker, no server. The single skip is a network test in `test_asset_manager.py` (opt in with `IRONFLET_NETWORK_TESTS=1`). Until 0.12 this section warned to judge a run by its skip count, because 211 tests — everything touching storage — skipped silently without PostgreSQL; that trap is gone with the server.
 
 `tests/conftest.py` gives each pytest process its own SQLite file in the system temp dir, for the same reason it used to create a database per pid: the fixtures wipe rows, and two concurrent runs deleting each other's data mid-query produced red runs with a different set of failures each time, in files unrelated to whatever was being changed.
 

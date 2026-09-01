@@ -93,12 +93,18 @@ def _num(valor: float, decimales: int = 0) -> str:
 
 
 def _linea_entreno(store: Any, dia: date) -> str:
-    """«Chest-Biceps», «✓ Chest-Biceps», «Descanso» o «Abre IronFlet».
+    """«Pecho - Bíceps», «✓ Pecho - Bíceps», «Descanso» o «Abre IronFlet».
 
-    El nombre del día va tal cual, en inglés: sale de `week_rotation` y es el
-    mismo `TrainingDay.name` que se escribe en `entrenos.grupo` y que enseña
-    Inicio. Traducirlo aquí sería un segundo vocabulario para lo mismo
-    (trampa 22).
+    El nombre va **traducido**, y hasta 0.19 iba en inglés con este mismo
+    comentario diciendo por qué: era el `TrainingDay.name` que se escribe en
+    `entrenos.grupo`, y traducirlo aquí habría sido un segundo vocabulario
+    para lo mismo.
+
+    Ese argumento se dio la vuelta el día que Inicio empezó a traducirlo. El
+    widget se mira **junto a** la app, y que uno diga «Chest-Biceps» y la otra
+    «Pecho - Bíceps» es exactamente la doble lengua que se quería evitar. Lo
+    que sigue sin traducirse es lo que se guarda: `nombres_es.dia` es capa de
+    pantalla y no vuelve nunca hacia la base.
 
     El ✓ es media razón de ser del widget: mirar la pantalla de inicio y saber
     si ya entrenaste hoy sin abrir nada.
@@ -124,17 +130,21 @@ def _linea_entreno(store: Any, dia: date) -> str:
     except Exception:
         hecho = False
 
+    import nombres_es
+
     if hecho:
         # Si entrenaste, eso manda sobre lo que dijera la rotación — incluido
         # un día que el plan daba por libre.
-        return f"✓ {foco}" if foco and foco != REST_LABEL else "✓ Hecho"
+        if foco and foco != REST_LABEL:
+            return f"✓ {nombres_es.dia(foco)}"
+        return "✓ Hecho"
     if foco == REST_LABEL:
         return "Descanso"
     if not foco:
         # Sin rotación (o fin de semana, que la rotación no cubre) no se sabe
         # qué toca. Decirlo es mejor que inventar un "Descanso".
         return "Sin plan para hoy"
-    return str(foco)
+    return nombres_es.dia(str(foco))
 
 
 def payload(store: Any, hoy: date | None = None) -> dict[str, str]:

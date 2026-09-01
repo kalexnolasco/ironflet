@@ -6,7 +6,7 @@
 ![Android](https://img.shields.io/badge/APK-84%20MB%20·%20SQLite-3DDC84?style=for-the-badge&logo=android&logoColor=white)
 ![Flet](https://img.shields.io/badge/Flet-0.28.3-7F52FF?style=for-the-badge)
 ![Idioma](https://img.shields.io/badge/interfaz-español-E4312b?style=for-the-badge)
-![Tests](https://img.shields.io/badge/tests-2120-2f9e44?style=for-the-badge)
+![Tests](https://img.shields.io/badge/tests-2146-2f9e44?style=for-the-badge)
 
 **Donde apuntas lo que levantas y lo que comes, con un entrenador dentro que
 mira tus fotos y te propone la semana. Una app de móvil y nada más: sin
@@ -75,14 +75,16 @@ de esta app depende ya de él.
    conversación entera: veinte líneas que viajan en cada pregunta. Los propone
    él según hablas y los editas en Ajustes → «Lo que recuerda de ti».
 
-Todo en español. Los nombres de ejercicios siguen en inglés a propósito: son la
-clave con la que se guarda el historial y traducirlos lo partiría en dos.
+Todo en español, **también los nombres de los ejercicios**. En la base siguen
+guardándose en inglés —son la clave del historial y traducirla lo partiría en
+dos— pero lo que se lee está traducido, y el buscador entiende los dos idiomas:
+«sentadilla» y «squat» encuentran lo mismo.
 
 ## Compilar e instalar
 
 ```bash
 make deps      # dependencias de desarrollo
-make check     # lint + los 2120 tests (sin Docker, sin saltarse nada)
+make check     # lint + los 2146 tests (sin Docker, sin saltarse nada)
 make apk       # el APK, con las tres ABIs
 make install   # adb install al móvil o al emulador conectado
 ```

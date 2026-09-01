@@ -82,7 +82,7 @@ def test_arranca_filtrado_por_lo_que_se_entrena_hoy(vista):
     orden alfabético— es abrirlo en el sitio menos útil posible."""
     assert vista._grupo_del_dia() == "Chest"
     texto = _textos(_dialogo(vista))
-    assert "Barbell Bench Press" in texto
+    assert "Press banca con barra" in texto  # el nombre que se PINTA
 
 
 def test_un_dia_con_nombre_raro_no_filtra_nada(vista, monkeypatch):
@@ -131,14 +131,20 @@ def test_si_de_verdad_no_hay_nada_lo_dice(vista):
 
 
 def test_anadir_desde_el_dialogo_lo_mete_en_la_sesion(vista):
+    """Se toca lo que se lee («Cruces en polea») y se guarda la clave («Cable
+    Crossover»). Ese salto es toda la capa de traducción, en un test."""
+    import nombres_es
+
     dlg = _dialogo(vista)
-    fila = next(
-        c for c in _walk(dlg) if getattr(c, "on_click", None) and "Cable Crossover" in _textos(c)
-    )
+    visible = nombres_es.ejercicio("Cable Crossover")
+    assert visible != "Cable Crossover", "la traducción dejó de aplicarse"
+
+    fila = next(c for c in _walk(dlg) if getattr(c, "on_click", None) and visible in _textos(c))
     fila.on_click(None)
 
     assert "Cable Crossover" in extras.de_hoy(vista.store)
     assert "Cable Crossover" in vista._current_day().exercises
+    assert visible not in extras.de_hoy(vista.store), "guardó el nombre traducido"
 
 
 def test_lo_que_ya_esta_en_el_plan_no_se_puede_anadir(vista):

@@ -33,6 +33,7 @@ from datetime import date, datetime, time, timedelta, timezone
 
 import flet as ft
 
+import nombres_es
 from analytics import MEASUREMENT_EVERY_DAYS, MIN_TREND_DAYS, waist_summary, weight_trend
 from dates import day_name, month_name
 from exercises import phase_color
@@ -949,7 +950,7 @@ class HomeView:
             ft.Row(
                 [
                     ft.Text(
-                        w.exercise,
+                        nombres_es.ejercicio(w.exercise),
                         size=13,
                         weight=ft.FontWeight.W_700,
                         color=C.text,
@@ -1008,7 +1009,7 @@ class HomeView:
             else:
                 tip = "El plan de la semana nueva empieza el lunes"
         else:
-            headline, target = focus, VIEW_WORKOUT
+            headline, target = nombres_es.dia(focus), VIEW_WORKOUT
             # The label is a session name; the phase turns it into real work.
             # None when this phase does not have that day, and then the count is
             # simply not claimed.

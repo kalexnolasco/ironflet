@@ -6,6 +6,7 @@ import contextlib
 
 import flet as ft
 
+import nombres_es
 from data import EXERCISE_CATALOG, MUSCLE_GROUPS
 from exercise_details import details_for
 from exercise_images import image_props
@@ -136,7 +137,9 @@ class BrowseView:
 
         name_widget = ft.Container(
             content=ft.Text(
-                ex_name,
+                # Lo que se lee es español; `ex_name` sigue siendo la clave con
+                # la que se guarda y con la que `details_for` busca la ficha.
+                nombres_es.ejercicio(ex_name),
                 size=12,
                 color=C.text,
                 weight=ft.FontWeight.W_500,
@@ -207,7 +210,7 @@ class BrowseView:
 
     def build(self) -> ft.Control:
         chips = [self._group_chip(None, "Todos")]
-        chips += [self._group_chip(g, g) for g in MUSCLE_GROUPS]
+        chips += [self._group_chip(g, nombres_es.grupo(g)) for g in MUSCLE_GROUPS]
 
         exercises = self._exercises_for_selected()
         count = len(exercises)

@@ -4,6 +4,46 @@ Todos los cambios notables de IronFlet.
 El formato sigue [Keep a Changelog](https://keepachangelog.com/) y el proyecto
 usa [SemVer](https://semver.org/).
 
+## [0.19.0] — 2026-09-01
+
+**Los ejercicios, en español.**
+
+### Cambiado
+
+- **Todo lo que se lee está en español**, incluidos los nombres de los
+  ejercicios: «Elliptical» es «Elíptica», «Smith Bench Press» es «Press banca
+  en multipower», «Chest - Biceps» es «Pecho - Bíceps». También el widget, que
+  hasta ahora los dejaba en inglés a propósito — ese argumento se dio la vuelta
+  el día que Inicio empezó a traducirlos.
+
+  **En la base siguen en inglés**, y eso no es un descuido: `entrenos.ejercicio`
+  guarda el nombre inglés porque es la clave con la que se agrupa el historial.
+  Traducir el dato habría partido meses de series en dos idiomas sin que nada
+  fallara. La regla, en una línea: *lo que se guarda es inglés, lo que se ve es
+  español, y nadie traduce al revés.*
+
+- **El buscador entiende los dos idiomas.** «sentadilla» y «squat» encuentran
+  lo mismo — enseñar un nombre y no encontrarlo al escribirlo sería el peor de
+  los dos mundos, porque el inglés sigue siendo el que aparece en cualquier
+  cosa leída antes.
+
+Los ~100 ejercicios que prescriben las rutinas están traducidos a mano, porque
+un entrenador español no dice «aplastadores de cráneo» sino «press francés».
+Los otros 775 del catálogo se componen por reglas —el inglés ordena modificador
++ equipo + movimiento y el español al revés— y **lo que las reglas no entienden
+se queda en inglés**: media traducción no se puede buscar en ninguno de los dos
+idiomas y parece un fallo.
+
+### Arreglado
+
+- Cinco ejercicios del catálogo acababan con el mismo nombre en español, y
+  cuatro de ellos son **el mismo movimiento con dos nombres en la propia base**
+  («DB Shoulder Press» y «Dumbbell Shoulder Press»). Gana uno y el otro se
+  queda en inglés: verlos distintos es peor que verlos traducidos y mucho mejor
+  que dos filas idénticas en el buscador.
+- Los chips de grupo del buscador de la sesión seguían en inglés, en la misma
+  pantalla donde todo lo demás ya estaba traducido.
+
 ## [0.18.0] — 2026-09-01
 
 **Fotos para los 875, cuatro rutinas más, y entrenar sin plan.**

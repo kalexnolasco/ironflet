@@ -34,7 +34,7 @@ uv run pre-commit install        # hook de lint + formato
 Y ya está: no hay contenedor que levantar ni assets que vendorizar.
 
 ```bash
-make check     # lint + los 2120 tests
+make check     # lint + los 2146 tests
 make run       # la app en el escritorio, contra un SQLite local
 make apk       # el APK (las tres ABIs)
 make install   # adb install al dispositivo conectado
@@ -55,7 +55,7 @@ La app de verdad es la APK.
 
 ### La suite no se salta nada
 
-Son **2120 pruebas** y corren todas con `make test`, sin Docker y sin
+Son **2146 pruebas** y corren todas con `make test`, sin Docker y sin
 variables de entorno. `tests/conftest.py` le da a cada proceso su propio
 fichero SQLite en el temporal.
 
@@ -83,6 +83,13 @@ Ninguna de estas lanza una excepción cuando la incumples. Por eso están aquí.
 
 **1. Todo el texto visible al usuario es un literal en español en la vista.**
 No hay función de traducción que llamar ni diccionario al que añadir nada.
+
+La excepción son los **nombres de datos** —ejercicios, días, grupos—, que se
+guardan en inglés porque son la clave del historial y se pintan en español con
+`nombres_es`. Ahí la regla es: lo que se guarda es inglés, lo que se ve es
+español, y **nadie traduce al revés**. Una vista que pinte `entry.exercise` a
+pelo deja la pantalla en dos idiomas; una que guarde lo traducido parte el
+historial y no se nota hasta semanas después.
 
 **2. Ningún color hex en una vista.** Todo color sale de `from theme import C`,
 que resuelve contra la paleta activa en el momento del acceso al atributo. Eso

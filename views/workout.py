@@ -12,6 +12,7 @@ import flet as ft
 
 import abdomen
 import extras
+import nombres_es
 from analytics import Record, detect_new_records
 from components.timer import RestTimer
 from data import active_routine
@@ -3499,7 +3500,9 @@ class WorkoutView:
         # Una fila con scroll, no `wrap`: envueltos ocupaban dos filas y cada
         # fila de aquí arriba es un resultado menos abajo.
         grupos = ft.Row(
-            [chip_grupo(g, g) for g in catalogo.grupos()],
+            # La clave sigue siendo inglesa —es la que filtra `catalogo.buscar`
+            # y la que agrupa el catálogo—; la etiqueta es lo único que se lee.
+            [chip_grupo(g, nombres_es.grupo(g)) for g in catalogo.grupos()],
             spacing=5,
             scroll=ft.ScrollMode.AUTO,
             tight=True,
@@ -3657,7 +3660,7 @@ class WorkoutView:
                     ft.Column(
                         [
                             ft.Text(
-                                e.nombre,
+                                nombres_es.ejercicio(e.nombre),
                                 size=12,
                                 weight=ft.FontWeight.W_600,
                                 color=C.text if activo else C.text_muted,
@@ -3755,7 +3758,13 @@ class WorkoutView:
         return ft.Container(
             content=ft.Row(
                 [
-                    ft.Text(nombre, size=12, color=C.text, expand=True, max_lines=1),
+                    ft.Text(
+                        nombres_es.ejercicio(nombre),
+                        size=12,
+                        color=C.text,
+                        expand=True,
+                        max_lines=1,
+                    ),
                     ft.Text("guardado", size=10, color=C.success)
                     if guardado
                     else ft.Container(
@@ -5647,7 +5656,10 @@ class WorkoutView:
         total = len(day.exercises)
         raw = self._current_exercise_raw()
         key = exercise_key(raw)
-        display = raw
+        # `key` es lo que se guarda; `display` es lo que se lee. La traducción
+        # vive solo en esta línea y nunca vuelve hacia atrás — lo contrario
+        # partiría el historial en dos idiomas (trampa 2).
+        display = nombres_es.ejercicio(key)
         # One read, used by every branch below. Zen mode is a *layout*: this
         # method stays single, so the two versions of the screen cannot drift
         # apart the way two copies of a 200-line render always do.
