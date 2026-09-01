@@ -34,7 +34,7 @@ uv run pre-commit install        # hook de lint + formato
 Y ya está: no hay contenedor que levantar ni assets que vendorizar.
 
 ```bash
-make check     # lint + los 2023 tests
+make check     # lint + los 2084 tests
 make run       # la app en el escritorio, contra un SQLite local
 make apk       # el APK (las tres ABIs)
 make install   # adb install al dispositivo conectado
@@ -55,7 +55,7 @@ La app de verdad es la APK.
 
 ### La suite no se salta nada
 
-Son **2023 pruebas** y corren todas con `make test`, sin Docker y sin
+Son **2084 pruebas** y corren todas con `make test`, sin Docker y sin
 variables de entorno. `tests/conftest.py` le da a cada proceso su propio
 fichero SQLite en el temporal.
 

@@ -89,7 +89,7 @@ CI (`.github/workflows/ci.yml`) runs, on Python 3.12:
 uv sync --group dev
 uv run ruff check .
 uv run ruff format --check .
-uv run pytest -q          # 2023 tests, 1 skipped (a network test, opt-in)
+uv run pytest -q          # 2084 tests, 1 skipped (a network test, opt-in)
 ```
 
 ## Architecture
@@ -386,6 +386,52 @@ desplaza y en dos meses el repaso del lunes cae en jueves), la semana se marca
 **antes** de llamar para que un fallo de red no se convierta en un reintento
 por arranque que sí se cobra, y el coste se guarda con el texto y sale en
 pantalla. Un gasto que nadie ve es un gasto que se descubre en un extracto.
+
+### El mapa muscular — `cuerpo.py` + `components/mapa_muscular.py`
+
+Alex: «que se vea el cuerpo humano… seleccionable». Los datos ya estaban:
+`analytics.sets_per_muscle_group` lleva desde 0.4 devolviendo series por
+músculo —trece, con nombres finos— y lo único que la app hacía con ellas era
+una lista de barras. Una lista contesta «cuántas series de dorsal», que no es
+la pregunta; la pregunta es **qué llevas flojo**, y esa se contesta de un
+vistazo o no se contesta.
+
+**La geometría es un dato y no importa Flet.** `cuerpo.py` son puntos en un
+lienzo de 100×220: catorce músculos, cada uno con uno o dos contornos, y una
+silueta debajo. Eso permite dos cosas que valen el rodeo — probar que ningún
+músculo se sale del lienzo o que los pares son simétricos **sin abrir una
+app**, y haberlo verificado renderizando el mismo dato a PNG en el escritorio
+antes de compilar un APK de 80 MB para ver si un brazo estaba torcido.
+
+**No es 3D y no lo intenta.** Flet no trae motor 3D y meter uno por una
+pantalla cambiaría 80 MB de APK por bastante más. Lo que da volumen es el
+sombreado: `PaintRadialGradient` con el foco donde daría la luz, y en una
+silueta plana eso basta para que se lea como un cuerpo.
+
+Tres cosas que costaron y no se ven en una captura:
+
+- **La caja de un músculo par cruza el torso.** La del bíceps va de x=22 a
+  x=78, así que tocarlo devolvía «Abdomen». `cajas()` da una por lado y
+  `en_punto` usa esa; `caja()` sigue existiendo para centrar etiquetas y **no**
+  vale para acertar un dedo. En pantalla no se nota nada: el músculo se pinta
+  bien y responde mal.
+- **La escala de color tiene que discriminar.** El primer intento mezclaba el
+  gris del fondo con el acento, y 15 series de pierna salían del mismo azul
+  que 3 de tríceps: la escala existía en los números y no en el ojo. Ahora son
+  cuatro tramos —`accent` → `success` → `warning` → `danger`, todos de la
+  paleta porque ninguna vista escribe un hex (trampa 5)— y el orden no es
+  semántico: dice «poco» y «mucho», no «bien» y «mal».
+- **Pintar y tocar tienen que usar la misma transformación.** `formas` y
+  `musculo_en` calculan la escala idéntica; si divergen, el cuerpo se pinta en
+  un sitio y responde en otro. El test que lo vigila mide sobre el **abdomen**,
+  el único músculo sin vecinos, y **en sus bordes**: por el centro, un desfase
+  del 10 % no rompía nada porque las cajas son grandes.
+
+Suavizar los contornos con Catmull-Rom **encoge** el polígono hacia dentro, y
+encoge más donde más cerrado gira. La silueta empezó siendo un único contorno
+de 28 puntos y los brazos —la parte estrecha— salían más finos que sus propios
+músculos: el bíceps flotaba al lado del brazo. Por partes cada pieza se cuadra
+con lo que lleva dentro.
 
 ### El catálogo grande y los extras — `catalogo.py` + `extras.py`
 
@@ -770,11 +816,11 @@ Pinned to `flet[all]>=0.25,<0.30` — `flet[all]`, not plain `flet`, because web
 
 ## Tests
 
-`.venv/bin/python -m pytest -q` — **2023 tests**, `testpaths = ["tests"]`, `asyncio_mode = "auto"`:
+`.venv/bin/python -m pytest -q` — **2084 tests**, `testpaths = ["tests"]`, `asyncio_mode = "auto"`:
 
-`test_abdomen.py`, `test_agent.py`, `test_analytics.py`, `test_asset_manager.py`, `test_backup.py`, `test_catalogo.py`, `test_chart_baseline.py`, `test_column_migration.py`, `test_day_screen.py`, `test_data_view_counts.py`, `test_dialog_layout.py`, `test_draft_dates.py`, `test_draft_substitution.py`, `test_exercise_images.py`, `test_exercise_key.py`, `test_extras.py`, `test_flet_reconnect.py`, `test_fotos.py`, `test_gcal.py`, `test_gym_tools.py`, `test_health.py`, `test_help_dialog.py`, `test_history_notes.py`, `test_history_view.py`, `test_home_view.py`, `test_image_delivery.py`, `test_interfaz_en_espanol.py`, `test_layout_movil.py`, `test_medidas_y_objetivo.py`, `test_memoria.py`, `test_nombres_es.py`, `test_notificaciones.py`, `test_percent_table.py`, `test_prefill_por_fecha.py`, `test_profile_db_down.py`, `test_puente_dart.py`, `test_program_week.py`, `test_repaso.py`, `test_progression.py`, `test_routine_builder.py`, `test_rutinas_nuevas.py`, `test_session_duration.py`, `test_session_plan.py`, `test_set_types.py`, `test_shared_ui.py`, `test_smoke.py`, `test_sqlite_backend.py`, `test_storage_metrics.py`, `test_substitutions.py`, `test_theme.py`, `test_timer_sound.py`, `test_weight_trend.py`, `test_widget.py`, `test_workout_date.py`, `test_workout_draft.py`, `test_workout_exercise_date.py`, `test_workout_extras_view.py`, `test_workout_notes.py`, `test_workout_notes_swap.py`, `test_workout_plan_rows.py`, `test_workout_resume.py`, `test_workout_session_time.py`, `test_workout_tools.py`, `test_workout_zen.py`.
+`test_abdomen.py`, `test_agent.py`, `test_analytics.py`, `test_asset_manager.py`, `test_backup.py`, `test_catalogo.py`, `test_chart_baseline.py`, `test_column_migration.py`, `test_cuerpo.py`, `test_day_screen.py`, `test_data_view_counts.py`, `test_dialog_layout.py`, `test_draft_dates.py`, `test_draft_substitution.py`, `test_exercise_images.py`, `test_exercise_key.py`, `test_extras.py`, `test_flet_reconnect.py`, `test_fotos.py`, `test_gcal.py`, `test_gym_tools.py`, `test_health.py`, `test_help_dialog.py`, `test_history_notes.py`, `test_history_view.py`, `test_home_view.py`, `test_image_delivery.py`, `test_interfaz_en_espanol.py`, `test_layout_movil.py`, `test_medidas_y_objetivo.py`, `test_memoria.py`, `test_nombres_es.py`, `test_notificaciones.py`, `test_percent_table.py`, `test_prefill_por_fecha.py`, `test_profile_db_down.py`, `test_puente_dart.py`, `test_program_week.py`, `test_repaso.py`, `test_progression.py`, `test_routine_builder.py`, `test_rutinas_nuevas.py`, `test_session_duration.py`, `test_session_plan.py`, `test_set_types.py`, `test_shared_ui.py`, `test_smoke.py`, `test_sqlite_backend.py`, `test_storage_metrics.py`, `test_substitutions.py`, `test_theme.py`, `test_timer_sound.py`, `test_weight_trend.py`, `test_widget.py`, `test_workout_date.py`, `test_workout_draft.py`, `test_workout_exercise_date.py`, `test_workout_extras_view.py`, `test_workout_notes.py`, `test_workout_notes_swap.py`, `test_workout_plan_rows.py`, `test_workout_resume.py`, `test_workout_session_time.py`, `test_workout_tools.py`, `test_workout_zen.py`.
 
-A clean run is `2023 passed, 1 skipped` and needs **nothing installed but the dev group** — no Docker, no server. The single skip is a network test in `test_asset_manager.py` (opt in with `IRONFLET_NETWORK_TESTS=1`). Until 0.12 this section warned to judge a run by its skip count, because 211 tests — everything touching storage — skipped silently without PostgreSQL; that trap is gone with the server.
+A clean run is `2084 passed, 1 skipped` and needs **nothing installed but the dev group** — no Docker, no server. The single skip is a network test in `test_asset_manager.py` (opt in with `IRONFLET_NETWORK_TESTS=1`). Until 0.12 this section warned to judge a run by its skip count, because 211 tests — everything touching storage — skipped silently without PostgreSQL; that trap is gone with the server.
 
 `tests/conftest.py` gives each pytest process its own SQLite file in the system temp dir, for the same reason it used to create a database per pid: the fixtures wipe rows, and two concurrent runs deleting each other's data mid-query produced red runs with a different set of failures each time, in files unrelated to whatever was being changed.
 

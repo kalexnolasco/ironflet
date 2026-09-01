@@ -4,6 +4,39 @@ Todos los cambios notables de IronFlet.
 El formato sigue [Keep a Changelog](https://keepachangelog.com/) y el proyecto
 usa [SemVer](https://semver.org/).
 
+## [0.22.0] — 2026-09-01
+
+**El cuerpo humano, coloreado con lo que entrenas.**
+
+### Añadido
+
+- **Un mapa muscular en Historial.** Un cuerpo dibujado por músculos, coloreado
+  con las series de la ventana: azul lo poco trabajado, verde, ámbar, y rojo lo
+  machacado. Gris lo que no has tocado. Se gira para ver la espalda y se toca
+  cada músculo para ver sus series.
+
+  Los datos llevaban ahí desde 0.4 — `sets_per_muscle_group` devuelve trece
+  músculos — y lo único que se hacía con ellos era una lista de barras. Una
+  lista contesta «cuántas series de dorsal»; el cuerpo contesta **qué llevas
+  flojo**, que es la pregunta con la que se abre esa pantalla.
+
+  Sin 3D: Flet no trae motor y meter uno por una pantalla cambiaría 80 MB de
+  APK por bastante más. El volumen sale de un degradado radial con el foco
+  donde daría la luz, y en una silueta plana eso basta.
+
+### Detalles que costaron
+
+- **Tocar el bíceps devolvía «Abdomen».** La caja de un músculo par va de un
+  brazo al otro cruzando el torso entero. Ahora hay una caja por lado. En
+  pantalla no se notaba nada: se pintaba bien y respondía mal.
+- **15 series de pierna y 3 de tríceps salían del mismo azul.** La primera
+  escala mezclaba el gris del fondo con el acento y no discriminaba: existía en
+  los números y no en el ojo.
+- **Los brazos salían más finos que sus músculos.** Suavizar un polígono lo
+  encoge, y más donde más cerrado gira; la silueta era un único contorno de 28
+  puntos y el bíceps acababa flotando al lado del brazo. Ahora es una pieza por
+  parte del cuerpo.
+
 ## [0.21.0] — 2026-09-01
 
 **Solo gimnasio.**

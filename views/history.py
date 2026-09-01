@@ -37,6 +37,7 @@ from __future__ import annotations
 import contextlib
 
 import flet as ft
+import flet.canvas as cv
 
 from analytics import (
     PRKind,
@@ -179,6 +180,11 @@ class HistoryView:
         self.selected: str | None = None
         self.chart_kind: str = "e1rm"
         self.weeks_back: int = 0
+        #: El mapa muscular: qué cara del cuerpo se ve y qué músculo está
+        #: tocado. Ninguno de los dos se persiste — son una mirada, no una
+        #: preferencia.
+        self.vista_cuerpo: str = "frente"
+        self.musculo_tocado: str = ""
 
     def on_show(self):
         pass
@@ -294,6 +300,12 @@ class HistoryView:
         else:
             rows = [muted_text("Sin series efectivas esta semana", size=11)]
 
+        # El cuerpo va encima de las barras y no en su lugar: contesta otra
+        # pregunta. Las barras dicen cuántas series lleva cada músculo; el
+        # cuerpo dice **cuál llevas flojo**, que es lo que se mira de reojo y
+        # lo que decide qué se entrena mañana.
+        cuerpo_ui = self._cuerpo_card()
+
         # The unresolved keys are counted over the whole window, not the
         # selected week — say so instead of letting them read as this week's.
         #
@@ -352,11 +364,160 @@ class HistoryView:
             ft.Container(height=6),
             chips,
             ft.Container(height=8),
+            *([cuerpo_ui, ft.Container(height=10)] if cuerpo_ui is not None else []),
             *rows,
             *([ft.Container(height=6), *notes] if notes else []),
             padding=14,
             margin=ft.margin.only(bottom=12),
         )
+
+    # ── el cuerpo ────────────────────────────────────────────
+    #: Alto del lienzo. El cuerpo es 100×220, así que el ancho sale solo; esto
+    #: es lo que decide cuánto ocupa la tarjeta, y 280 es lo que cabe encima de
+    #: las barras sin empujarlas fuera de la primera pantalla.
+    ALTO_CUERPO = 280.0
+    ANCHO_CUERPO = 150.0
+
+    def _cuerpo_card(self) -> ft.Control | None:
+        """El cuerpo, coloreado con las series de la ventana.
+
+        Devuelve `None` si algo falla: es la parte más nueva de esta pantalla y
+        la que más piezas toca (canvas, gradientes, gestos). Un mapa que no
+        pinta no puede llevarse por delante el historial, que es lo que se
+        viene a ver.
+        """
+        try:
+            from components.mapa_muscular import formas
+
+            # Sin `coarse`: el mapa quiere los trece músculos finos —`lats`,
+            # `quadriceps`— y no las ocho familias que usan las barras.
+            mv = sets_per_muscle_group(self.store.get_all(), MUSCLE_WEEKS)
+            idx = max(0, len(mv.weeks) - 1 - self.weeks_back)
+            volumen = dict(mv.by_week[mv.weeks[idx]]) if mv.weeks else {}
+        except Exception:
+            return None
+
+        try:
+            lienzo = cv.Canvas(
+                formas(
+                    self.vista_cuerpo,
+                    volumen,
+                    self.ANCHO_CUERPO,
+                    self.ALTO_CUERPO,
+                    seleccionado=self.musculo_tocado,
+                ),
+                width=self.ANCHO_CUERPO,
+                height=self.ALTO_CUERPO,
+            )
+        except Exception:
+            return None
+
+        def _tocar(e: ft.TapEvent):
+            from components.mapa_muscular import musculo_en
+
+            m = musculo_en(
+                self.vista_cuerpo, e.local_x, e.local_y, self.ANCHO_CUERPO, self.ALTO_CUERPO
+            )
+            # Tocar el mismo otra vez lo suelta: sin eso no hay forma de volver
+            # a ver el cuerpo entero sin acertar en un hueco.
+            self.musculo_tocado = "" if (m is None or m.clave == self.musculo_tocado) else m.clave
+            self.page.data["refresh_current"]()
+
+        def _girar(_):
+            self.vista_cuerpo = "espalda" if self.vista_cuerpo == "frente" else "frente"
+            self.musculo_tocado = ""
+            self.page.data["refresh_current"]()
+
+        detalle = self._detalle_musculo(volumen)
+
+        return ft.Row(
+            [
+                ft.GestureDetector(
+                    content=lienzo,
+                    on_tap_down=_tocar,
+                    width=self.ANCHO_CUERPO,
+                    height=self.ALTO_CUERPO,
+                ),
+                ft.Column(
+                    [
+                        ft.Container(
+                            content=ft.Row(
+                                [
+                                    ft.Icon(ft.Icons.CACHED_ROUNDED, size=14, color=C.accent),
+                                    ft.Text(
+                                        "Espalda" if self.vista_cuerpo == "frente" else "Frente",
+                                        size=11,
+                                        color=C.accent,
+                                        weight=ft.FontWeight.W_700,
+                                    ),
+                                ],
+                                spacing=4,
+                                tight=True,
+                            ),
+                            on_click=_girar,
+                            ink=True,
+                            padding=ft.padding.symmetric(horizontal=10, vertical=6),
+                            border=ft.border.all(1, C.border),
+                            border_radius=Radius.pill,
+                            tooltip="Ver el otro lado",
+                        ),
+                        ft.Container(height=10),
+                        *detalle,
+                    ],
+                    spacing=0,
+                    tight=True,
+                    expand=True,
+                ),
+            ],
+            spacing=12,
+            vertical_alignment=ft.CrossAxisAlignment.START,
+        )
+
+    def _detalle_musculo(self, volumen: dict[str, float]) -> list[ft.Control]:
+        """Lo que se lee al lado del cuerpo.
+
+        Sin nada tocado, el titular: cuál va más flojo. Es la respuesta a la
+        pregunta con la que se abre esta pantalla, y darla sin que haya que
+        tocar nada es la diferencia entre un gráfico y una herramienta.
+        """
+        import cuerpo as geo
+
+        if self.musculo_tocado:
+            m = geo.por_clave(self.musculo_tocado)
+            if m is not None:
+                series = volumen.get(m.clave, 0.0)
+                return [
+                    ft.Text(m.etiqueta, size=15, weight=ft.FontWeight.W_900, color=C.text),
+                    ft.Text(
+                        plural(round(series), "serie") if series else "Sin tocar esta semana",
+                        size=12,
+                        color=C.accent if series else C.warning,
+                        weight=ft.FontWeight.W_700,
+                    ),
+                    ft.Container(height=6),
+                    muted_text("Toca otra vez para soltarlo", size=10),
+                ]
+
+        de_la_vista = [m for m in geo.MUSCULOS if m.vista == self.vista_cuerpo]
+        flojos = sorted(de_la_vista, key=lambda m: volumen.get(m.clave, 0.0))[:2]
+        sin_nada = [m for m in flojos if volumen.get(m.clave, 0.0) <= 0]
+
+        if sin_nada:
+            nombres = " y ".join(m.etiqueta.lower() for m in sin_nada)
+            titular, color = f"Sin tocar: {nombres}", C.warning
+        elif flojos:
+            titular, color = f"Lo más flojo: {flojos[0].etiqueta.lower()}", C.text_secondary
+        else:
+            titular, color = "", C.text_secondary
+
+        salida: list[ft.Control] = []
+        if titular:
+            salida.append(ft.Text(titular, size=12, color=color, weight=ft.FontWeight.W_700))
+            salida.append(ft.Container(height=6))
+        salida.append(
+            muted_text("Cuanto más encendido, más series lleva. Toca un músculo.", size=10)
+        )
+        return salida
 
     # ── list ─────────────────────────────────────────────────
     def _notes_card(self, notes: dict[str, str]) -> ft.Control:

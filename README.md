@@ -6,7 +6,7 @@
 ![Android](https://img.shields.io/badge/APK-84%20MB%20·%20SQLite-3DDC84?style=for-the-badge&logo=android&logoColor=white)
 ![Flet](https://img.shields.io/badge/Flet-0.28.3-7F52FF?style=for-the-badge)
 ![Idioma](https://img.shields.io/badge/interfaz-español-E4312b?style=for-the-badge)
-![Tests](https://img.shields.io/badge/tests-2023-2f9e44?style=for-the-badge)
+![Tests](https://img.shields.io/badge/tests-2084-2f9e44?style=for-the-badge)
 
 **Donde apuntas lo que levantas, con un entrenador dentro que mira tus fotos y
 te escribe cada semana. Solo gimnasio: sin diario de comida, sin contar nada
@@ -52,24 +52,29 @@ de esta app depende ya de él.
    uno de flexión, uno de inferior y uno de oblicuos, sin repetir del día
    anterior. Tu plan ya lo pedía —«+ Abs» cinco veces por semana— y la app no
    te lo daba.
-4. **Mirar atrás** — récords, progresión por ejercicio, series por músculo,
+4. **Verte por dentro** — un cuerpo humano en Historial, coloreado con lo que
+   has entrenado: azul lo poco trabajado, rojo lo machacado, gris lo que no has
+   tocado. Se gira para ver la espalda y se toca cada músculo para ver sus
+   series. Contesta de un vistazo lo que una lista de barras no: qué llevas
+   flojo.
+5. **Mirar atrás** — récords, progresión por ejercicio, series por músculo,
    racha de semanas y evolución del peso. Con un objetivo puesto, te dice
    cuándo llegas al ritmo que llevas de verdad.
-5. **Medirte entero** — cintura, pecho, brazo, muslo y cadera. Para una
+6. **Medirte entero** — cintura, pecho, brazo, muslo y cadera. Para una
    recomposición son la métrica que importa: el peso puede no moverse en un mes
    mientras la cintura baja y el brazo sube, y eso la báscula no lo dice.
-6. **Verte cambiar** — una foto al día, galería y comparador A/B con la
+7. **Verte cambiar** — una foto al día, galería y comparador A/B con la
    diferencia real de peso y cintura entre las dos fechas.
-7. **Verlo sin abrir la app** — un widget en la pantalla de inicio con lo de
+8. **Verlo sin abrir la app** — un widget en la pantalla de inicio con lo de
    hoy: qué toca entrenar (con un ✓ cuando la sesión ya está), tu peso, lo que
    llevas de semana y tu cintura. Se añade desde Ajustes → Widget.
-8. **Que te entrenen** — un coach dentro de la app que lee tu historial, mira
+9. **Que te entrenen** — un coach dentro de la app que lee tu historial, mira
    tus fotos y **propone**: registrar una sesión, ajustar los objetivos de la
    semana, crear un aviso, bloquear un hueco en tu Google Calendar. Nada se
    guarda hasta que tocas Guardar.
-9. **Que te conozca** — le cuentas una vez a qué hora entrenas, qué no comes o
+10. **Que te conozca** — le cuentas una vez a qué hora entrenas, qué no comes o
    qué rodilla te molesta, y deja de preguntarlo.
-10. **Que te escriba él** — una vez por semana mira tus datos y te deja un
+11. **Que te escriba él** — una vez por semana mira tus datos y te deja un
    repaso en Inicio. Se enciende en Ajustes: es lo único de la app que hace una
    llamada de pago sin que la pidas, y lo que cuesta sale escrito debajo. Son hechos, no la
    conversación entera: veinte líneas que viajan en cada pregunta. Los propone
@@ -84,7 +89,7 @@ dos— pero lo que se lee está traducido, y el buscador entiende los dos idioma
 
 ```bash
 make deps      # dependencias de desarrollo
-make check     # lint + los 2023 tests (sin Docker, sin saltarse nada)
+make check     # lint + los 2084 tests (sin Docker, sin saltarse nada)
 make apk       # el APK, con las tres ABIs
 make install   # adb install al móvil o al emulador conectado
 ```

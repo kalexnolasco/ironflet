@@ -63,9 +63,6 @@ def sqlite_store(tmp_path) -> Storage:
     return Storage(sqlite_url(tmp_path / "ironflet.db"))
 
 
-
-
-
 def a_set(weight, reps, **extra):
     return {"weight": weight, "reps": reps, **extra}
 
