@@ -1421,6 +1421,24 @@ class HomeView:
             on_click=lambda _: nav(VIEW_WORKOUT),
             expand=True,
         )
+
+        def _libre(_):
+            vista = self.page.data.get("workout_view")
+            if vista is not None:
+                vista.empezar_libre()
+            nav(VIEW_WORKOUT)
+
+        # Llegar al gimnasio sin plan y hacer cuatro cosas. Antes obligaba a
+        # entrar por una fase y un día, o sea a fingir que hoy tocaba pecho —
+        # y esa mentira acaba en `entrenos.grupo`, que es lo que agrupa
+        # Historial.
+        libre_btn = ghost_button(
+            "Libre",
+            on_click=_libre,
+            width=88,
+            height=48,
+            tooltip="Entrenar sin rutina: eliges tú los ejercicios",
+        )
         # Browse lost its tab when the bar went down to five. This is now the
         # only entrance to the catalogue, so it is a labelled button, not an icon.
         browse_btn = ghost_button(
@@ -1502,7 +1520,7 @@ class HomeView:
                 # is the next hour.
                 self._today_card(),
                 ft.Container(height=Space.x2),
-                ft.Row([start_btn, browse_btn], spacing=8),
+                ft.Row([start_btn, libre_btn, browse_btn], spacing=8),
                 ft.Container(height=Space.x4),
                 section_title("Tu día"),
                 ft.Container(height=Space.x1),

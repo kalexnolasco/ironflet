@@ -16,7 +16,7 @@ from analytics import Record, detect_new_records
 from components.timer import RestTimer
 from data import active_routine
 from dates import day_name, month_name
-from exercise_images import image_frames_props
+from exercise_images import image_frames_props, image_props
 from exercises import exercise_key, phase_color
 from gym_tools import (
     DEFAULT_BAR,
@@ -291,6 +291,14 @@ class WorkoutView:
         #: «cada día» y entrena cuatro o cinco: sin esto, «cada día» sería «los
         #: días que voy al gimnasio».
         self.solo_abdomen: bool = False
+        #: Sesión sin rutina: solo los ejercicios que Alex ha elegido hoy.
+        #: «Llego al gimnasio sin plan y hago cuatro cosas», que hasta ahora
+        #: obligaba a entrar por una fase y fingir que tocaba pecho.
+        self.libre: bool = False
+        #: Pedido por `empezar_libre` cuando no hay nada elegido: el buscador
+        #: se abre en el primer `build`, que es cuando ya hay `page` con la
+        #: pantalla montada debajo.
+        self._abrir_buscador_al_pintar: bool = False
         # Draft rows are kept PER EXERCISE. One shared `self.sets` list was the
         # bug behind "I changed exercise and it reset": stepping to the next
         # movement threw the half-typed rows on the floor, unsaved and without
@@ -447,13 +455,14 @@ class WorkoutView:
             self._reset()
             self.page.data["refresh_current"]()
             return True
-        if self.solo_abdomen:
-            # No hay lista de días a la que volver — una sesión de abdomen no
-            # sale de ninguna fase—, así que el paso atrás es salir del modo.
-            # Se guarda el borrador primero: lo tecleado es lo mismo de valioso
-            # aquí que en una sesión de pesas.
+        if self.solo_abdomen or self.libre:
+            # No hay lista de días a la que volver — ni el abdomen ni un
+            # entreno libre salen de ninguna fase—, así que el paso atrás es
+            # salir del modo. Se guarda el borrador primero: lo tecleado es lo
+            # mismo de valioso aquí que en una sesión de pesas.
             self._persist_draft()
             self.solo_abdomen = False
+            self.libre = False
             self.show_phase_list = True
             self.page.data["refresh_current"]()
             return True
@@ -2070,10 +2079,11 @@ class WorkoutView:
         self.phase_id = 0
         self.day_idx = -1
         self.ex_idx = 0
-        # Una sesión de abdomen terminada no puede dejar la pantalla en modo
-        # abdomen: la siguiente vez que se abra Entreno habría que salir de
+        # Una sesión de abdomen o libre terminada no puede dejar la pantalla
+        # en ese modo: la siguiente vez que se abra Entreno habría que salir de
         # algo que nadie pidió, y la lista de fases no se vería.
         self.solo_abdomen = False
+        self.libre = False
         self._scope = ()
         self._sets_by_ex = {}
         self._last_sets_cache = {}
@@ -2672,6 +2682,11 @@ class WorkoutView:
         `data.ROUTINES` y añadirle algo aquí lo dejaría en el plan para
         siempre, en todas las fases que reusan ese día.
         """
+        if self.libre:
+            # Ya *es* la lista de extras; volver a pasarla por
+            # `dia_con_extras` no añadiría nada, pero el abdomen sí se respeta:
+            # está encendido para todos los días, y un entreno libre es un día.
+            return abdomen.dia_con_abdomen(extras.dia_libre(self.store), self.store)
         if self.solo_abdomen:
             # Ya *es* el abdomen: pasarlo por `dia_con_abdomen` lo duplicaría.
             # Los extras sí se respetan — nada impide meter algo más un día de
@@ -2691,6 +2706,8 @@ class WorkoutView:
         Lo que hace falta para saber dónde acaba el plan y empieza lo de hoy.
         En una sesión de solo abdomen el «plan» es el propio abdomen.
         """
+        if self.libre:
+            return extras.dia_libre(self.store)
         if self.solo_abdomen:
             return abdomen.dia_suelto(self.store)
         days = active_routine().days_for_phase(self.phase_id)
@@ -3448,6 +3465,9 @@ class WorkoutView:
 
             resultados.controls = filas
             self.page.update()
+            # Después de pintar: la lista aparece ya, y las fotos que falten
+            # entran solas cuando lleguen.
+            self._pedir_miniaturas(encontrados, pintar)
 
         def al_escribir(_):
             estado["q"] = campo.value or ""
@@ -3527,17 +3547,7 @@ class WorkoutView:
         día de abdomen no tiene fase propia y sin ninguna, `progression.py` se
         queda sin `scheme` que leer.
         """
-        self.solo_abdomen = True
-        self.show_phase_list = False
-        self.show_day_list = False
-        self.day_idx = 0
-        self.ex_idx = 0
-        self.completed = False
-        self.finished = False
-        if not self.phase_id:
-            fases = active_routine().phases
-            self.phase_id = fases[0].id if fases else 1
-        self._olvidar_cache_ejercicios()
+        self._entrar_en_modo("abdomen")
 
     def _cuenta_del_dia(self, dia) -> str:
         """«7 ejercicios», o «7 + 3 de abdomen» cuando el abdomen está puesto.
@@ -3556,6 +3566,45 @@ class WorkoutView:
             return plural(base, "ejercicio")
         return f"{plural(base, 'ejercicio')} + {extra} de abdomen"
 
+    def empezar_libre(self):
+        """Arranca un entreno sin rutina. La llama Inicio.
+
+        Si aún no hay nada elegido abre el buscador, porque si no la pantalla
+        sale con el abdomen del día —o con nada— y sin decir de dónde ha
+        salido.
+        """
+        self._entrar_en_modo("libre")
+        if not extras.de_hoy(self.store):
+            self._abrir_buscador_al_pintar = True
+
+    def _entrar_en_modo(self, modo: str):
+        """Cambia a «libre», «abdomen» o de vuelta a la rutina, limpiando.
+
+        Lo que se limpia es `_sets_by_ex`, y no es higiene: ese diccionario
+        guarda **lo tecleado, indexado por posición**, así que entrar en otro
+        día con él puesto pone las filas del press de banca bajo el primer
+        crunch. Pasó — 60 kg × 10 prellenados en un abdominal, a un toque de
+        Guardar y del historial.
+
+        El borrador se persiste antes: cambiar de modo no puede costar lo que
+        estaba escrito en la sesión que se deja.
+        """
+        self._persist_draft()
+        self.libre = modo == "libre"
+        self.solo_abdomen = modo == "abdomen"
+        self.show_phase_list = False
+        self.show_day_list = False
+        self.day_idx = 0
+        self.ex_idx = 0
+        self.completed = []
+        self.finished = False
+        if not self.phase_id:
+            fases = active_routine().phases
+            self.phase_id = fases[0].id if fases else 1
+        self._sets_by_ex = {}
+        self._logged_ex = set()
+        self._olvidar_cache_ejercicios()
+
     def _grupo_del_dia(self) -> str:
         """El grupo muscular que toca hoy, sacado del nombre del día.
 
@@ -3572,6 +3621,12 @@ class WorkoutView:
 
         cabeza = dia.name.split("-")[0].strip().split("+")[0].strip()
         return cabeza if cabeza in catalogo.grupos() else ""
+
+    async def _abrir_buscador_pronto(self):
+        """Abre el buscador en el siguiente ciclo, con la pantalla ya montada."""
+        await asyncio.sleep(0.1)
+        with contextlib.suppress(Exception):
+            self._ask_add_exercise()
 
     def _cerrar_add(self, dlg):
         self._add_dialog = None
@@ -3598,6 +3653,7 @@ class WorkoutView:
         return ft.Container(
             content=ft.Row(
                 [
+                    self._miniatura(e.nombre),
                     ft.Column(
                         [
                             ft.Text(
@@ -3628,6 +3684,59 @@ class WorkoutView:
             padding=ft.padding.symmetric(vertical=7, horizontal=4),
             border_radius=Radius.sm,
         )
+
+    def _miniatura(self, nombre: str) -> ft.Control:
+        """La foto de un resultado, o un hueco de su tamaño.
+
+        Siempre ocupa lo mismo — 46×34 — esté la foto o no: una lista donde
+        las filas cambian de alto según lo que se haya descargado salta bajo
+        el dedo mientras se lee.
+
+        `cache_width` no es opcional (trampa 11): la miniatura es pequeña en
+        disco pero decodifica a lo que mida, y cuarenta resultados sin eso es
+        una lista que mata la app por memoria.
+        """
+        props = image_props(nombre, thumb=True)
+        if not props:
+            return ft.Container(width=46, height=34)
+        return ft.Container(
+            content=ft.Image(
+                **props,
+                fit=ft.ImageFit.COVER,
+                cache_width=92,
+                cache_height=68,
+                border_radius=4,
+            ),
+            width=46,
+            height=34,
+            border_radius=4,
+            clip_behavior=ft.ClipBehavior.HARD_EDGE,
+        )
+
+    def _pedir_miniaturas(self, ejercicios, al_cambiar):
+        """Baja las miniaturas que falten de lo que hay en pantalla.
+
+        Solo lo visible: cuarenta resultados son ~400 KB, y bajar las 875 de
+        golpe para enseñar cuarenta sería gastar la conexión de alguien que
+        está en un gimnasio. El resto llega cuando se busca otra cosa.
+        """
+        import asset_manager
+        import catalogo
+
+        faltan = [
+            s
+            for s in {catalogo.slug_de(e.nombre) for e in ejercicios}
+            if s and asset_manager.thumb_path(s) is None
+        ]
+        if not faltan:
+            return
+
+        async def _bajar():
+            if await asset_manager.descargar_miniaturas(faltan):
+                al_cambiar()
+
+        with contextlib.suppress(Exception):
+            self.page.run_task(_bajar)
 
     def _fila_extra_puesto(self, nombre: str, al_cambiar) -> ft.Control:
         """Un extra ya añadido, con su papelera — salvo si ya tiene series.
@@ -6159,6 +6268,13 @@ class WorkoutView:
     def build(self) -> ft.Control:
         # Invalidate any running frame-swap task before rebuild
         self._anim_tick_id += 1
+        # Un entreno libre sin nada elegido abre el buscador, y lo hace aquí
+        # porque `empezar_libre` corre desde Inicio, antes de que esta pantalla
+        # exista: un diálogo abierto ahí se pinta sobre la pantalla anterior.
+        if self._abrir_buscador_al_pintar:
+            self._abrir_buscador_al_pintar = False
+            with contextlib.suppress(Exception):
+                self.page.run_task(self._abrir_buscador_pronto)
         # A routine swap from outside (`main.set_routine`) leaves `phase_id`
         # and `day_idx` pointing into a routine that no longer exists; catch it
         # before anything indexes with them.

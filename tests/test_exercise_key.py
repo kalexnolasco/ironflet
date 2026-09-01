@@ -42,7 +42,13 @@ BOT = RAIZ.parent / "agente" / "entrenador" / "entrenos.py"
 # Reading a failure: both numbers rising means exercises were added. CADENAS
 # steady while CLAVES moves means the normalisation drifted — that is the
 # data-integrity incident this file exists to catch.
-CADENAS_ESPERADAS = 219
+# 0.18: las cuatro rutinas nuevas (PHUL, StrongLifts, Arnold, Full Body) suben
+# CADENAS de 219 a 275 y dejan CLAVES **exactamente igual**. Eso no es suerte:
+# se escribieron a propósito con los nombres que la app ya usaba —PHUL empieza
+# por «Bench Press» y aquí es `Barbell Bench Press`— para que una sentadilla
+# hecha en PHUL caiga en el mismo historial que la de CambiaTuFísico. Si
+# CLAVES hubiera subido, alguna rutina habría abierto una historia paralela.
+CADENAS_ESPERADAS = 275
 CLAVES_ESPERADAS = 100
 
 

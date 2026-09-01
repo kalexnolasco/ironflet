@@ -6,7 +6,7 @@
 ![Android](https://img.shields.io/badge/APK-84%20MB%20·%20SQLite-3DDC84?style=for-the-badge&logo=android&logoColor=white)
 ![Flet](https://img.shields.io/badge/Flet-0.28.3-7F52FF?style=for-the-badge)
 ![Idioma](https://img.shields.io/badge/interfaz-español-E4312b?style=for-the-badge)
-![Tests](https://img.shields.io/badge/tests-2074-2f9e44?style=for-the-badge)
+![Tests](https://img.shields.io/badge/tests-2120-2f9e44?style=for-the-badge)
 
 **Donde apuntas lo que levantas y lo que comes, con un entrenador dentro que
 mira tus fotos y te propone la semana. Una app de móvil y nada más: sin
@@ -36,12 +36,16 @@ de esta app depende ya de él.
 
 ## Qué hace
 
+0. **Ocho rutinas** — la tuya de CambiaTuFísico y siete más: Upper/Lower,
+   Push/Pull/Legs, Recomp, PHUL, StrongLifts 5×5, Arnold Split y Full Body de
+   3 días. Se cambian en Plan, y cualquiera se clona para hacerla tuya.
 1. **Entrenar** — eliges rutina, fase y día, y apuntas cada serie: peso,
    repeticiones y RIR. Temporizador de descanso automático y modo zen (solo la
    serie que estás haciendo, sin nada más en pantalla). Si la máquina está
    ocupada o te sobran ganas, **«+ Ejercicio» añade uno más a la sesión de
-   hoy** — de entre 875, buscables por nombre y filtrados por lo que toca hoy —
-   sin tocar el plan de las 24 semanas.
+   hoy** — de entre 875, con su foto, buscables por nombre y filtrados por lo
+   que toca hoy — sin tocar el plan de las 24 semanas. Y si llegas sin plan,
+   **«Libre»**: eliges tú los ejercicios y ya está.
 2. **Comer** — diario con 50 alimentos de despensa española, raciones ("1
    plátano mediano" en vez de pesar) y objetivos de macros versionados por
    fecha: cambiar el plan del lunes no reescribe lo que comiste el jueves.
@@ -78,7 +82,7 @@ clave con la que se guarda el historial y traducirlos lo partiría en dos.
 
 ```bash
 make deps      # dependencias de desarrollo
-make check     # lint + los 2074 tests (sin Docker, sin saltarse nada)
+make check     # lint + los 2120 tests (sin Docker, sin saltarse nada)
 make apk       # el APK, con las tres ABIs
 make install   # adb install al móvil o al emulador conectado
 ```

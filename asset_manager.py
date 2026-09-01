@@ -41,7 +41,7 @@ import asyncio
 import contextlib
 import os
 import tarfile
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import NamedTuple
 
@@ -61,6 +61,25 @@ TARBALL_MARKER = ".tarball-" + RELEASE_VERSION
 
 # Upstream, per-file. Same public-domain source the tarball was built from.
 UPSTREAM_BASE = "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises"
+
+#: Las **miniaturas**, servidas por el CDN que la propia web de Free Exercise
+#: DB usa para su buscador. Mismas fotos, redimensionadas al vuelo:
+#:
+#:     original   ~60 KB      miniatura (250×180)   ~10 KB
+#:
+#: Esa diferencia es lo que hace posible que los 875 ejercicios tengan foto en
+#: las listas. A tamaño completo serían 126 MB —cuatro veces la app— y por eso
+#: hasta ahora solo tenían foto los 70 del tarball.
+#:
+#: Es un tercero, así que se usa **una vez por ejercicio** y la miniatura se
+#: guarda en disco. Si el CDN cae, `_fetch_thumb` cae al mismo `raw` de GitHub
+#: de siempre: la foto pesa seis veces más y se ve igual.
+THUMB_BASE = "https://ik.imagekit.io/yuhonas/tr:w-250,h-180"
+
+#: Cómo se llama la miniatura dentro de la carpeta del ejercicio. `thumb` y no
+#: `2.jpg`: los números son *frames* de la animación y `image_frames()` los
+#: recorre, así que un tercero se colaría en el bucle.
+THUMB_NAME = "thumb.jpg"
 
 _JPEG_MAGIC = b"\xff\xd8\xff"
 _GZIP_MAGIC = b"\x1f\x8b"
@@ -256,6 +275,76 @@ async def _fetch_frame(client: httpx.AsyncClient, slug: str, frame: int) -> bool
                 return False
             await asyncio.sleep(0.5 * intento)
     return False
+
+
+async def _fetch_thumb(client: httpx.AsyncClient, slug: str) -> bool:
+    """Baja la miniatura de un ejercicio. `True` si quedó en disco.
+
+    Del CDN primero y del `raw` de GitHub después: la miniatura pesa seis veces
+    menos, pero una foto grande es infinitamente mejor que un hueco gris.
+    """
+    destino = _data_dir() / slug / THUMB_NAME
+    for url in (f"{THUMB_BASE}/{slug}/0.jpg", f"{UPSTREAM_BASE}/{slug}/0.jpg"):
+        try:
+            r = await client.get(url)
+            if r.status_code == 404:
+                continue
+            r.raise_for_status()
+            if not _looks_like_jpeg(r.content):
+                continue
+            _atomic_write(destino, r.content)
+            return True
+        except Exception:
+            continue
+    return False
+
+
+def thumb_path(slug: str) -> Path | None:
+    """La miniatura en disco, o el frame 0 si ya está, o None.
+
+    El frame 0 sirve de miniatura perfectamente: es la misma foto más grande.
+    Preferir la pequeña es cuestión de memoria, no de corrección — y por eso
+    tener la grande cuenta como tenerla.
+    """
+    if not slug:
+        return None
+    carpeta = _data_dir() / slug
+    for nombre in (THUMB_NAME, "0.jpg"):
+        p = carpeta / nombre
+        try:
+            if p.is_file() and p.stat().st_size > 0:
+                return p
+        except OSError:
+            continue
+    return None
+
+
+async def descargar_miniaturas(
+    slugs: Sequence[str], on_progress: Callable[[int, int], None] | None = None
+) -> int:
+    """Baja las miniaturas que falten. Devuelve cuántas llegaron.
+
+    De ocho en ocho: es una lista de resultados en pantalla, no una descarga
+    de fondo, y quien la mira quiere ver las fotos aparecer y no una barra.
+    """
+    faltan = [s for s in dict.fromkeys(slugs) if s and thumb_path(s) is None]
+    if not faltan:
+        return 0
+
+    logradas = 0
+    try:
+        async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as client:
+            for i in range(0, len(faltan), 8):
+                lote = faltan[i : i + 8]
+                res = await asyncio.gather(
+                    *(_fetch_thumb(client, s) for s in lote), return_exceptions=True
+                )
+                logradas += sum(1 for r in res if r is True)
+                if on_progress:
+                    on_progress(min(i + 8, len(faltan)), len(faltan))
+    except Exception:
+        pass
+    return logradas
 
 
 async def _repair_slug(client: httpx.AsyncClient, slug: str) -> bool:

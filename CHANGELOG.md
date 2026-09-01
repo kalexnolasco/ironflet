@@ -4,6 +4,46 @@ Todos los cambios notables de IronFlet.
 El formato sigue [Keep a Changelog](https://keepachangelog.com/) y el proyecto
 usa [SemVer](https://semver.org/).
 
+## [0.18.0] — 2026-09-01
+
+**Fotos para los 875, cuatro rutinas más, y entrenar sin plan.**
+
+### Añadido
+
+- **Todos los ejercicios con foto.** Hasta ahora solo tenían los 70 del
+  tarball: las 875 a tamaño completo son 126 MB, cuatro veces la app. La
+  solución estaba en la web de Free Exercise DB, que sirve sus propias fotos
+  por un CDN que las redimensiona — **10 KB en vez de 60**. Las 875 caben en
+  9 MB y se bajan según se miran, sesenta por búsqueda.
+- **Cuatro rutinas nuevas**, que son ocho en total: **PHUL** (fuerza +
+  hipertrofia, 4 días, la que mejor encaja con una recomposición),
+  **StrongLifts 5×5**, **Arnold Split** y **Full Body 3 días** para las semanas
+  con poco tiempo. Transcritas con sus series y repeticiones originales.
+- **«Libre»**, en Inicio: llegar al gimnasio sin plan, elegir cuatro ejercicios
+  y hacerlos. Antes había que entrar por una fase y un día, o sea fingir que
+  hoy tocaba pecho — y esa mentira acaba en `entrenos.grupo`, que es lo que
+  agrupa Historial.
+- **El catálogo de Ejercicios ahora tiene buscador** y conoce los 875, no los
+  67 escritos a mano.
+
+### Arreglado
+
+- **Entrar en «Libre» desde una sesión de pesas dejaba 60 kg × 10 prellenados
+  en el primer abdominal.** `_sets_by_ex` guarda lo tecleado por posición, y la
+  posición 0 de un día es la posición 0 del siguiente. A un toque de Guardar y
+  del historial. Ahora hay un solo camino entre modos y vacía ese buffer,
+  guardando el borrador antes.
+- Un «Libre» sin nada elegido salía con el abdomen del día y sin decir de dónde
+  venía. Ahora abre el buscador.
+
+### Cómo no se rompió el historial, otra vez
+
+Las cuatro rutinas suben las cadenas de ejercicio de 219 a 275 y **dejan las
+claves en 100**. Ni un nombre nuevo: PHUL empieza por «Bench Press» y aquí es
+`Barbell Bench Press`, porque ese nombre *es* la clave con la que se guarda
+cada serie. Una sentadilla hecha en PHUL cae en el mismo historial que la de
+CambiaTuFísico.
+
 ## [0.17.0] — 2026-09-01
 
 **Abdomen todos los días, que el plan ya pedía y la app no daba.**

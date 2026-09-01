@@ -822,6 +822,223 @@ WEEK_ROTATION: list[list[str]] = [
 ]
 
 
+# ─────────────────────────────────────────────────────────────────────────
+# Rutinas conocidas, añadidas en 0.18
+#
+# Alex: «agrega muchas rutinas». Estas cuatro no son inventadas: son programas
+# publicados y con años de uso detrás, transcritos con sus series y
+# repeticiones originales. Lo único que se ha traducido son los **nombres de
+# los ejercicios**, y no al español: al vocabulario que esta app ya usa. PHUL
+# empieza por «Bench Press» y aquí es `Barbell Bench Press`, porque ese nombre
+# **es** la clave del historial (trampa 2) y un segundo nombre para el press de
+# banca partiría en dos meses de series.
+#
+# `tests/test_rutinas_nuevas.py` comprueba que cada ejercicio de cada rutina
+# existe en el catálogo, que es lo único que impide que una de estas abra un
+# historial paralelo sin que nada falle.
+# ─────────────────────────────────────────────────────────────────────────
+
+# PHUL — Power Hypertrophy Upper Lower, de Brandon Campbell.
+# Dos días de fuerza (3-5 reps) y dos de hipertrofia (8-12), sobre el mismo
+# split. Es la que mejor encaja con una recomposición: la fuerza mantiene la
+# carga mientras el déficit corre, y el volumen se lleva el estímulo.
+PHUL_PHASES: list[Phase] = [
+    Phase(
+        1,
+        "1-12",
+        "Fuerza e hipertrofia",
+        "Dos caras del mismo split",
+        "#00D4AA",
+        "4×3-5 / 4×8-12",
+        "2'-3' fuerza · 1'-1'30\" hipertrofia",
+        "Los días de fuerza van a 3-5 con RIR 1-2. Los de hipertrofia, 8-12 "
+        "dejando la última serie cerca del fallo. Sube el peso cuando cierres "
+        "el tope de repeticiones en todas las series.",
+        "high",
+    ),
+]
+
+PHUL_DAYS: list[TrainingDay] = [
+    TrainingDay(
+        "Upper Power",
+        [
+            "Barbell Bench Press [4×3-5]",
+            "Barbell Row [4×3-5]",
+            "Incline DB Press [3×6-10]",
+            "Front Lat Pulldown [3×6-10]",
+            "Barbell Military Press [3×5-8]",
+            "Barbell Curl [3×6-10]",
+            "EZ Bar Skull Crushers [3×8-12]",
+        ],
+    ),
+    TrainingDay(
+        "Lower Power",
+        [
+            "Squat [4×3-5]",
+            "Deadlift [4×3-5]",
+            "Bulgarian Split Squat [3×6-10]",
+            "Lying Leg Curl [3×6-10]",
+            "Standing Calf Raise [4×6-10]",
+        ],
+    ),
+    TrainingDay(
+        "Upper Hypertrophy",
+        [
+            "Incline Barbell Bench Press [4×8-12]",
+            "Seated Cable Row [4×8-12]",
+            "Incline DB Flyes [3×8-12]",
+            "DB Row [3×8-12]",
+            "Lateral Raises [3×8-12]",
+            "DB Curl [3×8-12]",
+            "Triceps Pushdown [3×10-15]",
+        ],
+    ),
+    TrainingDay(
+        "Lower Hypertrophy",
+        [
+            "Barbell Lunges [3×8-12]",
+            "Leg Press [4×8-12]",
+            "Leg Extensions [3×8-12]",
+            "Lying Leg Curl [3×8-12]",
+            "Standing Calf Raise [4×8-12]",
+            "Seated Calf Raise [3×8-12]",
+        ],
+    ),
+]
+
+# StrongLifts 5×5 — el clásico de fuerza para empezar.
+# Tres días, cinco ejercicios, dos sesiones que se alternan. Nada de
+# aislamientos: la premisa es que con poco tiempo entrenado lo que falta es
+# carga en los básicos, no variedad.
+SL_PHASES: list[Phase] = [
+    Phase(
+        1,
+        "1-12",
+        "Progresión lineal",
+        "Cinco por cinco",
+        "#FF6B35",
+        "5×5",
+        "3'-5' sets",
+        "Sube 2,5 kg cada sesión mientras cierres las cinco series de cinco. "
+        "A la tercera vez que falles el mismo peso, baja un 10 % y vuelve a "
+        "subir. El peso muerto es 1×5, no 5×5.",
+        "high",
+    ),
+]
+
+SL_DAYS: list[TrainingDay] = [
+    TrainingDay("Workout A", ["Squat [5×5]", "Barbell Bench Press [5×5]", "Barbell Row [5×5]"]),
+    TrainingDay("Workout B", ["Squat [5×5]", "Barbell Military Press [5×5]", "Deadlift [1×5]"]),
+]
+
+# Arnold Split — 6 días, dos grupos por sesión, mucho volumen.
+# Para semanas en que sobra tiempo y el objetivo es tamaño. Pide comer y
+# dormir en consecuencia; con déficit agresivo no se sostiene.
+ARNOLD_PHASES: list[Phase] = [
+    Phase(
+        1,
+        "1-8",
+        "Volumen",
+        "Seis días, mucho trabajo",
+        "#7C5CFC",
+        "4×8-12",
+        "1'-1'30\" sets",
+        "Series al fallo técnico en la última de cada ejercicio. Esta rutina "
+        "solo funciona con superávit o mantenimiento: en déficit agresivo el "
+        "volumen deja de recuperarse.",
+        "high",
+    ),
+]
+
+ARNOLD_DAYS: list[TrainingDay] = [
+    TrainingDay(
+        "Chest - Back",
+        [
+            "Barbell Bench Press [4×8-12]",
+            "Incline DB Press [4×8-12]",
+            "Pec Deck [3×10-12]",
+            "Pull-ups [4×8-12]",
+            "Barbell Row [4×8-12]",
+            "Seated Cable Row [3×10-12]",
+        ],
+    ),
+    TrainingDay(
+        "Shoulders - Arms",
+        [
+            "Barbell Military Press [4×8-12]",
+            "Lateral Raises [4×10-15]",
+            "Standing Rear Delts [3×12-15]",
+            "Barbell Curl [4×8-12]",
+            "Alternate Hammer Curl [3×10-12]",
+            "EZ Bar Skull Crushers [4×8-12]",
+            "Triceps Pushdown [3×10-15]",
+        ],
+    ),
+    TrainingDay(
+        "Legs",
+        [
+            "Squat [5×8-12]",
+            "Leg Press [4×10-15]",
+            "Lying Leg Curl [4×10-12]",
+            "Romanian Deadlift [3×8-12]",
+            "Standing Calf Raise [5×15-20]",
+        ],
+    ),
+]
+
+# Full Body 3 días — para las semanas en que no hay más.
+# Tres sesiones tocan todo dos veces por semana con la mitad del tiempo; es la
+# rutina a la que bajar en un mes malo, en vez de dejar de entrenar.
+FB_PHASES: list[Phase] = [
+    Phase(
+        1,
+        "1-12",
+        "Cuerpo completo",
+        "Tres días, todo el cuerpo",
+        "#4D96FF",
+        "3×8-12",
+        "1'30\"-2' sets",
+        "La rutina de las semanas con poco tiempo: tres sesiones de una hora "
+        "que tocan todo. Menos volumen que un split, y aún así suficiente para "
+        "mantener y progresar despacio.",
+        "low",
+    ),
+]
+
+FB_DAYS: list[TrainingDay] = [
+    TrainingDay(
+        "Full Body A",
+        [
+            "Squat [3×8-12]",
+            "Barbell Bench Press [3×8-12]",
+            "Barbell Row [3×8-12]",
+            "Lateral Raises [3×12-15]",
+            "Plank [3×30-60]",
+        ],
+    ),
+    TrainingDay(
+        "Full Body B",
+        [
+            "Deadlift [3×6-8]",
+            "Barbell Military Press [3×8-12]",
+            "Front Lat Pulldown [3×8-12]",
+            "Leg Press [3×10-15]",
+            "Barbell Curl [3×10-12]",
+        ],
+    ),
+    TrainingDay(
+        "Full Body C",
+        [
+            "Bulgarian Split Squat [3×8-12]",
+            "Incline DB Press [3×8-12]",
+            "Seated Cable Row [3×8-12]",
+            "Lying Leg Curl [3×10-12]",
+            "Triceps Pushdown [3×10-15]",
+        ],
+    ),
+]
+
+
 ROUTINES: list[Routine] = [
     Routine(
         id="cambiatufisico",
@@ -865,6 +1082,38 @@ ROUTINES: list[Routine] = [
             2: RECOMP_DAYS_ACCUMULATION,
             3: RECOMP_DAYS_DELOAD,
         },
+        week_rotation=None,
+    ),
+    Routine(
+        id="phul",
+        name="PHUL",
+        description="Power Hypertrophy · 4 días · 12 semanas",
+        phases=PHUL_PHASES,
+        days_by_phase={1: PHUL_DAYS},
+        week_rotation=None,
+    ),
+    Routine(
+        id="stronglifts",
+        name="StrongLifts 5×5",
+        description="Fuerza básica · 3 días · progresión lineal",
+        phases=SL_PHASES,
+        days_by_phase={1: SL_DAYS},
+        week_rotation=None,
+    ),
+    Routine(
+        id="arnold",
+        name="Arnold Split",
+        description="Volumen alto · 6 días · 8 semanas",
+        phases=ARNOLD_PHASES,
+        days_by_phase={1: ARNOLD_DAYS},
+        week_rotation=None,
+    ),
+    Routine(
+        id="full-body",
+        name="Full Body 3 días",
+        description="Para las semanas con poco tiempo · 12 semanas",
+        phases=FB_PHASES,
+        days_by_phase={1: FB_DAYS},
         week_rotation=None,
     ),
 ]

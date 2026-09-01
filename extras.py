@@ -171,6 +171,27 @@ def dia_con_extras(dia: Any, store: Any, hoy: date | None = None):
     return TrainingDay(name=dia.name, exercises=[*dia.exercises, *añadidos])
 
 
+def dia_libre(store: Any, hoy: date | None = None):
+    """Un día hecho **solo** de lo que Alex eligió, sin rutina detrás.
+
+    «Ejercicios sueltos»: llegar al gimnasio sin plan, elegir cuatro cosas y
+    hacerlas. Hasta ahora había que entrar por una fase y un día para poder
+    apuntar una serie, lo cual obliga a fingir que hoy tocaba pecho.
+
+    Reutiliza los extras porque *es* lo mismo visto de otra manera: una lista
+    de ejercicios que valen para hoy y que no salen de ningún plan. La
+    diferencia es que aquí no hay rutina encima.
+
+    Se llama «Free» y no «Libre» por lo de siempre: ese nombre va literal a
+    `entrenos.grupo` (trampa 22), donde el vocabulario es inglés —«Chest -
+    Biceps», «Upper Power», «Abs»— y una segunda lengua ahí parte la
+    agrupación de Historial.
+    """
+    from data import TrainingDay
+
+    return TrainingDay(name="Free", exercises=list(de_hoy(store, hoy)))
+
+
 def es_extra(dia: Any, indice: int, store: Any, hoy: date | None = None) -> bool:
     """¿La posición `indice` la puso Alex hoy, o venía en la rutina?
 

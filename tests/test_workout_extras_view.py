@@ -177,3 +177,114 @@ def test_atras_cierra_el_dialogo_antes_de_salir_de_la_pantalla(vista):
     assert vista.handle_back() is True
     assert vista._add_dialog is None
     assert vista.show_day_list is False, "se llevó por delante la pantalla además del diálogo"
+
+
+# ── entreno libre: ejercicios sueltos, sin rutina ────────────────────────
+
+
+def test_el_entreno_libre_solo_lleva_lo_que_elijas(vista):
+    """«Llego al gimnasio sin plan y hago cuatro cosas». Antes había que
+    entrar por una fase y un día, o sea fingir que hoy tocaba pecho — y esa
+    mentira acaba en `entrenos.grupo`, que es lo que agrupa Historial."""
+    extras.anadir(vista.store, "Cable Crossover")
+    extras.anadir(vista.store, "Pec Deck")
+    vista.empezar_libre()
+
+    assert vista.libre is True
+    assert vista._current_day().exercises == ["Cable Crossover", "Pec Deck"]
+    assert vista._current_day().name == "Free"
+
+
+def test_el_dia_libre_se_llama_free_y_no_libre(vista):
+    """Ese nombre va literal a `entrenos.grupo` (trampa 22), donde el
+    vocabulario es inglés — «Chest - Biceps», «Upper Power», «Abs»."""
+    extras.anadir(vista.store, "Pec Deck")
+    vista.empezar_libre()
+    assert vista._current_day().name == "Free"
+
+
+def test_el_entreno_libre_respeta_el_abdomen(vista):
+    """Está encendido para todos los días, y un entreno libre es un día."""
+    import abdomen
+
+    abdomen.configurar(vista.store, activo=True, por_dia=3)
+    extras.anadir(vista.store, "Pec Deck")
+    vista.empezar_libre()
+
+    ejercicios = vista._current_day().exercises
+    assert ejercicios[0] == "Pec Deck"
+    assert ejercicios[1:] == list(abdomen.de_hoy(vista.store))
+
+
+def test_el_entreno_libre_no_duplica_lo_elegido(vista):
+    extras.anadir(vista.store, "Pec Deck")
+    vista.empezar_libre()
+    ejercicios = vista._current_day().exercises
+    assert len(ejercicios) == len(set(ejercicios))
+
+
+def test_atras_sale_del_entreno_libre(vista):
+    extras.anadir(vista.store, "Pec Deck")
+    vista.empezar_libre()
+    assert vista.handle_back() is True
+    assert vista.libre is False
+    assert vista.show_phase_list is True
+
+
+def test_terminar_deja_la_pantalla_limpia(vista):
+    extras.anadir(vista.store, "Pec Deck")
+    vista.empezar_libre()
+    vista._reset()
+    assert vista.libre is False
+
+
+def test_libre_y_abdomen_no_se_pisan(vista):
+    """Empezar uno tiene que apagar el otro, o `_current_day` decidiría por
+    orden de los `if` en vez de por lo que se pidió."""
+    import abdomen
+
+    abdomen.configurar(vista.store, activo=True)
+    vista.empezar_abdomen()
+    assert (vista.solo_abdomen, vista.libre) == (True, False)
+    vista.empezar_libre()
+    assert (vista.solo_abdomen, vista.libre) == (False, True)
+
+
+def test_cambiar_de_modo_no_arrastra_lo_tecleado(vista):
+    """Pasó en el emulador: entrar en «Libre» desde una sesión de pesas dejaba
+    60 kg × 10 prellenados en el primer abdominal.
+
+    `_sets_by_ex` guarda lo escrito **por posición**, así que la posición 0 de
+    un día es la posición 0 del siguiente. A un toque de Guardar y del
+    historial.
+    """
+    vista._sets_by_ex = {0: [{"weight": "60", "reps": "10", "rir": "3", "type": "normal"}]}
+    vista._logged_ex = {0}
+
+    vista.empezar_libre()
+
+    assert vista._sets_by_ex == {}
+    assert vista._logged_ex == set()
+
+
+def test_cambiar_de_modo_guarda_antes_lo_que_habia(vista, monkeypatch):
+    """Limpiar es correcto; perder lo escrito, no. El borrador se persiste
+    primero, igual que al salir con Atrás."""
+    guardados = []
+    monkeypatch.setattr(vista, "_persist_draft", lambda *a, **k: guardados.append(1))
+    vista.empezar_libre()
+    assert guardados, "cambió de modo sin guardar el borrador de la sesión que deja"
+
+
+def test_un_libre_sin_nada_elegido_pide_abrir_el_buscador(vista):
+    """Si no, la pantalla sale con el abdomen del día —o con nada— y sin decir
+    de dónde ha salido."""
+    assert extras.de_hoy(vista.store) == ()
+    vista.empezar_libre()
+    assert vista._abrir_buscador_al_pintar is True
+
+
+def test_un_libre_con_ejercicios_no_abre_nada(vista):
+    extras.anadir(vista.store, "Pec Deck")
+    vista.empezar_libre()
+    assert vista._abrir_buscador_al_pintar is False

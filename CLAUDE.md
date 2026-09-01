@@ -52,7 +52,7 @@ CI (`.github/workflows/ci.yml`) runs, on Python 3.12:
 uv sync --group dev
 uv run ruff check .
 uv run ruff format --check .
-uv run pytest -q          # 2074 tests, 1 skipped (a network test, opt-in)
+uv run pytest -q          # 2120 tests, 1 skipped (a network test, opt-in)
 ```
 
 ## Architecture
@@ -184,6 +184,21 @@ There were eight until 0.2.0, when the four `women-*` routines went: this is a s
 Exercise strings in `days_by_phase` can carry trailing `[scheme]` brackets (`"Squat [5×12,10,8,8,8]"`) and tag brackets like `[comp]` or `[triple drop]`, plus a trailing `*`. `exercises.exercise_key()` strips all of it to produce the DB key. Plan's "Distribution" tab renders only when the active routine has a `week_rotation` **and** the selected phase id is in `(1, 2, 3)`.
 
 When adding a routine: append to `ROUTINES`, keep exercise names spelled exactly as existing ones (see the key contract), and — if images are wanted — make sure the name exists in `exercise_images.EXERCISE_IMAGE`. Adding exercises changes the counts frozen in `tests/test_exercise_key.py`; update those constants deliberately, never to make a red test go green.
+
+#### Las cuatro rutinas de 0.18
+
+PHUL, StrongLifts 5×5, Arnold Split y Full Body 3 días. No son inventadas: son
+programas publicados, transcritos con sus series y repeticiones originales.
+
+Lo único traducido son los **nombres de los ejercicios**, y no al español: al
+vocabulario que esta app ya usa. PHUL empieza por «Bench Press» y aquí es
+`Barbell Bench Press`, porque ese nombre *es* la clave del historial. El
+resultado se ve en los contadores de `test_exercise_key.py`: **CADENAS sube de
+219 a 275 y CLAVES se queda en 100**. Ni un nombre nuevo, y por tanto una
+sentadilla hecha en PHUL cae en el mismo historial que la de CambiaTuFísico.
+
+`tests/test_rutinas_nuevas.py` lo vigila: cada ejercicio existe en el catálogo,
+ninguna rutina estrena clave, y los esquemas `[4×3-5]` los lee `parse_scheme`.
 
 ### `exercise_key()` — the most fragile contract in the system
 
@@ -338,6 +353,18 @@ el buscador arranca filtrado por el grupo del día (abrirlo en «Abs Triset» po
 orden alfabético es abrirlo en el sitio menos útil), y **si el filtro deja cero
 resultados se busca sin él y se dice** — «crunch» un día de pecho contestaba
 «nada» teniendo 21 respuestas en abdomen.
+
+**Entrenar sin rutina** (`extras.dia_libre`, `WorkoutView.empezar_libre`):
+llegar al gimnasio sin plan y hacer cuatro cosas. Antes obligaba a entrar por
+una fase y un día, o sea a fingir que hoy tocaba pecho — y esa mentira acaba en
+`entrenos.grupo`, que es lo que agrupa Historial. Se llama «Free» por lo mismo
+que el abdomen se llama «Abs»: ahí el vocabulario es inglés.
+
+`_entrar_en_modo()` es el único camino a los tres modos (rutina, abdomen,
+libre) y **vacía `_sets_by_ex`**, que guarda lo tecleado indexado por posición.
+Sin eso, entrar en «Libre» desde una sesión de pesas dejaba 60 kg × 10
+prellenados en el primer abdominal, a un toque de Guardar y del historial.
+Persiste el borrador antes: cambiar de modo no puede costar lo escrito.
 
 ### La memoria del coach — `memoria.py`
 
@@ -507,6 +534,29 @@ if props:
 
 So on the phone **no image could ever appear**, no matter how many times they downloaded — 140 files verified on the device, 0 rendered. It was reported as "the images don't download". Re-downloading, clearing the cache and reinstalling all leave it identical, because none of them is the problem. `url_is_served()` decides by asking whether the download directory is inside the served `assets/` dir; when it is not, the bytes go inline as base64, which is **verified to render on Android**.
 
+#### Miniaturas: el CDN que hace posible que 875 tengan foto
+
+`image_props(key, thumb=True)` devuelve la versión pequeña (250×180, ~10 KB
+contra ~60 KB del original). Esa diferencia es la función entera: a tamaño
+completo, las 875 fotos son **126 MB** —cuatro veces la app— y por eso hasta
+0.18 solo tenían foto los 70 del tarball. A tamaño miniatura son ~9 MB, y se
+bajan de sesenta en sesenta según se miran.
+
+Las sirve `THUMB_BASE`, el CDN de ImageKit que **la propia web de Free
+Exercise DB usa** para su buscador. Es un tercero, así que se pide una vez por
+ejercicio y la miniatura se guarda en disco como `<slug>/thumb.jpg` — no
+`2.jpg`, porque los números son *frames* de la animación y `image_frames()`
+los recorre. Si el CDN cae, `_fetch_thumb` cae al mismo `raw` de GitHub de
+siempre: pesa seis veces más y se ve igual.
+
+`thumb_path()` acepta el frame 0 como miniatura cuando la pequeña no está: es
+la misma foto más grande, y preferir la pequeña es cuestión de memoria, no de
+corrección.
+
+Quien pinta una lista pide las que le falten (`descargar_miniaturas`) **solo
+de lo que hay en pantalla**. Bajar las 875 para enseñar sesenta sería gastar
+la conexión de alguien que está en un gimnasio.
+
 **Always set `cache_width`/`cache_height` on a thumbnail.** The source frames are 850×567 photos and `width`/`height` only scale the *drawing*: a 44 px thumbnail still decodes a 1.9 MB bitmap. Browse lists ~100 exercises, i.e. ~180 MB of bitmaps and an out-of-memory kill on the phone.
 
 **Never go back to `file://` URLs.** They worked on desktop and made every image invisible in web mode, which is how this app is actually used: the browser refuses with *"Not allowed to load local resource"* and each exercise renders as blank space that reads like a layout bug. Under `assets/` Flet serves the frames over HTTP from the page's own origin. `tests/test_exercise_images.py` fails if a `file://` ever comes back.
@@ -665,11 +715,11 @@ Pinned to `flet[all]>=0.25,<0.30` — `flet[all]`, not plain `flet`, because web
 
 ## Tests
 
-`.venv/bin/python -m pytest -q` — **2074 tests**, `testpaths = ["tests"]`, `asyncio_mode = "auto"`:
+`.venv/bin/python -m pytest -q` — **2120 tests**, `testpaths = ["tests"]`, `asyncio_mode = "auto"`:
 
-`test_abdomen.py`, `test_agent.py`, `test_analytics.py`, `test_asset_manager.py`, `test_backup.py`, `test_catalogo.py`, `test_chart_baseline.py`, `test_column_migration.py`, `test_day_screen.py`, `test_data_view_counts.py`, `test_dialog_layout.py`, `test_draft_dates.py`, `test_draft_substitution.py`, `test_exercise_images.py`, `test_exercise_key.py`, `test_extras.py`, `test_finde.py`, `test_finde_view.py`, `test_flet_reconnect.py`, `test_fotos.py`, `test_gcal.py`, `test_gym_tools.py`, `test_health.py`, `test_help_dialog.py`, `test_history_notes.py`, `test_history_view.py`, `test_home_view.py`, `test_image_delivery.py`, `test_interfaz_en_espanol.py`, `test_layout_movil.py`, `test_memoria.py`, `test_notificaciones.py`, `test_nutrition.py`, `test_nutrition_view.py`, `test_percent_table.py`, `test_prefill_por_fecha.py`, `test_profile_db_down.py`, `test_puente_dart.py`, `test_program_week.py`, `test_progression.py`, `test_routine_builder.py`, `test_session_duration.py`, `test_session_plan.py`, `test_set_types.py`, `test_shared_ui.py`, `test_smoke.py`, `test_sqlite_backend.py`, `test_storage_metrics.py`, `test_substitutions.py`, `test_theme.py`, `test_timer_sound.py`, `test_weight_trend.py`, `test_widget.py`, `test_workout_date.py`, `test_workout_draft.py`, `test_workout_exercise_date.py`, `test_workout_extras_view.py`, `test_workout_notes.py`, `test_workout_notes_swap.py`, `test_workout_plan_rows.py`, `test_workout_resume.py`, `test_workout_session_time.py`, `test_workout_tools.py`, `test_workout_zen.py`.
+`test_abdomen.py`, `test_agent.py`, `test_analytics.py`, `test_asset_manager.py`, `test_backup.py`, `test_catalogo.py`, `test_chart_baseline.py`, `test_column_migration.py`, `test_day_screen.py`, `test_data_view_counts.py`, `test_dialog_layout.py`, `test_draft_dates.py`, `test_draft_substitution.py`, `test_exercise_images.py`, `test_exercise_key.py`, `test_extras.py`, `test_finde.py`, `test_finde_view.py`, `test_flet_reconnect.py`, `test_fotos.py`, `test_gcal.py`, `test_gym_tools.py`, `test_health.py`, `test_help_dialog.py`, `test_history_notes.py`, `test_history_view.py`, `test_home_view.py`, `test_image_delivery.py`, `test_interfaz_en_espanol.py`, `test_layout_movil.py`, `test_memoria.py`, `test_notificaciones.py`, `test_nutrition.py`, `test_nutrition_view.py`, `test_percent_table.py`, `test_prefill_por_fecha.py`, `test_profile_db_down.py`, `test_puente_dart.py`, `test_program_week.py`, `test_progression.py`, `test_routine_builder.py`, `test_rutinas_nuevas.py`, `test_session_duration.py`, `test_session_plan.py`, `test_set_types.py`, `test_shared_ui.py`, `test_smoke.py`, `test_sqlite_backend.py`, `test_storage_metrics.py`, `test_substitutions.py`, `test_theme.py`, `test_timer_sound.py`, `test_weight_trend.py`, `test_widget.py`, `test_workout_date.py`, `test_workout_draft.py`, `test_workout_exercise_date.py`, `test_workout_extras_view.py`, `test_workout_notes.py`, `test_workout_notes_swap.py`, `test_workout_plan_rows.py`, `test_workout_resume.py`, `test_workout_session_time.py`, `test_workout_tools.py`, `test_workout_zen.py`.
 
-A clean run is `2074 passed, 1 skipped` and needs **nothing installed but the dev group** — no Docker, no server. The single skip is a network test in `test_asset_manager.py` (opt in with `IRONFLET_NETWORK_TESTS=1`). Until 0.12 this section warned to judge a run by its skip count, because 211 tests — everything touching storage — skipped silently without PostgreSQL; that trap is gone with the server.
+A clean run is `2120 passed, 1 skipped` and needs **nothing installed but the dev group** — no Docker, no server. The single skip is a network test in `test_asset_manager.py` (opt in with `IRONFLET_NETWORK_TESTS=1`). Until 0.12 this section warned to judge a run by its skip count, because 211 tests — everything touching storage — skipped silently without PostgreSQL; that trap is gone with the server.
 
 `tests/conftest.py` gives each pytest process its own SQLite file in the system temp dir, for the same reason it used to create a database per pid: the fixtures wipe rows, and two concurrent runs deleting each other's data mid-query produced red runs with a different set of failures each time, in files unrelated to whatever was being changed.
 

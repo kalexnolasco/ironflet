@@ -231,8 +231,14 @@ def _slug_de(key: str) -> str:
         return ""
 
 
-def image_props(key: str, frame: int = 0) -> dict:
+def image_props(key: str, frame: int = 0, thumb: bool = False) -> dict:
     """Kwargs for `ft.Image` that render `key` on every platform.
+
+    `thumb=True` asks for the small version (250×180, ~10 KB against ~60 KB).
+    It is what a list wants: 875 rows at full size decode to hundreds of MB,
+    and 875 downloads at full size are 126 MB of somebody's data plan.
+    `thumb_path` falls back to frame 0 when the small one is not there, so a
+    list never goes blank for want of a thumbnail.
 
     Returns `{}` when there is no image, so callers branch on truthiness:
 
@@ -247,9 +253,9 @@ def image_props(key: str, frame: int = 0) -> dict:
     slug = _slug_de(key)
     if not slug:
         return {}
-    from asset_manager import image_path
+    from asset_manager import image_path, thumb_path
 
-    path = image_path(slug, frame) or image_path(slug, 0)
+    path = thumb_path(slug) if thumb else (image_path(slug, frame) or image_path(slug, 0))
     if path is None:
         return {}
     if url_is_served():
