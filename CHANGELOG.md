@@ -4,6 +4,50 @@ Todos los cambios notables de IronFlet.
 El formato sigue [Keep a Changelog](https://keepachangelog.com/) y el proyecto
 usa [SemVer](https://semver.org/).
 
+## [0.20.0] — 2026-09-01
+
+**Medirte entero, saber cuándo llegas, y que el entrenador escriba él.**
+
+### Añadido
+
+- **Las cinco medidas**, no solo la cintura. `medidas` declaraba cintura,
+  cadera, pecho, brazo y muslo desde que existe y la app solo pedía una, con un
+  comentario que decía que las otras «son del coach» — ese coach era el de
+  Telegram y se jubiló en la 0.13. Llevaban dos versiones vacías.
+
+  Y lo que dicen **juntas**, que es lo único que justifica medir cinco cosas:
+  «Cintura −1,7 cm y pecho y brazo arriba: es la recomposición, y el peso puede
+  no estar diciéndolo». Calla cuando todo está dentro del ruido de la cinta
+  (±0,5 cm), que es lo que pasa las primeras semanas.
+
+- **Objetivo de peso, con fecha.** Pones 78 kg y te dice cuándo llegas al ritmo
+  que llevas de verdad — de tu media móvil de 7 días, no del último pesaje. Se
+  niega a dar fecha si vas en dirección contraria, si el ritmo es casi nulo o si
+  queda a más de un año, y en los tres casos dice cuál de los tres es.
+
+- **El repaso semanal**: una vez por semana el entrenador mira tus entrenos, tu
+  peso y tus medidas y te deja tres frases en Inicio. Hasta ahora solo
+  contestaba cuando le hablabas.
+
+  Es **la única cosa de la app que hace una llamada de pago sin que la pidas**,
+  y de ahí todo su diseño: apagado de fábrica, una por semana, y el coste
+  guardado junto al texto y escrito debajo. Un gasto que nadie ve es un gasto
+  que se descubre en un extracto.
+
+### Detalles que costaron más de lo que parecen
+
+- **La fecha del objetivo se dice con la precisión que el dato aguanta.** Un
+  solo pesaje de dos kilos —lo que mueve una cena salada— desplaza la previsión
+  46 días. Eso no se arregla amortiguando más el ritmo: lo que está mal es
+  prometer un martes concreto de diciembre. A dos semanas se dice el día; a tres
+  meses, los meses.
+- **El repaso cuenta por semana ISO, no por «han pasado 7 días»**: lo segundo
+  se desplaza cada vez que uno llega tarde, y en dos meses el repaso del lunes
+  cae en jueves.
+- **La semana se marca antes de llamar al modelo.** Si la llamada revienta a
+  mitad, lo que no puede pasar es que el siguiente arranque lo intente otra vez
+  y lo vuelva a pagar.
+
 ## [0.19.0] — 2026-09-01
 
 **Los ejercicios, en español.**

@@ -68,7 +68,7 @@ CI (`.github/workflows/ci.yml`) runs, on Python 3.12:
 uv sync --group dev
 uv run ruff check .
 uv run ruff format --check .
-uv run pytest -q          # 2146 tests, 1 skipped (a network test, opt-in)
+uv run pytest -q          # 2193 tests, 1 skipped (a network test, opt-in)
 ```
 
 ## Architecture
@@ -323,6 +323,43 @@ nombre para lo mismo parte la agrupación de Historial en dos.
 Y los nombres del pool son los del catálogo, comprobados por un test que ya
 cazó uno inventado —`Hanging Leg Raise`, que no existe— antes de que llegara a
 ninguna parte.
+
+### Las cinco medidas, el objetivo y el repaso — 0.20
+
+Tres cosas que la app **casi** tenía y no aprovechaba.
+
+**Las cuatro columnas que no eran de nadie.** `medidas` declara cintura,
+cadera, pecho, brazo y muslo desde que existe, y hasta 0.20 la pantalla solo
+pedía la cintura con un comentario que decía «las otras cuatro son del coach».
+Ese coach era el de Telegram y se jubiló en 0.13: llevaban dos versiones vacías
+en un plan de recomposición donde son justo las que dicen si funciona — el peso
+puede no moverse en un mes mientras la cintura baja y el brazo sube.
+
+`analytics.cambios_de_medidas` las lee y `lectura_de_recomposicion` dice lo que
+significan **juntas**, que es lo único que justifica medir cinco cosas. Sigue
+la política de `WaistSummary`: describe, no falla un veredicto, y **calla
+cuando todo está dentro del ruido de la cinta** (`RUIDO_CINTA_CM = 0.5`), que
+es lo que pasa las primeras semanas. La cadera no tiene dirección deseada a
+propósito: baja con la grasa y sube con el glúteo.
+
+**El objetivo de peso** (`proyectar_peso`) convierte en respuesta lo que ya se
+sabía. Se niega a dar fecha en tres casos —ritmo casi nulo, dirección
+contraria, más de un año— y en los tres devuelve el resto: ir hacia atrás no es
+lo mismo que ir despacio.
+
+Y **la fecha se dice con la precisión que el dato aguanta** (`Proyeccion.
+cuando()`). Un solo pesaje de dos kilos —lo que mueve una cena salada—
+desplaza la previsión **46 días**, y eso no se arregla amortiguando más el
+ritmo: lo que está mal es prometer un martes concreto de diciembre. A dos
+semanas se dice el día; a tres meses, los meses.
+
+**El repaso semanal** (`repaso.py`) es **la única función de la app que hace
+una llamada de pago sin que Alex la pida**. De ahí todo su diseño: apagado de
+fábrica, una vez por semana medida en **semana ISO** (un «han pasado 7 días» se
+desplaza y en dos meses el repaso del lunes cae en jueves), la semana se marca
+**antes** de llamar para que un fallo de red no se convierta en un reintento
+por arranque que sí se cobra, y el coste se guarda con el texto y sale en
+pantalla. Un gasto que nadie ve es un gasto que se descubre en un extracto.
 
 ### El catálogo grande y los extras — `catalogo.py` + `extras.py`
 
@@ -742,11 +779,11 @@ Pinned to `flet[all]>=0.25,<0.30` — `flet[all]`, not plain `flet`, because web
 
 ## Tests
 
-`.venv/bin/python -m pytest -q` — **2146 tests**, `testpaths = ["tests"]`, `asyncio_mode = "auto"`:
+`.venv/bin/python -m pytest -q` — **2193 tests**, `testpaths = ["tests"]`, `asyncio_mode = "auto"`:
 
-`test_abdomen.py`, `test_agent.py`, `test_analytics.py`, `test_asset_manager.py`, `test_backup.py`, `test_catalogo.py`, `test_chart_baseline.py`, `test_column_migration.py`, `test_day_screen.py`, `test_data_view_counts.py`, `test_dialog_layout.py`, `test_draft_dates.py`, `test_draft_substitution.py`, `test_exercise_images.py`, `test_exercise_key.py`, `test_extras.py`, `test_finde.py`, `test_finde_view.py`, `test_flet_reconnect.py`, `test_fotos.py`, `test_gcal.py`, `test_gym_tools.py`, `test_health.py`, `test_help_dialog.py`, `test_history_notes.py`, `test_history_view.py`, `test_home_view.py`, `test_image_delivery.py`, `test_interfaz_en_espanol.py`, `test_layout_movil.py`, `test_memoria.py`, `test_nombres_es.py`, `test_notificaciones.py`, `test_nutrition.py`, `test_nutrition_view.py`, `test_percent_table.py`, `test_prefill_por_fecha.py`, `test_profile_db_down.py`, `test_puente_dart.py`, `test_program_week.py`, `test_progression.py`, `test_routine_builder.py`, `test_rutinas_nuevas.py`, `test_session_duration.py`, `test_session_plan.py`, `test_set_types.py`, `test_shared_ui.py`, `test_smoke.py`, `test_sqlite_backend.py`, `test_storage_metrics.py`, `test_substitutions.py`, `test_theme.py`, `test_timer_sound.py`, `test_weight_trend.py`, `test_widget.py`, `test_workout_date.py`, `test_workout_draft.py`, `test_workout_exercise_date.py`, `test_workout_extras_view.py`, `test_workout_notes.py`, `test_workout_notes_swap.py`, `test_workout_plan_rows.py`, `test_workout_resume.py`, `test_workout_session_time.py`, `test_workout_tools.py`, `test_workout_zen.py`.
+`test_abdomen.py`, `test_agent.py`, `test_analytics.py`, `test_asset_manager.py`, `test_backup.py`, `test_catalogo.py`, `test_chart_baseline.py`, `test_column_migration.py`, `test_day_screen.py`, `test_data_view_counts.py`, `test_dialog_layout.py`, `test_draft_dates.py`, `test_draft_substitution.py`, `test_exercise_images.py`, `test_exercise_key.py`, `test_extras.py`, `test_finde.py`, `test_finde_view.py`, `test_flet_reconnect.py`, `test_fotos.py`, `test_gcal.py`, `test_gym_tools.py`, `test_health.py`, `test_help_dialog.py`, `test_history_notes.py`, `test_history_view.py`, `test_home_view.py`, `test_image_delivery.py`, `test_interfaz_en_espanol.py`, `test_layout_movil.py`, `test_medidas_y_objetivo.py`, `test_memoria.py`, `test_nombres_es.py`, `test_notificaciones.py`, `test_nutrition.py`, `test_nutrition_view.py`, `test_percent_table.py`, `test_prefill_por_fecha.py`, `test_profile_db_down.py`, `test_puente_dart.py`, `test_program_week.py`, `test_repaso.py`, `test_progression.py`, `test_routine_builder.py`, `test_rutinas_nuevas.py`, `test_session_duration.py`, `test_session_plan.py`, `test_set_types.py`, `test_shared_ui.py`, `test_smoke.py`, `test_sqlite_backend.py`, `test_storage_metrics.py`, `test_substitutions.py`, `test_theme.py`, `test_timer_sound.py`, `test_weight_trend.py`, `test_widget.py`, `test_workout_date.py`, `test_workout_draft.py`, `test_workout_exercise_date.py`, `test_workout_extras_view.py`, `test_workout_notes.py`, `test_workout_notes_swap.py`, `test_workout_plan_rows.py`, `test_workout_resume.py`, `test_workout_session_time.py`, `test_workout_tools.py`, `test_workout_zen.py`.
 
-A clean run is `2146 passed, 1 skipped` and needs **nothing installed but the dev group** — no Docker, no server. The single skip is a network test in `test_asset_manager.py` (opt in with `IRONFLET_NETWORK_TESTS=1`). Until 0.12 this section warned to judge a run by its skip count, because 211 tests — everything touching storage — skipped silently without PostgreSQL; that trap is gone with the server.
+A clean run is `2193 passed, 1 skipped` and needs **nothing installed but the dev group** — no Docker, no server. The single skip is a network test in `test_asset_manager.py` (opt in with `IRONFLET_NETWORK_TESTS=1`). Until 0.12 this section warned to judge a run by its skip count, because 211 tests — everything touching storage — skipped silently without PostgreSQL; that trap is gone with the server.
 
 `tests/conftest.py` gives each pytest process its own SQLite file in the system temp dir, for the same reason it used to create a database per pid: the fixtures wipe rows, and two concurrent runs deleting each other's data mid-query produced red runs with a different set of failures each time, in files unrelated to whatever was being changed.
 

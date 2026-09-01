@@ -877,3 +877,292 @@ def waist_summary(measurements: Iterable[Any], today: date | None = None) -> Wai
             }
         )
     return WaistSummary(**resumen)
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Las cinco medidas, y qué dicen juntas
+# ─────────────────────────────────────────────────────────────────────────
+#
+# `medidas` tiene cinco columnas desde que existe —cintura, cadera, pecho,
+# brazo, muslo— y hasta 0.20 la app solo pedía la cintura. Las otras cuatro
+# eran del coach de Telegram, que se jubiló en 0.13, así que llevaban dos
+# versiones sin que nadie las llenara.
+#
+# Para una recomposición son *la* métrica. El peso puede quedarse quieto un mes
+# entero mientras la cintura baja un centímetro y el brazo sube medio: eso es
+# exactamente lo que se busca, y la báscula no lo dice.
+
+#: Nombre de campo → cómo se llama en pantalla y dónde se mide. El orden es el
+#: de la pantalla: primero la que frena el plan.
+CAMPOS_MEDIDA: tuple[tuple[str, str, str], ...] = (
+    ("waist", "Cintura", "a la altura del ombligo, relajado"),
+    ("chest", "Pecho", "por la línea de los pezones, sin hinchar"),
+    ("arm", "Brazo", "el más grueso, contraído"),
+    ("thigh", "Muslo", "por el punto más ancho"),
+    ("hip", "Cadera", "por la parte más ancha del glúteo"),
+)
+
+#: Lo que cada medida debería hacer en una recomposición. `-1` bajar, `+1`
+#: subir, `0` ni una cosa ni otra.
+#:
+#: La cadera es `0` a propósito y no por descuido: baja con la grasa y sube con
+#: el glúteo, así que su dirección depende de qué esté pasando — y decidirlo
+#: por Alex sería justo lo que `WaistSummary` explica que no se hace.
+DIRECCION_DESEADA: dict[str, int] = {
+    "waist": -1,
+    "chest": +1,
+    "arm": +1,
+    "thigh": +1,
+    "hip": 0,
+}
+
+#: Ruido de una cinta métrica bien usada. Por debajo de esto, un cambio no es
+#: un cambio: es haber apretado distinto. La cintura ya usaba este número
+#: implícitamente —el plan dispara a 1 cm, el doble— y aquí se escribe.
+RUIDO_CINTA_CM = 0.5
+
+
+@dataclass(frozen=True)
+class CambioMedida:
+    """Una medida, su base y cuánto se ha movido. Sin veredicto."""
+
+    campo: str
+    etiqueta: str
+    ultima: float
+    ultima_on: date
+    base: float
+    base_on: date
+    #: Positivo = ha subido. Redondeado a la décima, que es lo que una cinta
+    #: distingue.
+    cambio: float
+    dias: int
+
+    @property
+    def significativo(self) -> bool:
+        """¿Se ha movido más de lo que la cinta se equivoca?"""
+        return abs(self.cambio) >= RUIDO_CINTA_CM
+
+    @property
+    def va_bien(self) -> bool | None:
+        """`True`/`False` si se mueve hacia donde debe. `None` si no se sabe.
+
+        `None` en dos casos y los dos importan: cuando el cambio está dentro
+        del ruido (no se ha movido, no es ni bueno ni malo) y cuando el campo
+        no tiene dirección deseada, como la cadera.
+        """
+        deseada = DIRECCION_DESEADA.get(self.campo, 0)
+        if deseada == 0 or not self.significativo:
+            return None
+        return (self.cambio < 0) if deseada < 0 else (self.cambio > 0)
+
+
+def cambios_de_medidas(
+    measurements: Iterable[Any], today: date | None = None
+) -> tuple[CambioMedida, ...]:
+    """Cada medida con al menos dos lecturas, en el orden de `CAMPOS_MEDIDA`.
+
+    Se salta las que solo tienen una: una medida sola es una base, no un
+    cambio, y pintarla con «+0,0» invita a leer que no se mueve cuando lo que
+    pasa es que no hay con qué comparar.
+    """
+    hoy = today or date.today()
+    filas = list(measurements or [])
+    salida = []
+
+    for campo, etiqueta, _donde in CAMPOS_MEDIDA:
+        puntos: list[tuple[date, float]] = []
+        for row in filas:
+            valor = _num(_field(row, campo))
+            cuando = _as_date(_field(row, "date"))
+            if valor is not None and cuando is not None:
+                puntos.append((cuando, valor))
+        puntos.sort()
+        if len(puntos) < 2:
+            continue
+        base_on, base = puntos[0]
+        ultima_on, ultima = puntos[-1]
+        salida.append(
+            CambioMedida(
+                campo=campo,
+                etiqueta=etiqueta,
+                ultima=ultima,
+                ultima_on=ultima_on,
+                base=base,
+                base_on=base_on,
+                cambio=round(ultima - base, 1),
+                dias=(hoy - ultima_on).days,
+            )
+        )
+    return tuple(salida)
+
+
+def lectura_de_recomposicion(cambios: Iterable[CambioMedida]) -> str:
+    """Una frase sobre lo que dicen las medidas juntas. Vacía si no dicen nada.
+
+    Esto es lo único que justifica medir cinco cosas en vez de una: **la
+    cintura bajando mientras el pecho o el brazo suben es la recomposición
+    ocurriendo**, y ninguna de las dos medidas lo dice por su cuenta.
+
+    Describe, no felicita ni riñe. Y calla cuando todo está dentro del ruido de
+    la cinta, que es lo que pasa las primeras semanas: inventar una lectura ahí
+    sería exactamente el veredicto que `WaistSummary` explica por qué no se da.
+    """
+    movidos = [c for c in cambios if c.significativo]
+    if not movidos:
+        return ""
+
+    cintura = next((c for c in movidos if c.campo == "waist"), None)
+    musculo = [c for c in movidos if c.campo in ("chest", "arm", "thigh")]
+
+    baja_cintura = cintura is not None and cintura.cambio < 0
+    sube_musculo = [c for c in musculo if c.cambio > 0]
+
+    if baja_cintura and sube_musculo:
+        cuales = " y ".join(c.etiqueta.lower() for c in sube_musculo)
+        return (
+            f"Cintura {cintura.cambio:+.1f} cm y {cuales} arriba: es la recomposición, "
+            "y el peso puede no estar diciéndolo."
+        )
+    if baja_cintura:
+        return f"Cintura {cintura.cambio:+.1f} cm desde la base. El resto, dentro del ruido."
+    if cintura is not None and cintura.cambio > 0 and sube_musculo:
+        cuales = " y ".join(c.etiqueta.lower() for c in sube_musculo)
+        return (
+            f"Suben {cuales} y también la cintura ({cintura.cambio:+.1f} cm). "
+            "Con déficit eso suele ser demasiada comida, no más músculo."
+        )
+    if cintura is not None and cintura.cambio > 0:
+        return (
+            f"Cintura {cintura.cambio:+.1f} cm desde la base — el plan recorta 150 kcal "
+            "cuando sube un centímetro."
+        )
+    cuales = " y ".join(c.etiqueta.lower() for c in sube_musculo)
+    return f"Suben {cuales}. La cintura no se ha movido de su base." if sube_musculo else ""
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# El objetivo de peso, y si se llega
+# ─────────────────────────────────────────────────────────────────────────
+
+#: Por debajo de este ritmo (kg/semana, en valor absoluto) no se proyecta nada.
+#: A 0,05 kg/semana faltarían dos años para cinco kilos, y una fecha así no es
+#: una previsión: es una división. `weight_trend` ya se niega a dar un ritmo sin
+#: recorrido suficiente; esto se niega a extrapolar uno que existe pero no dice
+#: nada.
+RITMO_MINIMO_KG_SEMANA = 0.1
+
+#: Y por encima de este horizonte tampoco. Un año da igual a qué distancia esté
+#: el objetivo: nadie planifica con eso, y ponerle fecha lo hace parecer firme.
+HORIZONTE_MAXIMO_SEMANAS = 52
+
+
+@dataclass(frozen=True)
+class Proyeccion:
+    """Dónde estás, a dónde vas y si el ritmo lleva allí.
+
+    Todos los campos pueden ser `None` y cada `None` dice algo distinto:
+
+    * `actual` — no hay peso suficiente para una media móvil.
+    * `ritmo` — hay peso pero no recorrido: `weight_trend` se niega a estimar.
+    * `semanas` / `fecha` — hay ritmo, pero no lleva al objetivo (va al revés,
+      es demasiado lento, o queda más allá del horizonte).
+
+    `acercandose` distingue el segundo caso del tercero: es `False` cuando el
+    peso se mueve **en dirección contraria** al objetivo, que es una cosa que
+    hay que decir y no callar bajo un «no se puede estimar».
+    """
+
+    objetivo: float
+    actual: float | None = None
+    ritmo: float | None = None
+    #: Kilos que faltan, con signo: positivo = hay que bajar.
+    faltan: float | None = None
+    semanas: float | None = None
+    fecha: date | None = None
+    acercandose: bool | None = None
+    #: `True` cuando ya se está dentro de medio kilo del objetivo.
+    logrado: bool = False
+
+    def cuando(self) -> str:
+        """Cuándo se llega, dicho con la precisión que el dato aguanta.
+
+        **La fecha exacta es precisión falsa.** El ritmo sale de la media móvil
+        de 7 días, y un solo pesaje raro —dos kilos, lo que mueve una cena
+        salada— la desplaza lo justo para adelantar la previsión mes y medio.
+        Amortiguar más el ritmo no arregla eso: lo que está mal es prometer un
+        martes concreto de diciembre.
+
+        Así que la unidad es la semana, y la fecha se dice como lo que es: una
+        referencia. Cuanto más lejos queda, más redonda se dice.
+        """
+        if self.logrado:
+            return "ya estás ahí"
+        if self.fecha is None or self.semanas is None:
+            return ""
+        if self.semanas <= 2:
+            return f"en {self.semanas:.0f} semanas ({self.fecha.strftime('%d/%m')})"
+        if self.semanas <= 12:
+            return f"en unas {self.semanas:.0f} semanas, hacia el {self.fecha.strftime('%d/%m')}"
+        meses = self.semanas / 4.345
+        return f"en unos {meses:.0f} meses, si el ritmo aguanta"
+
+
+def proyectar_peso(
+    weights: Iterable[Any],
+    objetivo: float,
+    today: date | None = None,
+    days: int = 7,
+) -> Proyeccion:
+    """Cuándo se llega al objetivo al ritmo que se lleva de verdad.
+
+    El ritmo sale de `weight_trend`, o sea de la **media móvil** y nunca de dos
+    pesajes: el plan ajusta a ±0,3 kg/semana y la báscula se mueve un kilo con
+    la sal de una cena. Extrapolar el dato crudo daría fechas que cambian cada
+    mañana.
+
+    Se niega a dar fecha en tres casos —ritmo casi nulo, dirección contraria, y
+    más de un año— y en los tres devuelve el resto de los datos. Una previsión
+    que nadie puede usar es peor que ninguna: se recuerda igual y no se cumple.
+    """
+    hoy = today or date.today()
+    actual, ritmo = weight_trend(weights, days=days)
+
+    if actual is None:
+        return Proyeccion(objetivo=objetivo)
+
+    faltan = round(actual - objetivo, 2)
+    if abs(faltan) <= 0.5:
+        return Proyeccion(
+            objetivo=objetivo, actual=actual, ritmo=ritmo, faltan=faltan, logrado=True
+        )
+
+    if ritmo is None:
+        return Proyeccion(objetivo=objetivo, actual=actual, faltan=faltan)
+
+    # Hacia dónde hay que ir, y hacia dónde se va. `faltan > 0` significa que
+    # sobra peso, así que el ritmo tiene que ser negativo.
+    va_bien = (ritmo < 0) if faltan > 0 else (ritmo > 0)
+    if not va_bien or abs(ritmo) < RITMO_MINIMO_KG_SEMANA:
+        return Proyeccion(
+            objetivo=objetivo,
+            actual=actual,
+            ritmo=ritmo,
+            faltan=faltan,
+            acercandose=va_bien,
+        )
+
+    semanas = abs(faltan) / abs(ritmo)
+    if semanas > HORIZONTE_MAXIMO_SEMANAS:
+        return Proyeccion(
+            objetivo=objetivo, actual=actual, ritmo=ritmo, faltan=faltan, acercandose=True
+        )
+
+    return Proyeccion(
+        objetivo=objetivo,
+        actual=actual,
+        ritmo=ritmo,
+        faltan=faltan,
+        semanas=round(semanas, 1),
+        fecha=hoy + timedelta(days=int(round(semanas * 7))),
+        acercandose=True,
+    )

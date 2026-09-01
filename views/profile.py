@@ -219,28 +219,44 @@ class ProfileView:
 
     # ── waist ────────────────────────────────────────────────
     def _open_log_waist(self):
-        """Record the tape measurement the plan brakes on.
+        """Apuntar las medidas. Las cinco, no solo la cintura.
 
-        This exists because nothing else captures it. The coach has a
-        `registrar_medidas` tool but no command and no reminder — it fires only
-        if the model happens to decide to — and `medidas` is empty, on a plan
-        that is already running. A number the plan adjusts calories by cannot
-        depend on an LLM remembering to ask.
+        Existe porque nada más las captura. El coach tiene una herramienta
+        `registrar_medidas` sin comando ni recordatorio —solo dispara si al
+        modelo se le ocurre— y `medidas` estaba vacía con el plan ya en marcha.
+        Un número por el que el plan ajusta calorías no puede depender de que
+        un LLM se acuerde de preguntarlo.
 
-        Only the waist. The other four columns of `medidas` are the coach's, and
-        `save_measurement` leaves anything it is not given untouched, so saving
-        here never costs him a chest or a thigh recorded at a check-in.
+        Hasta 0.20 esto pedía **solo la cintura**, y el comentario decía que
+        las otras cuatro columnas «son del coach». Ese coach era el de Telegram
+        y se jubiló en la 0.13: llevaban dos versiones sin que nadie las
+        llenara, en un plan de recomposición donde son justo las que dicen si
+        funciona. La báscula puede no moverse en un mes mientras la cintura
+        baja y el brazo sube.
+
+        `save_measurement` deja intacto lo que no recibe, así que un campo en
+        blanco no borra lo que hubiera: se apunta lo que se haya medido hoy.
         """
-        cm_field = ft.TextField(
-            label="Cintura (cm)",
-            keyboard_type=ft.KeyboardType.NUMBER,
-            bgcolor=C.bg_page,
-            border_color=C.border,
-            focused_border_color=C.accent,
-            color=C.text,
-            text_size=14,
-            autofocus=True,
-        )
+        from analytics import CAMPOS_MEDIDA
+
+        campos: dict[str, ft.TextField] = {}
+        filas: list[ft.Control] = []
+        for campo, etiqueta, donde in CAMPOS_MEDIDA:
+            campos[campo] = ft.TextField(
+                label=f"{etiqueta} (cm)",
+                keyboard_type=ft.KeyboardType.NUMBER,
+                bgcolor=C.bg_page,
+                border_color=C.border,
+                focused_border_color=C.accent,
+                color=C.text,
+                text_size=14,
+                dense=True,
+                autofocus=campo == "waist",
+                helper_text=donde,
+                helper_style=ft.TextStyle(size=10, color=C.text_muted),
+            )
+            filas.append(campos[campo])
+
         date_field = ft.TextField(
             label="Fecha (AAAA-MM-DD)",
             value=date.today().isoformat(),
@@ -249,6 +265,7 @@ class ProfileView:
             focused_border_color=C.accent,
             color=C.text,
             text_size=14,
+            dense=True,
         )
         err = ft.Text("", size=11, color=C.danger)
 
@@ -261,10 +278,20 @@ class ProfileView:
                 err.value = "Formato de fecha inválido"
                 self.page.update()
                 return
+
+            # Solo lo que se ha escrito. Mandar los cinco con los vacíos a
+            # `None` sería decir «medido como nada» en vez de «no medido».
+            valores = {
+                campo: (c.value or "").replace(",", ".").strip()
+                for campo, c in campos.items()
+                if (c.value or "").strip()
+            }
+            if not valores:
+                err.value = "Escribe al menos una medida"
+                self.page.update()
+                return
             try:
-                self.store.save_measurement(
-                    on_date=dv or None, waist=(cm_field.value or "").replace(",", ".")
-                )
+                self.store.save_measurement(on_date=dv or None, **valores)
             except ValueError as exc:
                 err.value = str(exc)
                 self.page.update()
@@ -275,24 +302,26 @@ class ProfileView:
         dlg = ft.AlertDialog(
             modal=False,
             bgcolor=C.bg_surface,
-            title=ft.Text("Apuntar cintura", size=16, weight=ft.FontWeight.W_900, color=C.text),
+            title=ft.Text("Apuntar medidas", size=16, weight=ft.FontWeight.W_900, color=C.text),
             content=ft.Container(
                 content=ft.Column(
                     [
                         ft.Text(
-                            "A la altura del ombligo, relajado, a primera hora — siempre igual. "
-                            "El plan recorta 150 kcal si esto sube ~1 cm.",
+                            "Siempre a la misma hora y en las mismas condiciones — a primera "
+                            "hora, en frío. Deja en blanco lo que no midas hoy: no se borra.",
                             size=11,
                             color=C.text_secondary,
                         ),
-                        cm_field,
+                        *filas,
                         date_field,
                         err,
                     ],
                     spacing=10,
                     tight=True,
+                    scroll=ft.ScrollMode.AUTO,
                 ),
                 width=self._dialog_width(),
+                height=dialog_height(self.page, 460),
             ),
             actions=[
                 ft.TextButton(
@@ -369,12 +398,17 @@ class ProfileView:
                     )
                 )
 
+        # Las otras cuatro, y lo que dicen juntas. Debajo de la cintura porque
+        # la cintura es la que frena el plan; encima del botón porque es lo que
+        # se viene a leer.
+        cuerpo += self._otras_medidas()
+
         cuerpo.append(ft.Container(height=6))
         cuerpo.append(
             ft.Row(
                 [
                     primary_button(
-                        "Apuntar cintura" if resumen.known else "Fijar la base",
+                        "Apuntar medidas" if resumen.known else "Fijar la base",
                         on_click=lambda _: self._open_log_waist(),
                         expand=True,
                     )
@@ -382,6 +416,73 @@ class ProfileView:
             )
         )
         return card(*cuerpo, padding=14)
+
+    def _otras_medidas(self) -> list[ft.Control]:
+        """Pecho, brazo, muslo y cadera, más la lectura de las cinco juntas.
+
+        Devuelve `[]` mientras no haya dos lecturas de nada: una medida sola es
+        una base, no un cambio, y pintarla con «+0,0» invita a leer que no se
+        mueve cuando lo que pasa es que no hay con qué comparar.
+        """
+        from analytics import cambios_de_medidas, lectura_de_recomposicion
+
+        try:
+            cambios = cambios_de_medidas(self.store.get_measurements(limit=60))
+        except Exception:
+            return []
+        otras = [c for c in cambios if c.campo != "waist"]
+        if not otras and not cambios:
+            return []
+
+        filas: list[ft.Control] = [ft.Container(height=10)]
+
+        for c in otras:
+            # El color dice si va hacia donde debe; el gris, que aún no se sabe.
+            # `va_bien` es `None` dentro del ruido de la cinta y en la cadera,
+            # que sube con el glúteo y baja con la grasa.
+            color = (
+                C.success
+                if c.va_bien is True
+                else C.warning
+                if c.va_bien is False
+                else C.text_muted
+            )
+            filas.append(
+                ft.Row(
+                    [
+                        ft.Text(c.etiqueta, size=11, color=C.text_secondary, width=68),
+                        ft.Text(
+                            f"{c.ultima:g} cm",
+                            size=12,
+                            weight=ft.FontWeight.W_700,
+                            color=C.text,
+                            width=64,
+                        ),
+                        ft.Text(
+                            f"{c.cambio:+.1f}" if c.significativo else "—",
+                            size=12,
+                            weight=ft.FontWeight.W_800,
+                            color=color,
+                            expand=True,
+                        ),
+                    ],
+                    spacing=4,
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                )
+            )
+
+        lectura = lectura_de_recomposicion(cambios)
+        if lectura:
+            filas.append(ft.Container(height=6))
+            filas.append(
+                ft.Container(
+                    content=ft.Text(lectura, size=11, color=C.text, weight=ft.FontWeight.W_600),
+                    bgcolor=C.bg_sunken,
+                    border_radius=Radius.sm,
+                    padding=ft.padding.symmetric(vertical=8, horizontal=10),
+                )
+            )
+        return filas
 
     # ── backup / restore ─────────────────────────────────────
     def _open_backup(self, _=None):
@@ -764,6 +865,124 @@ class ProfileView:
                     size=10,
                 )
             )
+
+        return card(*cuerpo)
+
+    # ── el repaso semanal ────────────────────────────────────
+
+    def _repaso_section(self) -> ft.Control:
+        """El interruptor de la única función que gasta dinero sola.
+
+        Por eso la tarjeta dice **antes de encenderlo** qué va a hacer y qué
+        cuesta: es una llamada de pago por semana, a la tarjeta de Alex, sin
+        que él toque nada. Encenderlo tiene que ser una decisión informada, no
+        un descubrimiento en el extracto.
+        """
+        import repaso
+
+        try:
+            encendido = repaso.activo(self.store)
+            dia = repaso.dia_semana(self.store)
+            ultimo = repaso.ultimo(self.store)
+            hay_clave = agent.has_key(self.store)
+        except Exception as exc:
+            return db_error_card(exc, on_retry=self.page.data["refresh_current"])
+
+        def _cambiar(e):
+            repaso.configurar(self.store, activo=bool(e.control.value))
+            self.page.data["refresh_current"]()
+
+        def _dia(e):
+            with contextlib.suppress(TypeError, ValueError):
+                repaso.configurar(self.store, dia=int(e.control.value))
+                self.page.data["refresh_current"]()
+
+        cuerpo: list[ft.Control] = [
+            ft.Row(
+                [
+                    ft.Column(
+                        [
+                            ft.Text(
+                                "Que te escriba él",
+                                size=13,
+                                weight=ft.FontWeight.W_700,
+                                color=C.text,
+                            ),
+                            ft.Text(
+                                "Una vez por semana mira tus entrenos, tu peso y tus "
+                                "medidas y te deja un repaso en Inicio.",
+                                size=11,
+                                color=C.text_secondary,
+                            ),
+                        ],
+                        spacing=2,
+                        expand=True,
+                        tight=True,
+                    ),
+                    ft.Switch(
+                        value=encendido,
+                        on_change=_cambiar,
+                        active_color=C.accent,
+                        disabled=not hay_clave,
+                    ),
+                ],
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
+        ]
+
+        if not hay_clave:
+            cuerpo.append(ft.Container(height=6))
+            cuerpo.append(
+                ft.Text(
+                    "Necesita tu clave de OpenRouter, ahí arriba.",
+                    size=11,
+                    color=C.warning,
+                )
+            )
+            return card(*cuerpo)
+
+        cuerpo.append(ft.Container(height=8))
+        cuerpo.append(
+            ft.Text(
+                "Es la única cosa de la app que hace una llamada de pago sin que la "
+                "pidas: una por semana, con el modelo que tengas elegido. Lo que cueste "
+                "sale escrito debajo del repaso.",
+                size=10,
+                color=C.text_muted,
+            )
+        )
+
+        if encendido:
+            from dates import day_name
+
+            cuerpo.append(ft.Container(height=10))
+            cuerpo.append(
+                ft.Row(
+                    [
+                        muted_text("Qué día", size=11),
+                        ft.Container(expand=True),
+                        ft.Dropdown(
+                            value=str(dia),
+                            width=124,
+                            dense=True,
+                            text_size=12,
+                            border_color=C.border,
+                            color=C.text,
+                            on_change=_dia,
+                            options=[
+                                # `day_name` usa 0 = lunes, igual que `weekday()`.
+                                ft.dropdown.Option(str(i), day_name(i).capitalize())
+                                for i in range(7)
+                            ],
+                        ),
+                    ],
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                )
+            )
+
+        if ultimo.hay:
+            cuerpo.append(ft.Container(height=8))
+            cuerpo.append(muted_text(f"Último: {ultimo.fecha}", size=10))
 
         return card(*cuerpo)
 
@@ -1758,6 +1977,174 @@ class ProfileView:
             chips.append(self._stat("POR SEMANA", f"{ritmo:+.2f} kg", "media de 7 días"))
         return chips
 
+    PESO_OBJETIVO_PREF = "peso_objetivo"
+
+    def _leer_objetivo(self) -> float | None:
+        try:
+            crudo = self.store.get_pref(self.PESO_OBJETIVO_PREF, None)
+            return float(crudo) if crudo else None
+        except (TypeError, ValueError, Exception):
+            return None
+
+    def _objetivo_row(self, entries) -> list[ft.Control]:
+        """Dónde vas y cuándo llegas, o el botón para ponerlo.
+
+        Convierte en una respuesta lo que ya se sabía: el peso está, la
+        tendencia está, y hasta ahora había que hacer la división a mano.
+
+        Cada caso de `Proyeccion` dice algo distinto y ninguno se traga en un
+        «no se puede estimar»: ir en dirección contraria no es lo mismo que ir
+        despacio, y las dos cosas se leen distinto.
+        """
+        from analytics import proyectar_peso
+
+        objetivo = self._leer_objetivo()
+        if objetivo is None:
+            return [
+                ft.Container(height=8),
+                ft.Row(
+                    [
+                        ghost_button(
+                            "Ponerte un objetivo de peso",
+                            on_click=lambda _: self._open_objetivo(),
+                            expand=True,
+                        )
+                    ]
+                ),
+            ]
+
+        try:
+            p = proyectar_peso(entries, objetivo)
+        except Exception:
+            return []
+
+        if p.logrado:
+            texto, color = f"Objetivo {objetivo:g} kg — ya estás ahí.", C.success
+        elif p.fecha is not None:
+            # `cuando()` y no la fecha a pelo: a tres meses vista, un martes
+            # concreto es precisión que el dato no aguanta.
+            # «+4.4 kg hasta 78» se leía raro: el signo no aporta nada cuando
+            # la frase ya dice hacia dónde, y sí obliga a interpretarlo.
+            verbo = "bajar" if p.faltan > 0 else "subir"
+            texto = (
+                f"Te falta {verbo} {abs(p.faltan):.1f} kg para {objetivo:g} — "
+                f"a este ritmo, {p.cuando()}"
+            )
+            color = C.accent
+        elif p.acercandose is False:
+            texto = (
+                f"Objetivo {objetivo:g} kg, y ahora mismo te alejas de él "
+                f"({p.ritmo:+.2f} kg/semana)."
+            )
+            color = C.warning
+        elif p.ritmo is None:
+            texto, color = (
+                f"Objetivo {objetivo:g} kg. Aún no hay recorrido para estimar cuándo.",
+                C.text_secondary,
+            )
+        else:
+            texto = (
+                f"Objetivo {objetivo:g} kg, a {abs(p.faltan):.1f} kg. "
+                f"A {p.ritmo:+.2f} kg/semana no hay fecha que dar."
+            )
+            color = C.text_secondary
+
+        return [
+            ft.Container(height=8),
+            ft.Container(
+                content=ft.Row(
+                    [
+                        ft.Icon(ft.Icons.FLAG_OUTLINED, size=15, color=color),
+                        ft.Text(texto, size=11, color=color, expand=True),
+                        ft.Container(
+                            content=ft.Icon(ft.Icons.EDIT_OUTLINED, size=14, color=C.text_muted),
+                            on_click=lambda _: self._open_objetivo(),
+                            ink=True,
+                            width=28,
+                            height=28,
+                            alignment=ft.alignment.center,
+                            border_radius=Radius.sm,
+                            tooltip="Cambiar el objetivo",
+                        ),
+                    ],
+                    spacing=6,
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                ),
+                bgcolor=C.bg_sunken,
+                border_radius=Radius.sm,
+                padding=ft.padding.symmetric(vertical=6, horizontal=10),
+            ),
+        ]
+
+    def _open_objetivo(self):
+        """Poner o quitar el peso objetivo."""
+        actual = self._leer_objetivo()
+        campo = ft.TextField(
+            label="Peso objetivo (kg)",
+            value=f"{actual:g}" if actual else "",
+            keyboard_type=ft.KeyboardType.NUMBER,
+            bgcolor=C.bg_page,
+            border_color=C.border,
+            focused_border_color=C.accent,
+            color=C.text,
+            text_size=14,
+            autofocus=True,
+        )
+        err = ft.Text("", size=11, color=C.danger)
+
+        def guardar(_):
+            crudo = (campo.value or "").replace(",", ".").strip()
+            if not crudo:
+                self.store.set_pref(self.PESO_OBJETIVO_PREF, "")
+                self.page.close(dlg)
+                self.page.data["refresh_current"]()
+                return
+            try:
+                kg = float(crudo)
+                if not 30 <= kg <= 300:
+                    raise ValueError
+            except ValueError:
+                err.value = "Pon un peso entre 30 y 300 kg"
+                self.page.update()
+                return
+            self.store.set_pref(self.PESO_OBJETIVO_PREF, str(kg))
+            self.page.close(dlg)
+            self.page.data["refresh_current"]()
+
+        dlg = ft.AlertDialog(
+            modal=False,
+            bgcolor=C.bg_surface,
+            title=ft.Text("Objetivo de peso", size=16, weight=ft.FontWeight.W_900, color=C.text),
+            content=ft.Container(
+                content=ft.Column(
+                    [
+                        ft.Text(
+                            "La fecha sale de tu media móvil de 7 días, no del último "
+                            "pesaje: la báscula se mueve un kilo con la cena. Déjalo en "
+                            "blanco para quitarlo.",
+                            size=11,
+                            color=C.text_secondary,
+                        ),
+                        campo,
+                        err,
+                    ],
+                    spacing=10,
+                    tight=True,
+                ),
+                width=self._dialog_width(),
+            ),
+            actions=[
+                ft.TextButton(
+                    "Cancelar",
+                    on_click=lambda _: self.page.close(dlg),
+                    style=ft.ButtonStyle(color=C.text_secondary),
+                ),
+                ft.TextButton("Guardar", on_click=guardar, style=ft.ButtonStyle(color=C.accent)),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+        self.page.open(dlg)
+
     def _weight_section(self) -> ft.Control:
         entries = self.store.get_weights()
         latest = entries[-1]["kg"] if entries else None
@@ -1795,6 +2182,7 @@ class ProfileView:
 
         trend_chips = self._trend_chips(entries)
         trend_row = [ft.Container(height=8), ft.Row(trend_chips, spacing=8)] if trend_chips else []
+        objetivo_row = self._objetivo_row(entries)
 
         # Una línea, no barras: el peso es una serie en el tiempo y siete
         # barras sueltas esconden justo la tendencia que se mira. Y encima, de
@@ -1891,6 +2279,7 @@ class ProfileView:
             [
                 header,
                 *trend_row,
+                *objetivo_row,
                 ft.Container(height=10),
                 chart,
                 *history_block,
@@ -2026,6 +2415,10 @@ class ProfileView:
                 section_title("Entrenador"),
                 ft.Container(height=4),
                 self._coach_section(),
+                ft.Container(height=14),
+                section_title("Repaso semanal"),
+                ft.Container(height=4),
+                self._repaso_section(),
                 ft.Container(height=14),
                 section_title("Lo que recuerda de ti"),
                 ft.Container(height=4),

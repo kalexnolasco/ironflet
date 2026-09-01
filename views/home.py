@@ -29,6 +29,7 @@ the bar is read off the active routine rather than fixed.
 
 from __future__ import annotations
 
+import contextlib
 from datetime import date, datetime, time, timedelta, timezone
 
 import flet as ft
@@ -1231,6 +1232,69 @@ class HomeView:
             tooltip="Abrir el diario de comida",
         )
 
+    def _repaso_card(self) -> ft.Control | None:
+        """Lo que el entrenador escribió esta semana, si escribió algo.
+
+        Y de paso dispara el de esta semana cuando toca. Aquí y no en `main`
+        porque Inicio es la pantalla que se abre siempre: un repaso generado en
+        un arranque que va directo a otra pestaña no lo lee nadie.
+        """
+        import repaso
+
+        try:
+            if repaso.toca(self.store):
+                self._pedir_repaso()
+            r = repaso.ultimo(self.store)
+        except Exception:
+            return None
+        if not r.hay:
+            return None
+
+        pie = f"Repaso del {r.fecha}"
+        if r.coste:
+            # Visible por lo mismo que el coste del chat: esto se cobra a su
+            # tarjeta sin que él haya tocado nada, y un gasto que nadie ve es
+            # un gasto que se descubre en un extracto.
+            pie += f" · ≈ ${r.coste:.3f}"
+
+        return card(
+            ft.Column(
+                [
+                    ft.Row(
+                        [
+                            ft.Text("🧠", size=16),
+                            ft.Text(
+                                "Tu entrenador",
+                                size=12,
+                                weight=ft.FontWeight.W_800,
+                                color=C.accent,
+                                expand=True,
+                            ),
+                        ],
+                        spacing=6,
+                    ),
+                    ft.Container(height=4),
+                    ft.Text(r.texto, size=12, color=C.text),
+                    ft.Container(height=4),
+                    muted_text(pie, size=10),
+                ],
+                spacing=0,
+                tight=True,
+            ),
+            padding=14,
+        )
+
+    def _pedir_repaso(self):
+        """Lanza la generación en segundo plano y refresca cuando llegue."""
+        import repaso
+
+        async def _generar():
+            if await repaso.generar(self.store):
+                self.page.data["refresh_current"]()
+
+        with contextlib.suppress(Exception):
+            self.page.run_task(_generar)
+
     def _abdomen_card(self) -> ft.Control | None:
         """El abdomen de hoy, o `None` si está apagado.
 
@@ -1500,6 +1564,13 @@ class HomeView:
         ]
         # Después de la comida y antes de los avisos: es una tarea del día, y
         # el día de descanso es donde más falta hace.
+        # El repaso va antes que las tareas del día: es lo único de esta
+        # pantalla que no es un número, y leerlo cambia lo que haces con el
+        # resto.
+        repaso_hoy = self._repaso_card()
+        if repaso_hoy is not None:
+            dia.append(ft.Container(height=Space.x1))
+            dia.append(repaso_hoy)
         abs_hoy = self._abdomen_card()
         if abs_hoy is not None:
             dia.append(ft.Container(height=Space.x1))
