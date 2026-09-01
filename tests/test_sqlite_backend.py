@@ -20,11 +20,10 @@ import threading
 from datetime import date, datetime, timedelta, timezone
 
 import pytest
-from sqlalchemy import create_engine, delete, select, text
+from sqlalchemy import create_engine, select, text
 from sqlalchemy.engine import make_url
 
 import storage
-from nutrition import Food, FoodLogEntry, Nutrition, Serving
 from storage import (
     Entreno,
     Perfil,
@@ -64,25 +63,7 @@ def sqlite_store(tmp_path) -> Storage:
     return Storage(sqlite_url(tmp_path / "ironflet.db"))
 
 
-@pytest.fixture
-def food(store):
-    """A throwaway catalogue entry, cleaned up whichever backend ran."""
-    nut = Nutrition(engine=store._engine)
-    _drop_probes(nut)
-    yield nut
-    _drop_probes(nut)
 
-
-def _drop_probes(nut: Nutrition) -> None:
-    with nut._Session() as s:
-        ids = list(s.scalars(select(Food.id).where(Food.slug == PROBE_SLUG)))
-        if ids:
-            s.execute(delete(FoodLogEntry).where(FoodLogEntry.food_id.in_(ids)))
-            s.execute(delete(Serving).where(Serving.food_id.in_(ids)))
-            s.execute(delete(Food).where(Food.id.in_(ids)))
-        # Entries orphaned by a cascade test keep food_id NULL; drop them by name.
-        s.execute(delete(FoodLogEntry).where(FoodLogEntry.food_name == "Parity probe"))
-        s.commit()
 
 
 def a_set(weight, reps, **extra):
@@ -321,50 +302,6 @@ def test_backup_round_trips_on_both_engines(store):
 # ── nutrition cascade: the reason PRAGMA foreign_keys exists ─────────────
 
 
-def test_deleting_a_food_cascades_its_servings(store, food):
-    """`servings.food_id` is ON DELETE CASCADE and nothing cascades it in Python.
-
-    `Nutrition.delete_food()` issues a bare `DELETE FROM foods` — there is no ORM
-    `relationship()` between `Food` and `Serving`, so the database is the only
-    thing that can clean up. On a SQLite opened without `PRAGMA foreign_keys=ON`
-    (its default) the clause is parsed and ignored, the delete succeeds, and the
-    servings stay behind pointing at a food that no longer exists.
-    """
-    nut = food
-    nut.add_food(PROBE_SLUG, "Parity probe", 100, 20, 5, 10, 2, servings=(("1 unit", 120.0),))
-    nut.add_serving(PROBE_SLUG, "half unit", 60.0)
-
-    assert len(nut.servings_for(PROBE_SLUG)) == 2
-
-    nut.delete_food(PROBE_SLUG)
-
-    with nut._Session() as s:
-        orphans = list(s.scalars(select(Serving).where(~Serving.food_id.in_(select(Food.id)))))
-    assert orphans == []
-
-
-def test_deleting_a_food_nulls_the_log_but_keeps_the_entry(store, food):
-    """`food_log.food_id` is ON DELETE SET NULL — the diary outlives the food.
-
-    The entry keeps its frozen macros and its copied `food_name`, so last
-    Tuesday's lunch still reads correctly with the catalogue row gone. Same
-    pragma dependency as the cascade above: without it SQLite would leave a
-    dangling id and the entry would point at nothing.
-    """
-    nut = food
-    nut.add_food(PROBE_SLUG, "Parity probe", 100, 20, 5, 10, 2)
-    entry_id = nut.log_food(PROBE_SLUG, 200.0, meal="lunch", day=TODAY)
-
-    nut.delete_food(PROBE_SLUG)
-
-    with nut._Session() as s:
-        row = s.get(FoodLogEntry, entry_id)
-        assert row is not None
-        assert row.food_id is None
-        assert row.food_name == "Parity probe"
-        assert row.kcal == 200.0  # frozen at insert, 100 kcal/100 g × 200 g
-
-
 def test_an_untuned_sqlite_really_does_orphan_the_rows(tmp_path):
     """The negative control: proof the pragma is load-bearing, not decoration.
 
@@ -373,25 +310,33 @@ def test_an_untuned_sqlite_really_does_orphan_the_rows(tmp_path):
     SQLite changed its default and the pragma became optional — check before
     deleting anything.
     """
+    import routine_builder
+
     path = tmp_path / "ironflet.db"
     tuned = Storage(sqlite_url(path))
-    nut = Nutrition(engine=tuned._engine)
-    nut.add_food(PROBE_SLUG, "Parity probe", 100, 20, 5, 10, 2, servings=(("1 unit", 120.0),))
+    routine_builder.ensure_tables(tuned)
+
+    # Hasta 0.21 la sonda eran un alimento y su ración. Con la nutrición fuera,
+    # la cascada que se prueba es la de las rutinas de usuario — mismo
+    # `ondelete="CASCADE"`, misma pregunta, y sigue siendo la que de verdad
+    # importa: `user_routine_phases` cuelga de `user_routines`.
+    pk = routine_builder.save_draft(tuned, routine_builder.draft_from_builtin("upper-lower"))
 
     untuned = create_engine(sqlite_url(path))  # no PRAGMA foreign_keys=ON
     with untuned.connect() as c:
         assert c.exec_driver_sql("PRAGMA foreign_keys").scalar() == 0
         c.exec_driver_sql("PRAGMA busy_timeout=5000")
-        food_id = int(
-            c.exec_driver_sql("SELECT id FROM foods WHERE slug = :s", {"s": PROBE_SLUG}).scalar()
-        )
-        c.exec_driver_sql("DELETE FROM foods WHERE id = :i", {"i": food_id})
+        antes = c.exec_driver_sql(
+            "SELECT COUNT(*) FROM user_routine_phases WHERE routine_id = :i", {"i": pk}
+        ).scalar()
+        assert antes, "la sonda no dejó fases que huerfanar"
+        c.exec_driver_sql("DELETE FROM user_routines WHERE id = :i", {"i": pk})
         c.commit()
         left_behind = c.exec_driver_sql(
-            "SELECT COUNT(*) FROM servings WHERE food_id = :i", {"i": food_id}
+            "SELECT COUNT(*) FROM user_routine_phases WHERE routine_id = :i", {"i": pk}
         ).scalar()
 
-    assert left_behind == 1, "SQLite now enforces foreign keys by default — revisit the pragmas"
+    assert left_behind == antes, "SQLite now enforces foreign keys by default — revisit the pragmas"
 
     # And the tuned engine, on the same file, refuses to leave that behind.
     with tuned._engine.connect() as c:

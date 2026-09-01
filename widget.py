@@ -15,7 +15,7 @@ un widget frente a abrir la app es que responda a «¿qué me toca?» y «¿cóm
 hoy?» sin un solo toque. Todo lo demás cabe mejor dentro.
 
 Nada de esto es una fuente nueva: sale de `program_week`, `Storage` y
-`nutrition`, igual que la pantalla de Inicio. El widget es una vista, no un
+`analytics`, igual que la pantalla de Inicio. El widget es una vista, no un
 sitio donde vivan datos.
 
 ## Por qué el payload es texto ya formateado
@@ -61,8 +61,8 @@ FICHERO_PIN = "widget_pin.request"
 VACIO: dict[str, str] = {
     "entreno": "Abre IronFlet",
     "peso": "",
-    "kcal": "",
-    "proteina": "",
+    "series": "",
+    "cintura": "",
 }
 
 
@@ -166,23 +166,30 @@ def payload(store: Any, hoy: date | None = None) -> dict[str, str]:
     except Exception:
         pass
 
+    # Las dos líneas de abajo eran calorías y proteína hasta 0.21, cuando la
+    # nutrición salió de la app. El hueco estaba y lo que falta en una app de
+    # gimnasio es lo mismo que en la pantalla: cuánto has entrenado y qué dice
+    # la cinta métrica.
     try:
-        from nutrition import day_totals, targets_for
+        stats = store.get_week_stats() or {}
+        sesiones = int(stats.get("sessions") or 0)
+        series = int(stats.get("sets") or 0)
+        if sesiones or series:
+            datos["series"] = f"{sesiones} sesiones · {series} series"
+        else:
+            # Cero no es lo mismo que «sin datos», y en lunes por la mañana es
+            # una frase perfectamente normal.
+            datos["series"] = "Semana sin entrenos"
+    except Exception:
+        pass
 
-        totales = day_totals(store, dia) or {}
-        objetivos = targets_for(store, dia) or {}
-        # Las claves son inglesas porque son contrato de datos, no texto
-        # (trampa 22, y la que ya pintó «Proteína 0 g» una vez en Inicio).
-        kcal = float(totales.get("kcal") or 0)
-        proteina = float(totales.get("protein") or 0)
-        meta_kcal = float(objetivos.get("kcal") or 0)
-        meta_prot = float(objetivos.get("protein") or 0)
-        datos["kcal"] = (
-            f"{_num(kcal)} / {_num(meta_kcal)} kcal" if meta_kcal else f"{_num(kcal)} kcal"
-        )
-        datos["proteina"] = (
-            f"{_num(proteina)} / {_num(meta_prot)} g P" if meta_prot else f"{_num(proteina)} g P"
-        )
+    try:
+        # La clave es el nombre del campo, no «value»: `get_latest_measurement`
+        # devuelve `{"date": …, "waist": …}` y pedirle `value` daba siempre
+        # vacío — sin error, que es como se pierde una línea del widget.
+        medida = store.get_latest_measurement("waist") or {}
+        if medida.get("waist") is not None:
+            datos["cintura"] = f"{_num(float(medida['waist']), 1)} cm de cintura"
     except Exception:
         pass
 

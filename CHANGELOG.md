@@ -4,6 +4,47 @@ Todos los cambios notables de IronFlet.
 El formato sigue [Keep a Changelog](https://keepachangelog.com/) y el proyecto
 usa [SemVer](https://semver.org/).
 
+## [0.21.0] — 2026-09-01
+
+**Solo gimnasio.**
+
+Alex: «quítale la nutrición, es algo complejo… solo gym». Fuera la pestaña
+Comida, el diario, los 50 alimentos, las raciones, los objetivos de macros, la
+compra del sábado, el plan de cocina del domingo, las calorías del widget y las
+tres herramientas del coach que las leían. **Unas 3.900 líneas.**
+
+### Qué se queda, y por qué
+
+- **Tus datos de comida no se borran.** Las cuatro tablas siguen en la base y
+  la copia de seguridad se las lleva igual — en «Copia y datos» aparecen bajo
+  «Comida (función retirada)». Borrar las declaraciones habría hecho dos cosas
+  calladas: que una copia nueva dejara de llevárselas, y que restaurar una
+  vieja fallara al encontrar claves que ya nadie sabe leer.
+- **Las métricas del perfil** —IMC, BMR, TDEE, el rango de proteína y el agua—
+  siguen en Ajustes. Son aritmética sobre tu cuerpo, no un registro de lo que
+  comes: nada apunta ya una comida.
+
+### Cambiado
+
+- **La barra tiene cuatro pestañas**: Inicio, Plan, Entreno, Historial.
+- **El widget** cambia calorías y proteína por lo que llevas de semana
+  (sesiones y series) y tu cintura. El hueco estaba y lo que falta en una app
+  de gimnasio es eso.
+- **El entrenador ya no habla de comida** y su prompt lo dice explícitamente:
+  sin diario que leer, proponerte calorías sería inventar números. Si sacas el
+  tema, te dice que la app ya no lo lleva en vez de fingir que lo sabe.
+
+### Arreglado por el camino
+
+- La sección de la copia decía «Nutrición» en una app sin nutrición, lo cual se
+  lee como que la función sigue ahí y no se encuentra.
+- **Los índices de vista bajaron uno.** Es justo lo que la trampa 1 dice que no
+  se haga a la ligera; se hizo buscando cada literal, y quedaban cuatro sueltos
+  porque `views/home.py` ya usaba constantes con nombre.
+- Y una trampa se retiró con su causa: el `sys.modules.pop` de los fixtures
+  existía porque `test_nutrition_view` dejaba un stub puesto. Sin ese fichero,
+  sobra.
+
 ## [0.20.0] — 2026-09-01
 
 **Medirte entero, saber cuándo llegas, y que el entrenador escriba él.**

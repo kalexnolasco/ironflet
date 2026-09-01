@@ -494,7 +494,7 @@ class ProfileView:
         in it does not fit in a clipboard on a phone either. DataView exports
         and imports all twelve to a file, so this is the only backup path left.
         """
-        self.page.data["navigate_to"](8)
+        self.page.data["navigate_to"](7)
 
     def _toast(self, message: str):
         """El aviso corto de esta pantalla. Solo la sección del calendario lo

@@ -97,11 +97,9 @@ ARGUMENTOS_DE_PRUEBA: dict[str, dict] = {
     "exercise_history": {"exercise": "Barbell Bench Press"},
     "recent_training": {"days": 30},
     "body_weight": {"days": 60},
-    "nutrition": {},
     "list_exercises": {},
     "progress_photos": {"days": 60},
     "calendar_events": {"days": 7},
-    "weekend_plan": {"days": 7},
     "about_me": {},
     # propuesta
     "propose_workout_log": {
@@ -109,7 +107,6 @@ ARGUMENTOS_DE_PRUEBA: dict[str, dict] = {
         "sets": [{"weight": 62.5, "reps": 8}],
     },
     "propose_body_weight": {"kg": 73.8},
-    "propose_week_targets": {"kcal": 2500, "protein_g": 180, "fat_g": 70, "carbs_g": 260},
     "propose_reminder": {"text": "Beber agua", "time_hhmm": "10:00", "repeat": "daily"},
     "propose_calendar_event": {"title": "Entreno", "day": HOY.isoformat(), "time_hhmm": "07:00"},
     "propose_memory": {"fact": "Entrena a las 7:00", "category": "rutina"},
@@ -1082,78 +1079,6 @@ def _foto_jpeg(tmp_path):
     ruta = tmp_path / "2026-08-21.jpg"
     Image.new("RGB", (60, 90), (90, 60, 60)).save(ruta, format="JPEG")
     return str(ruta)
-
-
-def test_propose_week_targets_valida_y_apunta_al_lunes(store):
-    ctx = agent._Context(store=store, today=date(2026, 8, 21))  # viernes
-    told, propuesta = agent._tool_propose_week_targets(
-        ctx, kcal=2400, protein_g=170, fat_g=70, carbs_g=250, note="Semana de ajuste."
-    )
-    assert propuesta is not None
-    assert propuesta.starts_on == date(2026, 8, 24), "el lunes que viene, no mitad de semana"
-    assert "NOT saved" in told
-
-    assert (
-        agent._tool_propose_week_targets(ctx, kcal=200, protein_g=170, fat_g=70, carbs_g=250)[1]
-        is None
-    )
-    assert (
-        agent._tool_propose_week_targets(ctx, kcal="mucho", protein_g=1, fat_g=1, carbs_g=1)[1]
-        is None
-    )
-
-
-def test_commit_de_objetivos_escribe_targets_versionados(store):
-    import nutrition
-
-    propuesta = agent.MealTargetsProposal(
-        starts_on=date(2026, 8, 24), kcal=2400, protein=170, fat=70, carbs=250, note="ajuste"
-    )
-    mensaje = agent.commit_proposal(store, propuesta)
-    assert "2026-08-24" in mensaje
-    objetivo = nutrition.targets_for(store, date(2026, 8, 25))
-    assert objetivo and objetivo["kcal"] == 2400 and objetivo["protein"] == 170
-    # Los días anteriores al inicio no se reescriben: versionado, no mutación.
-    assert nutrition.targets_for(store, date(2026, 8, 23)) != objetivo
-
-
-def test_weekend_plan_relata_lo_que_calcula_la_app(store):
-    """Las cantidades salen de `finde.py`, las mismas que ve en la pantalla.
-
-    La alternativa era darle el menú y los objetivos y dejar que el modelo
-    multiplicase por siete. Lo hace mal a veces, en silencio, y el error se
-    descubre en la caja del súper. Misma política que con `progression.py`:
-    el número se transmite, no se reopina.
-    """
-    import finde
-
-    ctx = agent._Context(store=store, today=HOY)
-    texto = agent._tool_weekend_plan(ctx)
-
-    compra = finde.lista_de_la_compra(store, hoy=HOY)
-    pollo = next(a for a in compra.articulos if a.slug == "chicken_breast")
-    assert pollo.cantidad() in texto
-    assert "Carnicería y pescadería" in texto
-    assert "Sunday prep" in texto
-    # Y lo que no aguanta la semana, dicho: es el dato que cambia una decisión.
-    assert "congela" in texto.lower()
-
-
-def test_weekend_plan_acota_los_dias(store):
-    ctx = agent._Context(store=store, today=HOY)
-    assert "for 14 days" in agent._tool_weekend_plan(ctx, days=99)
-    assert "for 1 days" in agent._tool_weekend_plan(ctx, days=-3)
-    assert "for 7 days" in agent._tool_weekend_plan(ctx, days="no soy un número")
-
-
-def test_weekend_plan_traslada_el_aviso_de_un_objetivo_imposible(store):
-    """Si la lista trae un aviso, el coach tiene que verlo — y decirlo."""
-    import nutrition
-
-    nutrition.set_targets(store, kcal=900, protein=115, fat=30, carbs=80, starts_on="2026-08-01")
-    ctx = agent._Context(store=store, today=HOY)
-    texto = agent._tool_weekend_plan(ctx)
-    assert "WARNING" in texto and "entrenador" in texto
 
 
 def test_progress_photos_lista_fechas_sin_bytes(store, tmp_path):

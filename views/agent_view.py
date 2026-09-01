@@ -75,7 +75,7 @@ STARTERS = (
     "¿Qué toca hoy?",
     "¿Cómo voy con el press banca?",
     "Hice 4 series de sentadilla a 80 por 8",
-    "¿Voy bien de proteína hoy?",
+    "¿Cómo ha ido la semana?",
 )
 
 
@@ -312,13 +312,6 @@ class AgentView:
             detail = p.summary()
             warn = ""
             note = ""
-        elif isinstance(p, agent.MealTargetsProposal):
-            title = "Objetivos de la semana"
-            when = p.starts_on
-            body = p.summary()
-            detail = "objetivo diario"
-            warn = ""
-            note = p.note or ""
         elif isinstance(p, agent.MemoryProposal):
             # El cuerpo es la frase entera y a tamaño grande, como los números
             # de las otras tarjetas: esto es exactamente lo que hay que leer

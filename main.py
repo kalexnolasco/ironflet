@@ -18,7 +18,6 @@ from views.browse import BrowseView
 from views.data_view import DataView
 from views.history import HistoryView
 from views.home import HomeView
-from views.nutrition_view import NutritionView
 from views.photos_view import PhotosView
 from views.plan import PlanView
 from views.profile import ProfileView
@@ -129,7 +128,6 @@ def main(page: ft.Page):
     browse_view = BrowseView(page, store)
     history_view = HistoryView(page, store)
     profile_view = ProfileView(page, store)
-    nutrition_view = NutritionView(page, store)
     routines_view = RoutineEditorView(page, store)
     data_view = DataView(page, store)
     agent_view = AgentView(page, store)
@@ -141,7 +139,6 @@ def main(page: ft.Page):
         browse_view,
         history_view,
         profile_view,
-        nutrition_view,
         routines_view,
         data_view,
         # Appended, never inserted: `home.py` navigates by number and the
@@ -149,11 +146,16 @@ def main(page: ft.Page):
         agent_view,
         photos_view,
     ]
-    # The bar shows five of them. This indirection exists because home.py calls
-    # navigate_to(2) and navigate_to(5) by number, so view indices are frozen —
-    # NAV_TABS maps a bar slot to a view index instead of forcing them to match.
-    # Browse, Profile and Routines are reached from inside other screens.
-    NAV_TABS = (0, 1, 2, 6, 4)
+    # La barra enseña cuatro. Esta indirección existe porque las vistas se
+    # nombran por número desde fuera (`views/home.py`, trap #1), así que
+    # `NAV_TABS` mapea ranura de barra → índice de vista en vez de obligarlos a
+    # coincidir. Browse, Ajustes y Rutinas se abren desde dentro de otras.
+    #
+    # Eran cinco hasta 0.21: la cuarta era Comida, y al retirarse la nutrición
+    # **todos los índices por debajo del 6 bajaron uno**. Eso es exactamente lo
+    # que la trampa 1 dice que no se haga a la ligera; se hizo a conciencia,
+    # buscando cada literal, y `tests/test_smoke.py` fija el orden resultante.
+    NAV_TABS = (0, 1, 2, 4)
 
     #: Cuánto dura el fundido al cambiar de pantalla. 180 ms es el rango en el
     #: que una transición se percibe como que la interfaz responde; por encima
@@ -210,7 +212,6 @@ def main(page: ft.Page):
             ft.NavigationBarDestination(icon=ft.Icons.HOME_ROUNDED, label="Inicio"),
             ft.NavigationBarDestination(icon=ft.Icons.CALENDAR_MONTH, label="Plan"),
             ft.NavigationBarDestination(icon=ft.Icons.FITNESS_CENTER, label="Entreno"),
-            ft.NavigationBarDestination(icon=ft.Icons.RESTAURANT_ROUNDED, label="Comida"),
             ft.NavigationBarDestination(icon=ft.Icons.BAR_CHART_ROUNDED, label="Historial"),
         ],
     )
@@ -229,7 +230,7 @@ def main(page: ft.Page):
 
     def edit_routine(pk: int):
         """Jump straight into a routine, instead of landing on the library."""
-        navigate_to(7, refresh=False)
+        navigate_to(6, refresh=False)
         routines_view.open_routine(pk)
 
     page.data = {

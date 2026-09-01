@@ -175,7 +175,7 @@ def test_el_widget_sigue_guardando_lo_de_siempre(tmp_path):
 
     store = Storage(f"sqlite:///{tmp_path / 'w2.db'}")
     datos = widget.payload(store)
-    assert set(datos) == {"entreno", "peso", "kcal", "proteina"}
+    assert set(datos) == {"entreno", "peso", "series", "cintura"}
 
 
 def test_los_chips_de_grupo_estan_en_espanol_en_los_dos_sitios(tmp_path):

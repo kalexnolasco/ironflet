@@ -8,9 +8,7 @@ callejón sin salida, porque el filtro de grupo viene preseleccionado.
 
 from __future__ import annotations
 
-import importlib
 import os
-import sys
 from unittest.mock import MagicMock
 
 import flet as ft
@@ -24,10 +22,14 @@ import extras
 def vista():
     from storage import Storage
 
+    # Sin recargar el módulo. Hacía `sys.modules.pop` porque `test_nutrition_view`
+    # dejaba un stub de `nutrition` puesto y había que deshacerlo; ese fichero
+    # se fue con la nutrición en 0.21, y con él la razón. Recargar por si acaso
+    # es lo que rompió a un vecino la última vez (trampa 33).
+    from views.workout import WorkoutView
+
     store = Storage(os.environ["TEST_DATABASE_URL"])
     store.set_pref(extras.PREF_KEY, "")
-    sys.modules.pop("views.workout", None)
-    modulo = importlib.import_module("views.workout")
 
     page = MagicMock()
     page.width = 400
@@ -36,14 +38,13 @@ def vista():
         "store": store,
         "navigate_to": lambda *a, **k: None,
     }
-    v = modulo.WorkoutView(page, store)
+    v = WorkoutView(page, store)
     v.phase_id = 1
     v.day_idx = 0
     try:
         yield v
     finally:
         store.set_pref(extras.PREF_KEY, "")
-        sys.modules.pop("views.workout", None)
 
 
 def _walk(control):

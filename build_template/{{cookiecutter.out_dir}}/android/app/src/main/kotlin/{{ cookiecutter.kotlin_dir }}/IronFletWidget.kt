@@ -110,8 +110,8 @@ class IronFletWidget : AppWidgetProvider() {
             val datos = leer(context)
             vista.setTextViewText(R.id.ironflet_widget_entreno, datos.optString("entreno", ""))
             vista.setTextViewText(R.id.ironflet_widget_peso, datos.optString("peso", ""))
-            vista.setTextViewText(R.id.ironflet_widget_kcal, datos.optString("kcal", ""))
-            vista.setTextViewText(R.id.ironflet_widget_proteina, datos.optString("proteina", ""))
+            vista.setTextViewText(R.id.ironflet_widget_series, datos.optString("series", ""))
+            vista.setTextViewText(R.id.ironflet_widget_cintura, datos.optString("cintura", ""))
             return vista
         }
 

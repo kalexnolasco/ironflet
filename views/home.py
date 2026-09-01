@@ -38,7 +38,6 @@ import nombres_es
 from analytics import MEASUREMENT_EVERY_DAYS, MIN_TREND_DAYS, waist_summary, weight_trend
 from dates import day_name, month_name
 from exercises import phase_color
-from nutrition import day_totals, targets_for
 from program_week import (
     ProgramWeek,
     StartSource,
@@ -68,11 +67,10 @@ VIEW_PLAN = 1
 VIEW_WORKOUT = 2
 VIEW_BROWSE = 3
 VIEW_PROFILE = 5
-VIEW_NUTRITION = 6
 #: The in-app coach. Appended after Backup (8) — indices are frozen, so a new
 #: screen goes on the end and never in the middle. See trap #1 in CLAUDE.md.
-VIEW_COACH = 9
-VIEW_PHOTOS = 10
+VIEW_COACH = 8
+VIEW_PHOTOS = 9
 
 # Trailing window behind get_week_stats(); shown so the three numbers below it
 # are not read as "all time".
@@ -1137,101 +1135,6 @@ class HomeView:
         )
 
     # ── nutrition ────────────────────────────────────────────
-    def _macro_line(self, label: str, current: float, target: float, unit: str) -> ft.Control:
-        # Overshooting calories is worth a warning; overshooting protein is not,
-        # so each line says for itself what "past the target" looks like.
-        over_target = label == "Calorías"
-        value = f"{_n(current)} / {_n(target)} {unit}" if target > 0 else f"{_n(current)} {unit}"
-        return ft.Column(
-            [
-                ft.Row(
-                    [
-                        ft.Text(label, size=11, weight=ft.FontWeight.W_700, color=C.text_secondary),
-                        ft.Text(value, size=11, color=C.text_muted),
-                    ],
-                    alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-                ),
-                _macro_bar(
-                    current,
-                    target,
-                    C.accent if over_target else C.success,
-                    C.warning if over_target else C.success,
-                ),
-            ],
-            spacing=3,
-            tight=True,
-        )
-
-    def _nutrition_body(self, totals: dict, targets: dict, logged: bool) -> ft.Control:
-        # Las claves son inglesas a propósito: son las que devuelven
-        # `nutrition.day_totals()` y `nutrition.targets_for()`, contrato de
-        # datos y no texto (trampa 22). Traducirlas aquí no rompió nada
-        # ruidosamente — `.get()` devolvía None y la tarjeta pintaba 0 g de
-        # proteína con 42 g registrados.
-        target_kcal = float(targets.get("kcal") or 0)
-        target_protein = float(targets.get("protein") or 0)
-
-        if not logged:
-            # Zeroes against a target read as failure at 9am. An empty day is an
-            # invitation, so it gets one.
-            hint = (
-                f"Objetivo de hoy: {_n(target_kcal)} kcal · {_n(target_protein)} g de proteína"
-                if target_kcal > 0
-                else "Apunta una comida para empezar a contar calorías y proteína"
-            )
-            return ft.Column(
-                [
-                    ft.Text(
-                        "Nada registrado hoy", size=13, weight=ft.FontWeight.W_700, color=C.text
-                    ),
-                    ft.Text(hint, size=11, color=C.text_muted),
-                ],
-                spacing=2,
-                tight=True,
-                expand=True,
-            )
-
-        return ft.Column(
-            [
-                ft.Text("Comida de hoy", size=13, weight=ft.FontWeight.W_700, color=C.text),
-                self._macro_line("Calorías", float(totals.get("kcal") or 0), target_kcal, "kcal"),
-                self._macro_line(
-                    "Proteína", float(totals.get("protein") or 0), target_protein, "g"
-                ),
-            ],
-            spacing=Space.x2,
-            tight=True,
-            expand=True,
-        )
-
-    def _nutrition_card(self) -> ft.Control:
-        today = date.today()
-        totals = day_totals(self.store, today) or {}
-        targets = targets_for(self.store, today) or {}
-        # Entries first: an entry can legitimately be 0 kcal (black coffee), and
-        # a day with one is not an empty day. Calories are the fallback for when
-        # the meal blocks arrive without their entries.
-        logged = bool(
-            any(block.get("entries") for block in (totals.get("by_meal") or {}).values())
-            or float(totals.get("kcal") or 0) > 0
-        )
-        nav = self.page.data["navigate_to"]
-        return card(
-            ft.Row(
-                [
-                    ft.Text("🍽", size=20),
-                    self._nutrition_body(totals, targets, logged),
-                    ft.Icon(ft.Icons.CHEVRON_RIGHT, color=C.text_muted, size=18),
-                ],
-                spacing=Space.x3,
-                vertical_alignment=ft.CrossAxisAlignment.CENTER,
-            ),
-            padding=14,
-            on_click=lambda _: nav(VIEW_NUTRITION),
-            ink=True,
-            tooltip="Abrir el diario de comida",
-        )
-
     def _repaso_card(self) -> ft.Control | None:
         """Lo que el entrenador escribió esta semana, si escribió algo.
 
@@ -1560,7 +1463,6 @@ class HomeView:
             ft.Container(height=Space.x1),
             self._photo_tile(),
             ft.Container(height=Space.x1),
-            self._nutrition_card(),
         ]
         # Después de la comida y antes de los avisos: es una tarea del día, y
         # el día de descanso es donde más falta hace.

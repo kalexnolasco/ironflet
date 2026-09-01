@@ -65,7 +65,7 @@ from views.shared_ui import db_error_screen, dialog_width, plural
 
 # View indices owned by main.py; named so the call sites read as intent.
 VIEW_WORKOUT = 2
-VIEW_ROUTINE_EDITOR = 7
+VIEW_ROUTINE_EDITOR = 6
 
 
 def week_headline(pw: ProgramWeek) -> str:

@@ -1,4 +1,4 @@
-# IronFlet — tu app de entrenos y comidas
+# IronFlet — tu app de entrenos
 
 <div align="center">
 
@@ -6,11 +6,12 @@
 ![Android](https://img.shields.io/badge/APK-84%20MB%20·%20SQLite-3DDC84?style=for-the-badge&logo=android&logoColor=white)
 ![Flet](https://img.shields.io/badge/Flet-0.28.3-7F52FF?style=for-the-badge)
 ![Idioma](https://img.shields.io/badge/interfaz-español-E4312b?style=for-the-badge)
-![Tests](https://img.shields.io/badge/tests-2193-2f9e44?style=for-the-badge)
+![Tests](https://img.shields.io/badge/tests-2023-2f9e44?style=for-the-badge)
 
-**Donde apuntas lo que levantas y lo que comes, con un entrenador dentro que
-mira tus fotos y te propone la semana. Una app de móvil y nada más: sin
-servidor, sin cuenta, sin nube. Tus datos viven en tu teléfono.**
+**Donde apuntas lo que levantas, con un entrenador dentro que mira tus fotos y
+te escribe cada semana. Solo gimnasio: sin diario de comida, sin contar nada
+que no sean series. Una app de móvil y nada más — sin servidor, sin cuenta, sin
+nube. Tus datos viven en tu teléfono.**
 
 </div>
 
@@ -36,19 +37,16 @@ de esta app depende ya de él.
 
 ## Qué hace
 
-0. **Ocho rutinas** — la tuya de CambiaTuFísico y siete más: Upper/Lower,
+1. **Ocho rutinas** — la tuya de CambiaTuFísico y siete más: Upper/Lower,
    Push/Pull/Legs, Recomp, PHUL, StrongLifts 5×5, Arnold Split y Full Body de
    3 días. Se cambian en Plan, y cualquiera se clona para hacerla tuya.
-1. **Entrenar** — eliges rutina, fase y día, y apuntas cada serie: peso,
+2. **Entrenar** — eliges rutina, fase y día, y apuntas cada serie: peso,
    repeticiones y RIR. Temporizador de descanso automático y modo zen (solo la
    serie que estás haciendo, sin nada más en pantalla). Si la máquina está
    ocupada o te sobran ganas, **«+ Ejercicio» añade uno más a la sesión de
    hoy** — de entre 875, con su foto, buscables por nombre y filtrados por lo
    que toca hoy — sin tocar el plan de las 24 semanas. Y si llegas sin plan,
    **«Libre»**: eliges tú los ejercicios y ya está.
-2. **Comer** — diario con 50 alimentos de despensa española, raciones ("1
-   plátano mediano" en vez de pesar) y objetivos de macros versionados por
-   fecha: cambiar el plan del lunes no reescribe lo que comiste el jueves.
 3. **Abdomen cada día** — se enciende en Ajustes y aparece al final de cada
    entreno; los días de descanso, en Inicio. Tres ejercicios que rotan solos,
    uno de flexión, uno de inferior y uno de oblicuos, sin repetir del día
@@ -63,20 +61,15 @@ de esta app depende ya de él.
 6. **Verte cambiar** — una foto al día, galería y comparador A/B con la
    diferencia real de peso y cintura entre las dos fechas.
 7. **Verlo sin abrir la app** — un widget en la pantalla de inicio con lo de
-   hoy: qué toca entrenar (con un ✓ cuando la sesión ya está), tu peso y cómo
-   vas de calorías y proteína. Se añade desde Ajustes → Widget.
-8. **Resolver el finde** — el sábado, la compra de la semana ordenada por el
-   recorrido del súper y en kilos y litros, que se va tachando con el carro. El
-   domingo, qué cocinar, cuánto y en qué orden, empezando por lo que más tarda
-   porque el horno trabaja solo. Sale del menú del plan y se ajusta a tus
-   calorías sin tocar la proteína. Está en Comida.
-9. **Que te entrenen** — un coach dentro de la app que lee tu historial, mira
+   hoy: qué toca entrenar (con un ✓ cuando la sesión ya está), tu peso, lo que
+   llevas de semana y tu cintura. Se añade desde Ajustes → Widget.
+8. **Que te entrenen** — un coach dentro de la app que lee tu historial, mira
    tus fotos y **propone**: registrar una sesión, ajustar los objetivos de la
    semana, crear un aviso, bloquear un hueco en tu Google Calendar. Nada se
    guarda hasta que tocas Guardar.
-10. **Que te conozca** — le cuentas una vez a qué hora entrenas, qué no comes o
+9. **Que te conozca** — le cuentas una vez a qué hora entrenas, qué no comes o
    qué rodilla te molesta, y deja de preguntarlo.
-11. **Que te escriba él** — una vez por semana mira tus datos y te deja un
+10. **Que te escriba él** — una vez por semana mira tus datos y te deja un
    repaso en Inicio. Se enciende en Ajustes: es lo único de la app que hace una
    llamada de pago sin que la pidas, y lo que cuesta sale escrito debajo. Son hechos, no la
    conversación entera: veinte líneas que viajan en cada pregunta. Los propone
@@ -91,7 +84,7 @@ dos— pero lo que se lee está traducido, y el buscador entiende los dos idioma
 
 ```bash
 make deps      # dependencias de desarrollo
-make check     # lint + los 2193 tests (sin Docker, sin saltarse nada)
+make check     # lint + los 2023 tests (sin Docker, sin saltarse nada)
 make apk       # el APK, con las tres ABIs
 make install   # adb install al móvil o al emulador conectado
 ```
@@ -121,7 +114,7 @@ local — sirve para ver pantallas, no para usarla en serio.
 
 Ajustes → Copia y datos:
 
-- **Exportar** escribe un JSON con todo (entrenos, peso, comida, rutinas,
+- **Exportar** escribe un JSON con todo (entrenos, peso, medidas, rutinas,
   notas, fechas de fotos) y te deja elegir dónde copiarlo.
 - **Exportar fotos (zip)** son los JPEG, aparte.
 - **Importar** enseña qué trae el fichero y qué reemplaza **antes** de tocar
@@ -146,8 +139,8 @@ entrenador sabe de ti**, que es justo lo que uno no quiere volver a contar.
 ## Cómo está hecho
 
 Python + [Flet](https://flet.dev) (que dibuja con Flutter), empaquetado con
-`flet build apk`. La lógica de negocio — métricas, progresión, nutrición,
-gimnasio — son módulos puros sin Flet, y por eso se pueden probar sin abrir una
+`flet build apk`. La lógica de negocio — métricas, progresión,
+programación, gimnasio — son módulos puros sin Flet, y por eso se pueden probar sin abrir una
 ventana. `CLAUDE.md` cuenta la arquitectura y, sobre todo, las **trampas**: las
 cosas que se rompen en silencio si no las sabes.
 

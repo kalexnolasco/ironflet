@@ -67,12 +67,14 @@ def unknown_week() -> ProgramWeek:
 
 @pytest.fixture
 def home(monkeypatch):
-    """A HomeView whose three outside modules are stubbed, plus its store."""
+    """A HomeView with its one outside module stubbed, plus its store.
+
+    Eran tres hasta 0.21: `day_totals` y `targets_for` se fueron con la
+    nutrición.
+    """
     import views.home as home_module
 
     monkeypatch.setattr(home_module, "current_program_week", lambda store: unknown_week())
-    monkeypatch.setattr(home_module, "day_totals", lambda store, day: {})
-    monkeypatch.setattr(home_module, "targets_for", lambda store, day: {})
 
     def build(store):
         page = MagicMock()
@@ -205,80 +207,6 @@ def totales_y_objetivos_reales(tmp_path):
     engine.dispose()
 
 
-def test_la_tarjeta_de_comida_pinta_la_proteina_que_nutrition_devuelve(
-    home, monkeypatch, totales_y_objetivos_reales
-):
-    """42 g registrados no pueden salir como «0 g» en Inicio.
-
-    Salían. La traducción al español renombró la CLAVE del diccionario
-    (`totals.get("proteína")`), y como `.get()` de una clave que no existe
-    devuelve None en vez de reventar, la tarjeta pintaba un cero perfectamente
-    creíble con la comida ya apuntada. Es la trampa 22 en su forma más
-    silenciosa: `nutrition` habla en inglés porque es contrato de datos.
-    """
-    import views.home as home_module
-
-    totales, objetivos = totales_y_objetivos_reales
-    assert totales["protein"] > 0, "el montaje del test no registró comida"
-
-    monkeypatch.setattr(home_module, "day_totals", lambda store, day: totales)
-    monkeypatch.setattr(home_module, "targets_for", lambda store, day: objetivos)
-
-    view = home(FakeStore())
-    pintado = " | ".join(texts(view.build()))
-
-    esperado = f"{totales['protein']:.0f}"
-    assert f"{esperado} / 115 g" in pintado or f"{esperado}/115 g" in pintado, (
-        f"la proteína registrada ({esperado} g) no aparece en la tarjeta: {pintado}"
-    )
-    assert "0 / 115 g" not in pintado and "0/115 g" not in pintado
-
-
-def test_las_claves_que_home_lee_existen_en_nutrition(monkeypatch, totales_y_objetivos_reales):
-    """Ancla el contrato: toda clave que la tarjeta pide, `nutrition` la da.
-
-    El test de arriba prueba el caso que se rompió; este prueba la clase
-    entera, para que el próximo renombre no necesite que alguien mire la
-    pantalla para enterarse.
-    """
-    import views.home as home_module
-
-    totales, objetivos = totales_y_objetivos_reales
-    pedidas_totales: set[str] = set()
-    pedidas_objetivos: set[str] = set()
-
-    class Espia(dict):
-        def __init__(self, real, registro):
-            super().__init__(real)
-            self._registro = registro
-
-        def get(self, clave, *resto):
-            self._registro.add(clave)
-            return super().get(clave, *resto)
-
-    monkeypatch.setattr(
-        home_module, "day_totals", lambda store, day: Espia(totales, pedidas_totales)
-    )
-    monkeypatch.setattr(
-        home_module, "targets_for", lambda store, day: Espia(objetivos, pedidas_objetivos)
-    )
-    monkeypatch.setattr(home_module, "current_program_week", lambda store: unknown_week())
-
-    page = MagicMock()
-    page.width = 400
-    page.height = 800
-    page.data = {"refresh_current": lambda: None, "navigate_to": lambda i, **k: None}
-    view = home_module.HomeView(page, FakeStore())
-    view.on_show()
-    view.build()
-
-    huerfanas = (pedidas_totales - set(totales)) | (pedidas_objetivos - set(objetivos))
-    assert not huerfanas, (
-        f"Inicio pide claves que nutrition no devuelve: {sorted(huerfanas)}. "
-        "Son contrato de datos, no texto de pantalla — no se traducen."
-    )
-
-
 def test_on_show_does_not_raise_when_the_week_cannot_be_read(monkeypatch):
     """`on_show` runs inside `navigate_to`, before `build()`.
 
@@ -342,8 +270,6 @@ def _dialogo_avisos(monkeypatch, tmp_path, estado):
     import views.home as home_module
 
     monkeypatch.setattr(home_module, "current_program_week", lambda store: unknown_week())
-    monkeypatch.setattr(home_module, "day_totals", lambda store, day: {})
-    monkeypatch.setattr(home_module, "targets_for", lambda store, day: {})
     monkeypatch.setattr(notificaciones, "estado_android", lambda *a, **k: estado)
 
     abiertos = []

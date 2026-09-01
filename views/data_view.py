@@ -59,7 +59,12 @@ TABLE_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
             "prefs",
         ),
     ),
-    ("Nutrición", ("foods", "servings", "food_log", "nutrition_targets")),
+    # La nutrición se retiró en 0.21 y estas cuatro tablas se quedaron: siguen
+    # en la base de quien ya usaba la app, y la copia se las lleva para que un
+    # móvil nuevo no las pierda. El grupo dice eso — enseñar «Nutrición» a secas
+    # en una app que ya no la tiene se lee como que la función sigue ahí y no
+    # se encuentra.
+    ("Comida (función retirada)", ("foods", "servings", "food_log", "nutrition_targets")),
     ("Rutinas", ("routines", "routine_phases", "routine_days", "routine_exercises")),
 )
 
@@ -74,7 +79,7 @@ TABLE_LABELS = {
     "foods": "Alimentos",
     "servings": "Raciones",
     "food_log": "Diario de comida",
-    "nutrition_targets": "Objetivos de nutrición",
+    "nutrition_targets": "Objetivos de macros",
     "routines": "Rutinas",
     "routine_phases": "Fases de rutina",
     "routine_days": "Días de rutina",

@@ -4,7 +4,28 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-IronFlet — weight-training tracker whose **entire user-facing surface is Spanish** (default routine: 7-phase, 24-week periodized program from CambiaTuFísico) with a food diary on top. Built with **Flet** (`flet[all]>=0.25,<0.30`) on Python `>=3.10,<3.13`.
+IronFlet — weight-training tracker whose **entire user-facing surface is Spanish** (default routine: 7-phase, 24-week periodized program from CambiaTuFísico). Built with **Flet** (`flet[all]>=0.25,<0.30`) on Python `>=3.10,<3.13`.
+
+**It is a gym app and nothing else, since 0.21.** There was a food diary on top
+— catalogue, five-meal log, versioned macro targets, the Saturday shopping list
+— and Alex had it removed: «quítale la nutrición, es algo complejo… solo gym».
+About 3.900 lines went: `views/nutrition_view.py`, `finde.py`, the bulk of
+`nutrition.py`, three coach tools and four test files.
+
+Two things stayed, both on purpose:
+
+- **The four tables** (`foods`, `servings`, `food_log`, `nutrition_targets`),
+  declared in what is left of `nutrition.py`. They are alive in the database of
+  anyone who used the app, and `backup.py` still exports and imports them.
+  Dropping the declarations would have done two silent things: made new backups
+  stop carrying that data, and made restoring an old one fail on keys nobody
+  can read.
+- **`health.py`** — BMI, BMR, TDEE, the protein range and the water target.
+  Those are derived from the profile, not a food log: nothing records what he
+  ate, and Ajustes shows them as what they have always been, arithmetic about
+  his body.
+
+Anything that reads a meal is gone: do not add one back without asking.
 
 There is **still no translation layer** — the language flipped, the architecture did not. `i18n.py` stays deleted: no `t()`, no `ES` dict, no language toggle, no `lang` preference. All user-visible strings are plain Spanish literals in the views (Alex asked for it: "cambiemos a Español todo lo que ve el usuario").
 
@@ -68,7 +89,7 @@ CI (`.github/workflows/ci.yml`) runs, on Python 3.12:
 uv sync --group dev
 uv run ruff check .
 uv run ruff format --check .
-uv run pytest -q          # 2193 tests, 1 skipped (a network test, opt-in)
+uv run pytest -q          # 2023 tests, 1 skipped (a network test, opt-in)
 ```
 
 ## Architecture
@@ -87,15 +108,20 @@ View indices are frozen — `views/home.py` calls `navigate_to(2)` and `navigate
 | 3 | Browse | `BrowseView` | no |
 | 4 | History | `HistoryView` | slot 4 "History" |
 | 5 | Profile | `ProfileView` | no |
-| 6 | Nutrition | `NutritionView` | slot 3 "Food" |
-| 7 | Routines | `RoutineEditorView` | no |
-| 8 | Backup & data | `DataView` | no |
-| 9 | Coach | `AgentView` | no |
-| 10 | Fotos | `PhotosView` | no |
+| 6 | Routines | `RoutineEditorView` | no |
+| 7 | Backup & data | `DataView` | no |
+| 8 | Coach | `AgentView` | no |
+| 9 | Fotos | `PhotosView` | no |
 
 ```python
-NAV_TABS = (0, 1, 2, 6, 4)
+NAV_TABS = (0, 1, 2, 4)
 ```
+
+**Los índices bajaron uno en 0.21**, al retirarse Nutrition del 6. Eso es
+exactamente lo que la trampa 1 dice que no se haga a la ligera; se hizo a
+conciencia, buscando cada literal (`views/home.py` ya usaba constantes con
+nombre, y solo quedaban cuatro números sueltos), y `tests/test_smoke.py` fija
+el orden resultante.
 
 Browse, Profile, Routines, Backup and Coach are reached from inside other screens. Adding a bar destination means appending to both the `destinations` list and `NAV_TABS`, in the same slot order — never renumber the view list.
 
@@ -173,10 +199,10 @@ None of them import Flet or open a database on import: plain data in, plain data
 
 **`analytics.py`** — the single implementation of every training metric. Epley 1RM (`estimated_1rm`, `best_e1rm`, `e1rm_progression`), typed personal records (`PRKind`, `Record`, `PersonalRecords`, `personal_records`, `all_personal_records`, `detect_new_records`), sets per muscle group (`resolve_muscles`, `MuscleVolume`, `sets_per_muscle_group`), `session_count`, `training_streak`, `week_stats`, `moving_average` for body weight, plus `working_sets`/`volume`/`total_volume`/`is_warmup`. Use it for **anything numeric about training**; do not recompute a metric in a view. `views/workout.py` uses `detect_new_records`, `views/history.py` the rest.
 
-**`nutrition.py`** — food catalogue, named servings, meal diary and versioned targets. Views use the module-level facade (`search_foods`, `favourite_foods`, `log_food`, `delete_entry`, `day_entries`, `day_totals`, `targets_for`, `copy_previous_day`), which resolves a per-store `Nutrition` instance; the class is there for the bot. Two invariants you must not "clean up":
-- **Macros in `food_log` are frozen at insert time** — the row stores that portion's kcal/protein/fat/carbs/fibre and the food name, not a pointer to the catalogue. Editing a food next month must not rewrite last Tuesday's lunch.
-- **Targets are versioned by start date**, never overwritten; `targets_for(day)` picks the newest row already in effect. The plan changes intake mid-course, and a mutable row would retroactively falsify past adherence.
-- Everything is per 100 g on the **European label convention**: `carbs` excludes fibre. USDA "carbohydrate, by difference" includes it — subtract fibre before copying a USDA number in, or carb totals come out ~10 % high.
+**`nutrition.py`** — ya no es un módulo de análisis: desde 0.21 son **las
+cuatro declaraciones ORM y nada más**, para que `backup.py` siga llevándose lo
+que haya en esas tablas. Sin catálogo, sin diario, sin objetivos, sin facade.
+
 
 **`set_types.py`** — `SetType` (`warmup` / `normal` / `drop` / `failure`), stored under the optional `"type"` key, plus automatic rest. `parse_set_type`, `set_type_of`, `counts_as_work`, `working_sets`, `warmup_sets`, `count_by_type`, `tag_set`, `label_for`, `next_set_type`; rest via `parse_prescribed_rest`, `rest_seconds`, `rest_seconds_for_phase`, `format_rest`, `is_compound`. Two rules: **absent `"type"` means normal** (every pre-existing row, and everything the bot writes, has no type and is real work), and **only warm-ups are discounted** — a drop set and a set to failure are work; the label says *how*, not *whether*. Rest defaults (`REST_COMPOUND_S = 180`, `REST_ISOLATION_S = 90`) used to be mirrored in the retired bot's `sesion_viva.py`, and `tests/test_set_types.py` still compares against it **when that file happens to be on disk** (`skipif` otherwise). With the bot gone these are the only definition; the comparison is a leftover that costs nothing and will skip itself the day `../agente/` is deleted.
 
@@ -464,44 +490,6 @@ cerrarse.
 `memoria.PREF` **no** va en `SECRET_PREF_KEYS` — al revés que la clave de la
 API. Esto es exactamente lo que uno quiere conservar al cambiar de móvil.
 
-### El finde — `finde.py`
-
-Alex compra los sábados y cocina los domingos para toda la semana, y pidió que
-la app le ayudase con eso. Los datos ya estaban: `nutrition.TEMPLATE_DAY` lleva
-el menú del plan con sus gramos por comida. Faltaba multiplicarlo por siete,
-agruparlo por alimento y decirlo en unidades de supermercado.
-
-Vive dentro de **Comida** (`NutritionView.finde`: `""`, `"compra"` o `"prep"`),
-no en la barra: es la misma pregunta que el diario — qué como — hecha con una
-semana de antelación, y una sexta ranura para algo que se usa dos días por
-semana es mal negocio. El sábado y el domingo la entrada va arriba del diario;
-el resto de la semana, al final.
-
-Tres decisiones que no son obvias:
-
-- **Las secciones del supermercado están escritas a mano** (`_SECCION`). Se
-  puede deducir el macro dominante y agrupar por ahí, sin mantenimiento — y
-  saldría mal: el plátano y el arroz son los dos hidratos y están en pasillos
-  distintos. Una lista de la compra se ordena por dónde están las cosas en la
-  tienda, que es un hecho del mundo y no de la tabla nutricional.
-- **El escalado respeta la proteína.** La lista se ajusta a los objetivos
-  vigentes (`targets_for`, los que el coach pudo cambiar el lunes), pero el
-  plan dice qué recortar cuando hay que bajar: «el aceite de la cena, nunca la
-  proteína». Los alimentos proteicos se dejan intactos y el ajuste recae sobre
-  el resto. Por debajo de `_FACTOR_MINIMO` (0.5) ya no se escala: se avisa. Sin
-  ese suelo, un objetivo de 900 kcal producía «63 g de manzana para la semana»
-  — aritméticamente correcto y completamente inútil.
-- **`_COCINADO` lleva los días que aguanta cada cosa en la nevera**, y ese
-  tercer número es el que hace honesto el plan del domingo. Sin él mandaba
-  cocinar salmón el domingo para comerlo el sábado siguiente.
-
-El coach lo relata, no lo recalcula (`_tool_weekend_plan`): darle el menú y los
-objetivos y dejar que multiplique es un error que se descubre en la caja del
-súper. Misma política que con `progression.py`.
-
-Lo tachado en la lista vive en la instancia de la vista, no en la base de
-datos: es verdad durante una compra, y una lista a medias que sobrevive hasta
-el sábado siguiente es peor que ninguna.
 
 ### Reminders → Android notifications — `notificaciones.py`
 
@@ -752,15 +740,18 @@ Things that break quietly if you do not know them:
     los aporta; `workout_draft.py` no lee almacenamiento a propósito, que es lo
     que le deja probarse con datos a mano.
 
-33. **`sys.modules.pop("views.…")` en un fixture que no stubbea nada.**
-    `test_finde_view` y `test_workout_extras_view` recargan su vista a
-    propósito: `test_nutrition_view` deja un stub de `nutrition` puesto y hay
-    que deshacerlo. Copiar ese patrón donde no hace falta rompe al vecino —
-    `test_abdomen` va primero por orden alfabético y dejaba el módulo recién
-    recargado debajo de `test_workout_exercise_date`, que hace `monkeypatch`
-    sobre el que él ya tenía cargado. El fallo **solo aparece en la suite
-    entera**: el fichero solo pasa, y el rojo sale en un test que nadie ha
-    tocado.
+33. **`sys.modules.pop("views.…")` en un fixture.** Ya no lo hace ninguno, y
+    esa es la entrada: el patrón existía porque `test_nutrition_view` dejaba un
+    stub de `nutrition` en `sys.modules` y los vecinos tenían que deshacerlo.
+    Ese fichero se fue con la nutrición en 0.21 y la razón con él.
+
+    Copiarlo «por si acaso» rompe al de al lado: `test_abdomen` lo hizo, va
+    primero por orden alfabético, y dejaba el módulo recién recargado debajo de
+    `test_workout_exercise_date`, que hace `monkeypatch` sobre el que él ya
+    tenía cargado. El fallo **solo aparece en la suite entera** — el fichero
+    solo pasa, y el rojo sale en un test que nadie ha tocado. Si algún día hace
+    falta otra vez, que sea porque alguien vuelve a stubbear un módulo, y que
+    el fixture lo diga.
 
 34. **Pintar un nombre de ejercicio sin pasarlo por `nombres_es`.** Desde 0.19
     la pantalla habla español y la base inglés, así que una vista que pinte
@@ -779,11 +770,11 @@ Pinned to `flet[all]>=0.25,<0.30` — `flet[all]`, not plain `flet`, because web
 
 ## Tests
 
-`.venv/bin/python -m pytest -q` — **2193 tests**, `testpaths = ["tests"]`, `asyncio_mode = "auto"`:
+`.venv/bin/python -m pytest -q` — **2023 tests**, `testpaths = ["tests"]`, `asyncio_mode = "auto"`:
 
-`test_abdomen.py`, `test_agent.py`, `test_analytics.py`, `test_asset_manager.py`, `test_backup.py`, `test_catalogo.py`, `test_chart_baseline.py`, `test_column_migration.py`, `test_day_screen.py`, `test_data_view_counts.py`, `test_dialog_layout.py`, `test_draft_dates.py`, `test_draft_substitution.py`, `test_exercise_images.py`, `test_exercise_key.py`, `test_extras.py`, `test_finde.py`, `test_finde_view.py`, `test_flet_reconnect.py`, `test_fotos.py`, `test_gcal.py`, `test_gym_tools.py`, `test_health.py`, `test_help_dialog.py`, `test_history_notes.py`, `test_history_view.py`, `test_home_view.py`, `test_image_delivery.py`, `test_interfaz_en_espanol.py`, `test_layout_movil.py`, `test_medidas_y_objetivo.py`, `test_memoria.py`, `test_nombres_es.py`, `test_notificaciones.py`, `test_nutrition.py`, `test_nutrition_view.py`, `test_percent_table.py`, `test_prefill_por_fecha.py`, `test_profile_db_down.py`, `test_puente_dart.py`, `test_program_week.py`, `test_repaso.py`, `test_progression.py`, `test_routine_builder.py`, `test_rutinas_nuevas.py`, `test_session_duration.py`, `test_session_plan.py`, `test_set_types.py`, `test_shared_ui.py`, `test_smoke.py`, `test_sqlite_backend.py`, `test_storage_metrics.py`, `test_substitutions.py`, `test_theme.py`, `test_timer_sound.py`, `test_weight_trend.py`, `test_widget.py`, `test_workout_date.py`, `test_workout_draft.py`, `test_workout_exercise_date.py`, `test_workout_extras_view.py`, `test_workout_notes.py`, `test_workout_notes_swap.py`, `test_workout_plan_rows.py`, `test_workout_resume.py`, `test_workout_session_time.py`, `test_workout_tools.py`, `test_workout_zen.py`.
+`test_abdomen.py`, `test_agent.py`, `test_analytics.py`, `test_asset_manager.py`, `test_backup.py`, `test_catalogo.py`, `test_chart_baseline.py`, `test_column_migration.py`, `test_day_screen.py`, `test_data_view_counts.py`, `test_dialog_layout.py`, `test_draft_dates.py`, `test_draft_substitution.py`, `test_exercise_images.py`, `test_exercise_key.py`, `test_extras.py`, `test_flet_reconnect.py`, `test_fotos.py`, `test_gcal.py`, `test_gym_tools.py`, `test_health.py`, `test_help_dialog.py`, `test_history_notes.py`, `test_history_view.py`, `test_home_view.py`, `test_image_delivery.py`, `test_interfaz_en_espanol.py`, `test_layout_movil.py`, `test_medidas_y_objetivo.py`, `test_memoria.py`, `test_nombres_es.py`, `test_notificaciones.py`, `test_percent_table.py`, `test_prefill_por_fecha.py`, `test_profile_db_down.py`, `test_puente_dart.py`, `test_program_week.py`, `test_repaso.py`, `test_progression.py`, `test_routine_builder.py`, `test_rutinas_nuevas.py`, `test_session_duration.py`, `test_session_plan.py`, `test_set_types.py`, `test_shared_ui.py`, `test_smoke.py`, `test_sqlite_backend.py`, `test_storage_metrics.py`, `test_substitutions.py`, `test_theme.py`, `test_timer_sound.py`, `test_weight_trend.py`, `test_widget.py`, `test_workout_date.py`, `test_workout_draft.py`, `test_workout_exercise_date.py`, `test_workout_extras_view.py`, `test_workout_notes.py`, `test_workout_notes_swap.py`, `test_workout_plan_rows.py`, `test_workout_resume.py`, `test_workout_session_time.py`, `test_workout_tools.py`, `test_workout_zen.py`.
 
-A clean run is `2193 passed, 1 skipped` and needs **nothing installed but the dev group** — no Docker, no server. The single skip is a network test in `test_asset_manager.py` (opt in with `IRONFLET_NETWORK_TESTS=1`). Until 0.12 this section warned to judge a run by its skip count, because 211 tests — everything touching storage — skipped silently without PostgreSQL; that trap is gone with the server.
+A clean run is `2023 passed, 1 skipped` and needs **nothing installed but the dev group** — no Docker, no server. The single skip is a network test in `test_asset_manager.py` (opt in with `IRONFLET_NETWORK_TESTS=1`). Until 0.12 this section warned to judge a run by its skip count, because 211 tests — everything touching storage — skipped silently without PostgreSQL; that trap is gone with the server.
 
 `tests/conftest.py` gives each pytest process its own SQLite file in the system temp dir, for the same reason it used to create a database per pid: the fixtures wipe rows, and two concurrent runs deleting each other's data mid-query produced red runs with a different set of failures each time, in files unrelated to whatever was being changed.
 

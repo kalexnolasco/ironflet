@@ -246,9 +246,11 @@ def test_home_se_dibuja_sin_ningun_dato(store):
 
 
 def test_home_se_dibuja_con_el_dia_entero(store):
-    """Everything present: trained, weighed in, measured, ate."""
-    import nutrition
+    """Everything present: trained, weighed in, measured.
 
+    Era «trained, weighed in, measured, ate» hasta 0.21, cuando la comida salió
+    de la app.
+    """
     for dias, kg in ((21, 73.0), (14, 73.4), (7, 73.9), (0, 74.2)):
         store.save_weight(kg, (HOY - timedelta(days=dias)).isoformat())
     store.save_measurement(waist=83.0, on_date=(HOY - timedelta(days=28)).isoformat())
@@ -262,8 +264,6 @@ def test_home_se_dibuja_con_el_dia_entero(store):
             sets=[{"weight": 100, "reps": 5}],
         )
     )
-    nutrition.log_food  # noqa: B018 - the facade exists; the diary may be empty
-
     assert _home(store).build() is not None
 
 

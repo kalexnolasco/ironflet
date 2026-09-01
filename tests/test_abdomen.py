@@ -456,13 +456,12 @@ def test_lo_hecho_se_mide_contra_el_historial_no_contra_un_flag(inicio, store):
 def entreno(store):
     """La vista de entreno, importada **sin recargar el módulo**.
 
-    Recargarlo con `sys.modules.pop` es lo que hacen `test_finde_view` y
-    `test_workout_extras_view`, y ahí hace falta: `test_nutrition_view` deja un
-    stub de `nutrition` puesto y hay que deshacerlo. Aquí no se stubbea nada, y
-    hacerlo igualmente rompía `test_workout_exercise_date` — este fichero va
-    primero por orden alfabético, así que dejaba el módulo recién recargado
-    debajo de un test que hace `monkeypatch` sobre el que él ya tenía. Un fallo
-    que solo aparece en la suite entera y nunca ejecutando el fichero solo.
+    Recargarlo con `sys.modules.pop` fue lo primero que hizo este fixture,
+    copiado de otro que sí lo necesitaba. Rompía `test_workout_exercise_date`:
+    este fichero va primero por orden alfabético, así que dejaba el módulo
+    recién recargado debajo de un test que hace `monkeypatch` sobre el que él
+    ya tenía. Un fallo que solo aparece en la suite entera y nunca ejecutando
+    el fichero solo. Trampa 33.
     """
     from unittest.mock import MagicMock
 

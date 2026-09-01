@@ -99,28 +99,6 @@ def test_sin_rotacion_lo_dice_en_vez_de_inventar_descanso(store):
 # ── las macros usan las claves de nutrition, no las traducidas ──────────
 
 
-def test_las_macros_salen_con_su_objetivo(store):
-    datos = widget.payload(store, HOY)
-    assert "kcal" in datos["kcal"]
-    assert datos["proteina"].endswith("g P")
-
-
-def test_lee_protein_y_no_proteina(store, monkeypatch):
-    """La trampa 22, que ya pintó «Proteína 0 g» en Inicio con 42 g apuntados.
-
-    Se le da un diccionario que SOLO tiene la clave inglesa: si el módulo
-    buscara la española, la cifra saldría a cero sin que nada fallara.
-    """
-    monkeypatch.setattr(widget, "_linea_entreno", lambda s, d: "Legs", raising=False)
-    import nutrition
-
-    monkeypatch.setattr(nutrition, "day_totals", lambda s, d: {"kcal": 1800.0, "protein": 142.0})
-    monkeypatch.setattr(nutrition, "targets_for", lambda s, d: {"kcal": 2550.0, "protein": 115.0})
-    datos = widget.payload(store, HOY)
-    assert datos["proteina"] == "142 / 115 g P"
-    assert datos["kcal"] == "1800 / 2550 kcal"
-
-
 # ── un widget no puede lanzar ───────────────────────────────────────────
 
 
@@ -142,11 +120,12 @@ def test_con_todo_roto_devuelve_el_texto_de_invitacion():
 
 
 def test_un_bloque_roto_no_se_lleva_a_los_demas(store, monkeypatch):
-    """El peso sin apuntar no puede borrar las calorías."""
+    """Una báscula que falla no puede vaciar las otras tres líneas."""
     monkeypatch.setattr(store, "get_weights", lambda: (_ for _ in ()).throw(RuntimeError("nope")))
     datos = widget.payload(store, HOY)
     assert datos["peso"] == ""
-    assert datos["kcal"], "las macros siguen ahí"
+    assert datos["series"], "las demás líneas siguen ahí"
+    assert datos["entreno"]
 
 
 def test_todas_las_claves_estan_siempre(store):
