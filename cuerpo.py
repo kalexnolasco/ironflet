@@ -17,17 +17,25 @@ decide con qué. Eso tiene dos consecuencias que valen el rodeo:
   salga del lienzo, que los pares izquierda/derecha sean simétricos, que no
   falte ninguno de los trece;
 * y se pudo **verificar mirándolo**, renderizando el mismo dato a SVG en el
-  escritorio, antes de compilar un APK de 80 MB para ver si un brazo estaba
+  escritorio, antes de compilar un APK de 85 MB para ver si un brazo estaba
   torcido.
 
-## Por qué no es 3D de verdad
+## Este es el cuerpo de repuesto
 
-Flet no trae un motor 3D, y meter uno en la app por una pantalla sería cambiar
-80 MB de APK por bastante más y un montón de superficie nueva. Lo que da la
-sensación de volumen es el **sombreado**: cada músculo se pinta con un
-degradado radial cuyo foco está donde le daría la luz, y eso en una silueta
-plana basta para que se lea como un cuerpo. `flet.canvas` trae
-`PaintRadialGradient`, así que el volumen sale del pintor y no de la geometría.
+Desde 0.0.1 hay un cuerpo **3D de verdad** —`cuerpo3d.py`, anatómico y
+girable— y es el que se ve en el móvil. Este mapa plano no se retiró porque el
+3D necesita un `ft.WebView`, que solo existe en Android y iOS: en el PC, en los
+tests y en cualquier sitio donde el visor no arranque, la pantalla de histórico
+cae aquí. Un cuerpo peor es mejor que una pantalla rota.
+
+Lo que da la sensación de volumen sin geometría es el **sombreado**: cada
+músculo se pinta con un degradado radial cuyo foco está donde le daría la luz,
+y eso en una silueta plana basta para que se lea como un cuerpo. `flet.canvas`
+trae `PaintRadialGradient`, así que el volumen sale del pintor.
+
+La escala de color es **la misma** que la del 3D —`mapa_muscular.color_de`, que
+los dos llaman—, para que la misma semana no salga naranja en una pantalla y
+roja en la otra.
 
 ## Las coordenadas
 

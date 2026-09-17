@@ -401,12 +401,13 @@ lienzo de 100×220: catorce músculos, cada uno con uno o dos contornos, y una
 silueta debajo. Eso permite dos cosas que valen el rodeo — probar que ningún
 músculo se sale del lienzo o que los pares son simétricos **sin abrir una
 app**, y haberlo verificado renderizando el mismo dato a PNG en el escritorio
-antes de compilar un APK de 80 MB para ver si un brazo estaba torcido.
+antes de compilar un APK de 85 MB para ver si un brazo estaba torcido.
 
-**No es 3D y no lo intenta.** Flet no trae motor 3D y meter uno por una
-pantalla cambiaría 80 MB de APK por bastante más. Lo que da volumen es el
-sombreado: `PaintRadialGradient` con el foco donde daría la luz, y en una
-silueta plana eso basta para que se lea como un cuerpo.
+**Desde 0.0.1 este es el cuerpo de repuesto.** El que se ve en el móvil es
+el 3D anatómico de la sección siguiente; este se queda para el PC, los tests y
+cualquier sitio donde el `ft.WebView` no arranque. Lo que le da volumen sin
+geometría es el sombreado: `PaintRadialGradient` con el foco donde daría la
+luz, y en una silueta plana eso basta para que se lea como un cuerpo.
 
 Tres cosas que costaron y no se ven en una captura:
 
@@ -432,6 +433,65 @@ encoge más donde más cerrado gira. La silueta empezó siendo un único contorn
 de 28 puntos y los brazos —la parte estrecha— salían más finos que sus propios
 músculos: el bíceps flotaba al lado del brazo. Por partes cada pieza se cuadra
 con lo que lleva dentro.
+
+### El cuerpo 3D — `cuerpo3d.py` + `components/visor3d.py` + `anatomia/`
+
+Alex: «investiga profundamente para tener 3D real con animaciones». Se puede, y
+la investigación ocupó doce compilaciones porque **ninguna de las cuatro cosas
+que lo bloquean da un error que apunte a su causa**. Las cuatro están en la
+lista de trampas (35–38). Lo que hay ahora: un cuerpo anatómico de verdad,
+girable con el dedo, coloreado con las mismas series que el mapa plano, y que
+al tocarlo dice qué músculo es.
+
+**La arquitectura, en una frase:** un `ft.WebView` cargando una página servida
+por un `http.server` que corre dentro de la propia app, con three.js dibujando
+un `.glb` de quince mallas.
+
+El servidor suena a rodeo hasta que se ve el porqué. Desde `file://` Android
+deja pasar un `<script src>` pero **bloquea `fetch` y `XMLHttpRequest`** entre
+ficheros locales, y GLTFLoader lee el `.glb` con `fetch`. Comprobado en el
+emulador: por `file://` el modelo no llega y por `http://127.0.0.1` llega
+entero. El servidor está atado al bucle local y a un puerto efímero.
+
+**El modelo no es el que se descargó.** El original —Z-Anatomy vía
+`hpfrei/body-anatomy-3d-viewer`, CC BY-SA 4.0— son 826 mallas y 8,2 MB.
+`scripts/forja.mjs` lo funde en **quince**: los catorce grupos que
+`analytics.sets_per_muscle_group` devuelve, más `resto` de escenario. De 8,2 MB
+a **0,44 MB**, y de 826 llamadas de dibujo por fotograma a 15 — que en el
+emulador, con GL por software, dobló los fotogramas por segundo (9 → 19). La
+receta para rehacerlo y la atribución que la licencia obliga están en
+`anatomia/CREDITOS.md`.
+
+**El nombre de la malla ES la clave del músculo.** `chest`, `lower back`,
+`quadriceps`: las mismas cadenas inglesas que devuelve analytics, sin traducir
+(trampa 22). El color se aplica con `malla.name === clave`, así que un nombre
+que no cuadre deja el músculo del color del escenario y la pantalla sigue
+pareciendo correcta. `tests/test_cuerpo3d.py` lee los nombres del `.glb` y los
+cruza con `cuerpo.MUSCULOS`.
+
+**Un músculo sin tocar no puede ser el negro del mapa plano.** Allí funciona
+porque el hueco queda dentro de una silueta dibujada y se lee como «apagado».
+En 3D no hay silueta: el mismo negro se lee como un agujero, y el abdomen sin
+entrenar salía como si al muñeco le faltara el vientre. Va un escenario
+oscurecido. La **escala** sí es compartida —`mapa_muscular.color_de`— para que
+la misma semana no salga naranja en una pantalla y roja en la otra.
+
+**Tocar un músculo no puede llamar a `refresh_current()`.** Reconstruir la
+pantalla recrea el `ft.WebView` y con él recarga el modelo: el cuerpo pegaría
+un salto en cada toque. Por eso el visor vive en la vista (`self._visor`, que
+sobrevive a `build()` porque `main.py` crea las vistas una sola vez) y lo único
+que cambia al tocar es la columna de texto, en su sitio.
+
+**Las animaciones que hay y la que no.** Gira solo hasta que el dedo lo toca,
+los colores se interpolan al cambiar de semana, el músculo elegido late, y el
+chip de Frente/Espalda gira medio vuelta suave. Lo que **no** hay es el cuerpo
+haciendo el ejercicio: el modelo tiene cero esqueletos y cero animaciones —es
+geometría estática—, así que eso pediría otro modelo con rig y datos de
+movimiento por ejercicio.
+
+El bucle de dibujo **para** cuando no hay nada que animar (`sucio`/`vivo` en
+`visor.html`). Sin eso, un WebView renderizando sesenta veces por segundo una
+imagen idéntica es batería a cambio de nada, y esta pantalla se deja abierta.
 
 ### El catálogo grande y los extras — `catalogo.py` + `extras.py`
 
@@ -594,6 +654,7 @@ to delete `origen="fijo"` rows because the bot would just re-seed them.
 - `views/shared_ui.py` — the three things every screen needs and none should own, each here because it shipped broken in more than one file: `plural()` ("1 sets" and "Copied 1 items" both reached the screen), `dialog_width(page)` / `dialog_height(page, preferred)` (every dialog was pinned to 340 px on the theory that "the phone is 420 px wide"; it is not, and the text was clipped), and `db_error_card()` / `db_error_screen()` (an unreachable database rendered as a blank screen everywhere except `data_view.py`). **Use these; do not retype them.** A hand-agreed plural is how one of eight copies stayed wrong.
 - `guides.py` — in-app reference tips (training, nutrition), rendered by `views/guide_dialog.py`. `views/home.py` builds one card per entry, so adding or dropping a guide needs no layout change.
 - `exercise_details.py` — per-exercise metadata; `analytics.resolve_muscles()` reads it to attribute sets to muscle groups.
+- `components/visor3d.py` — the `ft.WebView` that shows the 3D body, and the only file that touches Flet for it. `cuerpo3d.py` owns the model, the local server and the colours; keeping them apart is what lets the model and the palette be tested on a machine with no WebView at all.
 
 ### Exercise images
 
@@ -810,17 +871,54 @@ Things that break quietly if you do not know them:
     idiomas**: enseñar «Sentadilla» y no encontrarla al escribirla es el peor
     de los dos mundos. `catalogo.buscar` mira el nombre inglés y el traducido.
 
+35. **Usar `ft.WebView` sin `flet-webview` en las dependencias.** El control
+    existe en el Python de flet 0.28.3 y **no** en su cliente Flutter: la
+    pantalla enseña un recuadro rojo con `Unknown control: webview` y no hay
+    nada en logcat. Lo aporta `flet-webview==0.1.0`, que trae su
+    `flutter/flet_webview` y registra ese mismo nombre de control. Pin exacto:
+    desde 0.80 el paquete exige `flet==0.86`, que es otra API entera.
+
+36. **Cargar la página antes de encender JavaScript.** `ft.WebView` nace con
+    JavaScript **desactivado**, y el lado Dart no lee el atributo al montar:
+    solo se puede cambiar por método, y el método no existe hasta que el
+    control está montado del lado Flutter. Encenderlo después de que la página
+    haya cargado **no** vuelve a ejecutar el `<script type=module>`. El
+    síntoma es una página que se queda con su HTML estático para siempre, sin
+    un solo error en ninguna parte. Orden correcto: nacer en `about:blank`,
+    encender, y entonces `load_request`.
+
+37. **Servir ficheros locales con un `TCPServer` de un hilo.** El navegador
+    pide los módulos ES en paralelo; con un servidor secuencial todos menos el
+    primero mueren con «Failed to fetch dynamically imported module», que suena
+    a permisos y es una cola. `ThreadingHTTPServer`. Y hace falta
+    `usesCleartextTraffic` en el manifiesto: desde Android 9 el http en claro
+    está prohibido por defecto **incluso contra 127.0.0.1** — sin él,
+    `net::ERR_CLEARTEXT_NOT_PERMITTED`.
+
+38. **Llamar a un método de three.js que no existe en esa clase.** Pasó con
+    `Color.manhattanDistanceTo`, que es de `Vector2` y `Vector3`. Un
+    `TypeError` dentro del bucle de dibujo deja el WebView en negro y no llega
+    a logcat. `tests/test_cuerpo3d.py` pasa el módulo por `node --check`, que
+    pilla la sintaxis y **no** esto: para esto hay que abrir la página. En el
+    escritorio se puede, sirviendo `anatomia/` con `python3 -m http.server`.
+
+    Depurar dentro de la APK de release es peor de lo que parece: `print()` de
+    Python no llega a logcat, `run-as` no funciona porque el paquete no es
+    debuggable, y la consola del WebView solo se lee por `on_console_message`.
+    La sonda que resolvió esto pintaba sus medidas **en la pantalla** y se leían
+    en la captura.
+
 ### Flet version caveat
 
 Pinned to `flet[all]>=0.25,<0.30` — `flet[all]`, not plain `flet`, because web mode needs `flet-web` and a bare `uv sync` would otherwise uninstall it. The API (`ft.Colors`, `ft.Icons`, `page.run_task`, `ft.NavigationBarDestination`, `ft.ColorScheme`) matches 0.25–0.29. If a newer Flet release renames something, update the pin rather than silently adapting to a new API.
 
 ## Tests
 
-`.venv/bin/python -m pytest -q` — **2084 tests**, `testpaths = ["tests"]`, `asyncio_mode = "auto"`:
+`.venv/bin/python -m pytest -q` — **2112 tests**, `testpaths = ["tests"]`, `asyncio_mode = "auto"`:
 
-`test_abdomen.py`, `test_agent.py`, `test_analytics.py`, `test_asset_manager.py`, `test_backup.py`, `test_catalogo.py`, `test_chart_baseline.py`, `test_column_migration.py`, `test_cuerpo.py`, `test_day_screen.py`, `test_data_view_counts.py`, `test_dialog_layout.py`, `test_draft_dates.py`, `test_draft_substitution.py`, `test_exercise_images.py`, `test_exercise_key.py`, `test_extras.py`, `test_flet_reconnect.py`, `test_fotos.py`, `test_gcal.py`, `test_gym_tools.py`, `test_health.py`, `test_help_dialog.py`, `test_history_notes.py`, `test_history_view.py`, `test_home_view.py`, `test_image_delivery.py`, `test_interfaz_en_espanol.py`, `test_layout_movil.py`, `test_medidas_y_objetivo.py`, `test_memoria.py`, `test_nombres_es.py`, `test_notificaciones.py`, `test_percent_table.py`, `test_prefill_por_fecha.py`, `test_profile_db_down.py`, `test_puente_dart.py`, `test_program_week.py`, `test_repaso.py`, `test_progression.py`, `test_routine_builder.py`, `test_rutinas_nuevas.py`, `test_session_duration.py`, `test_session_plan.py`, `test_set_types.py`, `test_shared_ui.py`, `test_smoke.py`, `test_sqlite_backend.py`, `test_storage_metrics.py`, `test_substitutions.py`, `test_theme.py`, `test_timer_sound.py`, `test_weight_trend.py`, `test_widget.py`, `test_workout_date.py`, `test_workout_draft.py`, `test_workout_exercise_date.py`, `test_workout_extras_view.py`, `test_workout_notes.py`, `test_workout_notes_swap.py`, `test_workout_plan_rows.py`, `test_workout_resume.py`, `test_workout_session_time.py`, `test_workout_tools.py`, `test_workout_zen.py`.
+`test_abdomen.py`, `test_agent.py`, `test_analytics.py`, `test_asset_manager.py`, `test_backup.py`, `test_catalogo.py`, `test_chart_baseline.py`, `test_column_migration.py`, `test_cuerpo.py`, `test_cuerpo3d.py`, `test_day_screen.py`, `test_data_view_counts.py`, `test_dialog_layout.py`, `test_draft_dates.py`, `test_draft_substitution.py`, `test_exercise_images.py`, `test_exercise_key.py`, `test_extras.py`, `test_flet_reconnect.py`, `test_fotos.py`, `test_gcal.py`, `test_gym_tools.py`, `test_health.py`, `test_help_dialog.py`, `test_history_notes.py`, `test_history_view.py`, `test_home_view.py`, `test_image_delivery.py`, `test_interfaz_en_espanol.py`, `test_layout_movil.py`, `test_medidas_y_objetivo.py`, `test_memoria.py`, `test_nombres_es.py`, `test_notificaciones.py`, `test_percent_table.py`, `test_prefill_por_fecha.py`, `test_profile_db_down.py`, `test_puente_dart.py`, `test_program_week.py`, `test_repaso.py`, `test_progression.py`, `test_routine_builder.py`, `test_rutinas_nuevas.py`, `test_session_duration.py`, `test_session_plan.py`, `test_set_types.py`, `test_shared_ui.py`, `test_smoke.py`, `test_sqlite_backend.py`, `test_storage_metrics.py`, `test_substitutions.py`, `test_theme.py`, `test_timer_sound.py`, `test_weight_trend.py`, `test_widget.py`, `test_workout_date.py`, `test_workout_draft.py`, `test_workout_exercise_date.py`, `test_workout_extras_view.py`, `test_workout_notes.py`, `test_workout_notes_swap.py`, `test_workout_plan_rows.py`, `test_workout_resume.py`, `test_workout_session_time.py`, `test_workout_tools.py`, `test_workout_zen.py`.
 
-A clean run is `2084 passed, 1 skipped` and needs **nothing installed but the dev group** — no Docker, no server. The single skip is a network test in `test_asset_manager.py` (opt in with `IRONFLET_NETWORK_TESTS=1`). Until 0.12 this section warned to judge a run by its skip count, because 211 tests — everything touching storage — skipped silently without PostgreSQL; that trap is gone with the server.
+A clean run is `2112 passed, 1 skipped` and needs **nothing installed but the dev group** — no Docker, no server. The single skip is a network test in `test_asset_manager.py` (opt in with `IRONFLET_NETWORK_TESTS=1`). Until 0.12 this section warned to judge a run by its skip count, because 211 tests — everything touching storage — skipped silently without PostgreSQL; that trap is gone with the server.
 
 `tests/conftest.py` gives each pytest process its own SQLite file in the system temp dir, for the same reason it used to create a database per pid: the fixtures wipe rows, and two concurrent runs deleting each other's data mid-query produced red runs with a different set of failures each time, in files unrelated to whatever was being changed.
 

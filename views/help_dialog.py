@@ -421,7 +421,9 @@ METRIC_HELP: dict[str, MetricHelp] = {
             "Un ejercicio da una serie entera al músculo que trabaja directo y media a "
             "cada músculo que solo asiste. Algunos ejercicios no tienen datos musculares, "
             "así que sus series no pertenecen a nada; la tarjeta dice cuántas en vez de "
-            "descartarlas en silencio — eso es lo que cuenta la línea de aviso de abajo."
+            "descartarlas en silencio — eso es lo que cuenta la línea de aviso de abajo.\n\n"
+            "El cuerpo se puede girar con el dedo y tocar músculo a músculo. El modelo "
+            "anatómico viene de Z-Anatomy (CC BY-SA 4.0) y se dibuja con three.js (MIT)."
         ),
     ),
 }

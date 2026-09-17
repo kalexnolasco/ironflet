@@ -3,7 +3,7 @@
 <div align="center">
 
 ![Proyecto](https://img.shields.io/badge/Proyecto-IronFlet-blue?style=for-the-badge)
-![Android](https://img.shields.io/badge/APK-84%20MB%20·%20SQLite-3DDC84?style=for-the-badge&logo=android&logoColor=white)
+![Android](https://img.shields.io/badge/APK-85%20MB%20·%20SQLite-3DDC84?style=for-the-badge&logo=android&logoColor=white)
 ![Flet](https://img.shields.io/badge/Flet-0.28.3-7F52FF?style=for-the-badge)
 ![Idioma](https://img.shields.io/badge/interfaz-español-E4312b?style=for-the-badge)
 ![Tests](https://img.shields.io/badge/tests-2084-2f9e44?style=for-the-badge)
@@ -52,11 +52,11 @@ de esta app depende ya de él.
    uno de flexión, uno de inferior y uno de oblicuos, sin repetir del día
    anterior. Tu plan ya lo pedía —«+ Abs» cinco veces por semana— y la app no
    te lo daba.
-4. **Verte por dentro** — un cuerpo humano en Historial, coloreado con lo que
-   has entrenado: azul lo poco trabajado, rojo lo machacado, gris lo que no has
-   tocado. Se gira para ver la espalda y se toca cada músculo para ver sus
-   series. Contesta de un vistazo lo que una lista de barras no: qué llevas
-   flojo.
+4. **Verte por dentro** — un cuerpo humano **en 3D** en Historial, coloreado
+   con lo que has entrenado: azul lo poco trabajado, rojo lo machacado, apagado
+   lo que no has tocado. Se arrastra con el dedo para darle la vuelta, se
+   pellizca para acercarse, y al tocar un músculo dice cuántas series lleva.
+   Contesta de un vistazo lo que una lista de barras no: qué llevas flojo.
 5. **Mirar atrás** — récords, progresión por ejercicio, series por músculo,
    racha de semanas y evolución del peso. Con un objetivo puesto, te dice
    cuándo llegas al ritmo que llevas de verdad.
@@ -94,8 +94,8 @@ make apk       # el APK, con las tres ABIs
 make install   # adb install al móvil o al emulador conectado
 ```
 
-El APK sale en `build/apk/app-release.apk` (~84 MB: lleva CPython y las tres
-arquitecturas). Se instala encima de la anterior sin perder datos.
+El APK sale en `build/apk/app-release.apk` (~85 MB: lleva CPython, las tres
+arquitecturas y el cuerpo 3D). Se instala encima de la anterior sin perder datos.
 
 Para desarrollar en el escritorio, `make run` abre la app contra un SQLite
 local — sirve para ver pantallas, no para usarla en serio.
@@ -153,3 +153,11 @@ La plantilla de compilación está forkeada en `build_template/` para añadir tr
 cosas que Flet no trae: mantener la pantalla encendida durante el entreno, las
 notificaciones locales, y el puente de ficheros por el que Python le habla al
 lado Android.
+
+El cuerpo 3D es [three.js](https://threejs.org/) dentro de un `ft.WebView`,
+dibujando un modelo anatómico de quince mallas —una por grupo muscular— que
+`scripts/forja.mjs` fabrica a partir de un atlas de 826. La página se sirve
+desde un servidor http que corre dentro de la propia app y no sale del bucle
+local; el porqué, y las cuatro trampas que costó, están en `CLAUDE.md`. El
+modelo deriva de [Z-Anatomy](https://www.z-anatomy.com/) (CC BY-SA 4.0):
+atribución y obligaciones en `anatomia/CREDITOS.md`.

@@ -15,6 +15,7 @@ No real database: a fake store hands back `WorkoutEntry` objects, which is what
 
 from __future__ import annotations
 
+from datetime import date, timedelta
 from unittest.mock import MagicMock
 
 import flet as ft
@@ -69,6 +70,24 @@ class FakeStore:
 
 def entry(date: str, sets: list[dict], exercise: str = "Squat") -> WorkoutEntry:
     return WorkoutEntry(date=date, exercise=exercise, muscle_group="Legs", phase=1, sets=sets)
+
+
+def esta_semana(dias_atras: int = 0) -> str:
+    """Una fecha dentro de la ventana móvil de `MUSCLE_WEEKS`.
+
+    La tarjeta de músculos mira las últimas cuatro semanas **contadas desde
+    hoy**, así que un `"2026-08-10"` escrito a mano es una bomba de relojería:
+    el test pasa durante un mes y falla solo un día, sin que nadie toque el
+    código. Pasó — estos dos se pusieron rojos treinta y seis días después de
+    escribirse, y el fallo («falta la nota de series sin contar») no apunta en
+    ningún momento al calendario.
+
+    Solo la usan los tests cuya respuesta depende de la ventana. El resto
+    conserva su fecha fija a propósito: ahí la fecha es parte de lo que se
+    comprueba —sale impresa en la tarjeta de sesión— y una relativa haría el
+    test menos legible sin ganar nada.
+    """
+    return (date.today() - timedelta(days=dias_atras)).isoformat()
 
 
 def work(weight: float, reps: int) -> dict:
@@ -176,7 +195,7 @@ def test_the_muscle_note_has_no_verb_to_disagree_with_its_count():
     work at one *and* at twelve. This one is built from noun phrases so there is
     no verb to get wrong.
     """
-    one = make_view([entry("2026-08-10", [work(40, 10)], exercise="Not A Real Exercise")])
+    one = make_view([entry(esta_semana(), [work(40, 10)], exercise="Not A Real Exercise")])
     rendered = blob(one.build())
     assert "Sin contar arriba: 1 serie de las últimas 4 semanas." in rendered
     for wrong in (" are not counted", " have no muscle data", "1 serie son"):
@@ -184,8 +203,8 @@ def test_the_muscle_note_has_no_verb_to_disagree_with_its_count():
 
     many = make_view(
         [
-            entry("2026-08-10", [work(40, 10), work(40, 10)], exercise="Not A Real Exercise"),
-            entry("2026-08-11", [work(40, 10)], exercise="Also Not Real"),
+            entry(esta_semana(), [work(40, 10), work(40, 10)], exercise="Not A Real Exercise"),
+            entry(esta_semana(1), [work(40, 10)], exercise="Also Not Real"),
         ]
     )
     assert "Sin contar arriba: 3 series de las últimas 4 semanas." in blob(many.build())
@@ -196,7 +215,7 @@ def test_the_muscle_note_has_no_verb_to_disagree_with_its_count():
 
 def test_the_muscle_card_does_not_say_unmapped():
     """ "unmapped" is a field name from analytics.py, not English."""
-    view = make_view([entry("2026-08-10", [work(40, 10)], exercise="Not A Real Exercise")])
+    view = make_view([entry(esta_semana(), [work(40, 10)], exercise="Not A Real Exercise")])
     rendered = blob(view.build()).lower()
     assert "unmapped" not in rendered
     assert "attributed" not in rendered

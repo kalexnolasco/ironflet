@@ -15,7 +15,7 @@ from __future__ import annotations
 import pytest
 
 import cuerpo
-from components.mapa_muscular import _color_de, _mezcla, formas, musculo_en
+from components.mapa_muscular import color_de, formas, mezcla, musculo_en
 
 VISTAS = ("frente", "espalda")
 
@@ -176,16 +176,16 @@ def test_sin_series_el_musculo_se_lee_como_hueco():
     apagado, porque es exactamente lo que es."""
     from theme import C
 
-    apagado = _color_de(0.0, 0.0)
-    assert apagado != _color_de(0.01, 1.0)
-    assert apagado == _mezcla(C.bg_surface, C.bg_sunken, 0.5)
+    apagado = color_de(0.0, 0.0)
+    assert apagado != color_de(0.01, 1.0)
+    assert apagado == mezcla(C.bg_surface, C.bg_sunken, 0.5)
 
 
 def test_la_escala_discrimina_de_verdad():
     """La primera versión mezclaba el gris con el acento y 15 series de pierna
     salían del mismo azul que 3 de tríceps: la escala existía en los números y
     no en el ojo."""
-    colores = [_color_de(i / 4, 5.0) for i in range(5)]
+    colores = [color_de(i / 4, 5.0) for i in range(5)]
     assert len(set(colores)) == 5, "dos tramos dan el mismo color"
 
     def canales(h):
@@ -198,8 +198,8 @@ def test_la_escala_discrimina_de_verdad():
 
 
 def test_el_color_no_se_sale_de_la_escala():
-    assert _color_de(5.0, 9.0) == _color_de(1.0, 9.0)
-    assert _color_de(-1.0, 9.0) == _color_de(0.0, 9.0)
+    assert color_de(5.0, 9.0) == color_de(1.0, 9.0)
+    assert color_de(-1.0, 9.0) == color_de(0.0, 9.0)
 
 
 # ── el canvas ────────────────────────────────────────────────────────────

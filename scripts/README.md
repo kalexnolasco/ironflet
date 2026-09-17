@@ -10,6 +10,8 @@ hand or by `make`.
 | `vendor_canvaskit.py` | Fetches CanvasKit into the installed `flet_web`. Run *after* `uv sync` — `make deps` orders them correctly. |
 | `make_timer_sounds.py` | Generates the rest-timer audio in `assets/sounds/`. |
 | `probar_en_emulador.sh` | Builds and installs the APK on a running Android emulator. |
+| `forja.mjs` | Turns the 826-mesh anatomy atlas into the 15-mesh `anatomia/cuerpo.glb` the app ships. Node, not Python — the glTF toolchain lives there. |
+| `claves.json` | Which anatomical names belong to which muscle group. **Committed on purpose**: it is the whole mapping, and `forja.mjs` is useless without it. |
 
 ---
 
@@ -96,3 +98,37 @@ The app keeps working without step 4: the repair path fetches it.
 
 Content is [Free Exercise DB](https://github.com/yuhonas/free-exercise-db),
 Unlicense / public domain. We redistribute the subset this app maps.
+
+---
+
+## The 3D body
+
+`anatomia/cuerpo.glb` is **generated**, and this is how. The source is an
+8.2 MB, 826-mesh anatomical atlas — Z-Anatomy via
+[hpfrei/body-anatomy-3d-viewer](https://github.com/hpfrei/body-anatomy-3d-viewer),
+`public/body.glb`, CC BY-SA 4.0. It is *not* in this repository: download it
+when you need to rebuild.
+
+```bash
+npm install @gltf-transform/core @gltf-transform/extensions \
+            @gltf-transform/functions meshoptimizer draco3dgltf
+node scripts/forja.mjs body.glb scripts/claves.json anatomia/cuerpo.glb 0.35
+```
+
+The last argument is how much geometry to keep (0.35 = 35 % of the triangles).
+The script prints how many source pieces landed in each group and the triangle
+count before and after, which is the only way to notice that a keyword in
+`claves.json` stopped matching anything.
+
+Two things to know before touching `claves.json`:
+
+* **Order matters.** The first group whose keyword matches wins, and several
+  names collide across the body — `extensor digitorum longus` is a calf muscle
+  and `extensor digitorum` is a forearm one. `calves` is listed first for
+  exactly that reason.
+* **The group names are the app's muscle keys**, the English strings
+  `analytics.sets_per_muscle_group` returns. They become the mesh names, and
+  the page colours by `mesh.name === key`. Rename one and that muscle silently
+  stops taking colour; `tests/test_cuerpo3d.py` is what catches it.
+
+Attribution and the share-alike obligation: `anatomia/CREDITOS.md`.

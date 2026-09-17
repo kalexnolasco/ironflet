@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Cuerpo</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #000; }
+  canvas { display: block; touch-action: none; }
+  #aviso {
+    position: absolute; inset: 0; display: grid; place-items: center;
+    font: 13px system-ui, sans-serif; color: #888; text-align: center; padding: 24px;
+  }
+</style>
+</head>
+<body>
+<div id="aviso">cargando el cuerpo…</div>
+<script type="importmap">{"imports": {"three": "./lib/three.module.js"}}</script>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from './lib/GLTFLoader.js';
+import { DRACOLoader } from './lib/DRACOLoader.js';
+import { OrbitControls } from './lib/OrbitControls.js';
+
+// Todo lo que esta pagina le cuenta a Python va por console.log con este
+// prefijo: es el unico canal de vuelta que da el WebView de Flet.
+const hablar = (clave, valor) => console.log('IRON:' + clave + '=' + valor);
+window.onerror = (m) => hablar('error', String(m).slice(0, 120));
+
+const aviso = document.getElementById('aviso');
+
+const ren = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+ren.setPixelRatio(Math.min(devicePixelRatio, 2));
+ren.setSize(innerWidth, innerHeight);
+document.body.appendChild(ren.domElement);
+
+const escena = new THREE.Scene();
+const cam = new THREE.PerspectiveCamera(38, innerWidth / innerHeight, 0.05, 100);
+escena.add(new THREE.HemisphereLight(0xffffff, 0x2a2a38, 2.0));
+const sol = new THREE.DirectionalLight(0xffffff, 1.5);
+sol.position.set(2.5, 4, 3.5);
+escena.add(sol);
+// Una segunda luz por detras despega la silueta del fondo. Sin ella el cuerpo
+// de espaldas se lee como una mancha.
+const contra = new THREE.DirectionalLight(0x9fb4ff, 0.7);
+contra.position.set(-2, 1.5, -3);
+escena.add(contra);
+
+//: A cuanto se normaliza la altura del cuerpo. Todo lo demas —la distancia de
+//: la camara, los limites del zoom— se calcula a partir de aqui, para que no
+//: haya numeros sueltos que dependan de las unidades con las que salio el .glb.
+const ALTO_CUERPO = 1.8;
+
+const pivote = new THREE.Group();
+escena.add(pivote);
+
+const draco = new DRACOLoader().setDecoderPath('./lib/draco/');
+const cargador = new GLTFLoader().setDRACOLoader(draco);
+
+/** Los musculos por clave, tal y como los nombra la forja. */
+const musculos = new Map();
+/** Color al que va cada musculo; el material persigue este valor. */
+const destino = new Map();
+
+let seleccionado = '';
+let girando = true;      // hasta que el dedo toca, el cuerpo gira solo
+//: Hay algo que redibujar. Sin esto el bucle renderiza sesenta veces por
+//: segundo una imagen identica mientras la pantalla esta quieta, que en un
+//: movil es bateria a cambio de nada.
+let sucio = true;
+let ctrl = null;
+let reloj = new THREE.Clock();
+
+// Adonde mira la camara. El angulo, no la posicion: asi el zoom del usuario
+// sobrevive a un cambio de vista.
+let anguloActual = 0;
+let anguloObjetivo = 0;
+
+cargador.load('./cuerpo.glb', (glb) => {
+  aviso.remove();
+
+  glb.scene.traverse((o) => {
+    if (!o.isMesh) return;
+    o.material = new THREE.MeshStandardMaterial({
+      color: 0x6b6f7a, roughness: 0.82, metalness: 0.0,
+      emissive: 0x000000, transparent: true, opacity: 1,
+    });
+    musculos.set(o.name, o);
+    destino.set(o.name, new THREE.Color(0x6b6f7a));
+  });
+
+  // Centrar y escalar a una altura conocida, para que la camara no dependa de
+  // las unidades con las que salio el modelo.
+  //
+  // El centrado va en un envoltorio y no en `position` del propio modelo: la
+  // posicion de un nodo NO la escala su propia escala, asi que restar el
+  // centro y escalar en el mismo nodo deja el cuerpo descentrado en la misma
+  // proporcion en la que se escalo.
+  const caja = new THREE.Box3().setFromObject(glb.scene);
+  const centro = caja.getCenter(new THREE.Vector3());
+  const alto = caja.getSize(new THREE.Vector3()).y || 1;
+  const esc = ALTO_CUERPO / alto;
+  const envoltorio = new THREE.Group();
+  envoltorio.scale.setScalar(esc);
+  envoltorio.position.copy(centro).multiplyScalar(-esc);
+  envoltorio.add(glb.scene);
+  pivote.add(envoltorio);
+
+  // La distancia sale del encuadre, no de un numero probado a ojo: el visor
+  // vive en una caja estrecha y alta dentro de una tarjeta, y ese alto cambia
+  // con el movil.
+  const mitad = (ALTO_CUERPO / 2) * 1.06;
+  cam.position.set(0, 0, mitad / Math.tan((cam.fov * Math.PI) / 360));
+  cam.lookAt(0, 0, 0);
+
+  ctrl = new OrbitControls(cam, ren.domElement);
+  ctrl.enableDamping = true;
+  ctrl.dampingFactor = 0.08;
+  ctrl.enablePan = false;
+  ctrl.minDistance = cam.position.z * 0.5;
+  ctrl.maxDistance = cam.position.z * 1.7;
+  // Sin esto se puede acabar mirando al cuerpo desde debajo de los pies.
+  ctrl.minPolarAngle = Math.PI * 0.15;
+  ctrl.maxPolarAngle = Math.PI * 0.85;
+  ctrl.addEventListener('start', () => { girando = false; });
+  ctrl.addEventListener('change', () => { sucio = true; });
+
+  hablar('listo', musculos.size);
+  ren.setAnimationLoop(cuadro);
+}, undefined, (e) => {
+  aviso.textContent = 'no se pudo cargar el cuerpo';
+  hablar('error', 'carga: ' + (e && e.message ? e.message : e));
+});
+
+// `THREE.Color` NO tiene `manhattanDistanceTo` —eso es de Vector2 y Vector3—,
+// asi que la cercania se mide a mano. Hace falta porque una interpolacion
+// exponencial nunca llega del todo: sin un corte, el bucle se cree que sigue
+// habiendo algo que animar y no para nunca.
+function cerca(a, b) {
+  return Math.abs(a.r - b.r) + Math.abs(a.g - b.g) + Math.abs(a.b - b.b) < 0.004;
+}
+
+function cuadro() {
+  const dt = Math.min(reloj.getDelta(), 0.1);
+  let vivo = girando || seleccionado !== '';
+
+  if (girando) anguloObjetivo += dt * 0.3;
+  // Interpolacion exponencial: llega suave y no depende de los fotogramas por
+  // segundo, que aqui varian entre el emulador y un movil de verdad.
+  if (Math.abs(anguloObjetivo - anguloActual) > 1e-4) {
+    anguloActual += (anguloObjetivo - anguloActual) * (1 - Math.exp(-dt * 6));
+    pivote.rotation.y = anguloActual;
+    vivo = true;
+  }
+
+  const t = performance.now() / 1000;
+  const negro = new THREE.Color(0x000000);
+  for (const [clave, malla] of musculos) {
+    const meta = destino.get(clave);
+    if (meta && !malla.material.color.equals(meta)) {
+      malla.material.color.lerp(meta, 1 - Math.exp(-dt * 7));
+      if (cerca(malla.material.color, meta)) malla.material.color.copy(meta);
+      vivo = true;
+    }
+    if (clave === seleccionado) {
+      // Latido, no parpadeo: lo que marca el musculo elegido es que respira.
+      const p = 0.10 + 0.10 * Math.sin(t * 3.2);
+      malla.material.emissive.setRGB(p, p * 0.55, p * 0.35);
+    } else if (!malla.material.emissive.equals(negro)) {
+      malla.material.emissive.lerp(negro, 1 - Math.exp(-dt * 8));
+      if (cerca(malla.material.emissive, negro)) malla.material.emissive.copy(negro);
+      vivo = true;
+    }
+  }
+
+  if (ctrl) ctrl.update();
+  if (!vivo && !sucio) return;
+  sucio = false;
+  ren.render(escena, cam);
+}
+
+// ---- toque -------------------------------------------------------------
+// Un arrastre para girar no puede contar como elegir un musculo, asi que se
+// mide cuanto se movio el dedo entre bajar y levantar.
+const rayo = new THREE.Raycaster();
+let bajada = null;
+
+ren.domElement.addEventListener('pointerdown', (e) => {
+  bajada = { x: e.clientX, y: e.clientY, t: performance.now() };
+});
+
+ren.domElement.addEventListener('pointerup', (e) => {
+  if (!bajada) return;
+  const dx = e.clientX - bajada.x, dy = e.clientY - bajada.y;
+  const quieto = Math.hypot(dx, dy) < 12 && performance.now() - bajada.t < 700;
+  bajada = null;
+  if (!quieto) return;
+
+  const p = new THREE.Vector2(
+    (e.clientX / innerWidth) * 2 - 1,
+    -(e.clientY / innerHeight) * 2 + 1,
+  );
+  rayo.setFromCamera(p, cam);
+  const tocados = rayo.intersectObjects([...musculos.values()], false);
+  const primero = tocados.find((h) => h.object.name !== 'resto') || tocados[0];
+  hablar('musculo', primero ? primero.object.name : '');
+});
+
+addEventListener('resize', () => {
+  cam.aspect = innerWidth / innerHeight;
+  cam.updateProjectionMatrix();
+  ren.setSize(innerWidth, innerHeight);
+  sucio = true;
+});
+
+// ---- lo que Python puede pedir -----------------------------------------
+window.iron = {
+  /** Colorea. `datos.colores` es clave de musculo -> "#rrggbb". */
+  pinta(datos) {
+    for (const [clave, hex] of Object.entries(datos.colores || {})) {
+      if (destino.has(clave)) destino.get(clave).set(hex);
+    }
+    if (datos.resto && destino.has('resto')) destino.get('resto').set(datos.resto);
+    if (datos.fondo) ren.setClearColor(new THREE.Color(datos.fondo), 1);
+    sucio = true;
+  },
+  /** Gira hasta ver la cara ('frente') o la espalda ('espalda'). */
+  vista(nombre) {
+    girando = false;
+    sucio = true;
+    const media = Math.round(anguloObjetivo / (Math.PI * 2)) * Math.PI * 2;
+    anguloObjetivo = media + (nombre === 'espalda' ? Math.PI : 0);
+  },
+  /** Marca un musculo, o ninguno con cadena vacia. */
+  selecciona(clave) {
+    seleccionado = clave || '';
+    // Elegir un musculo para de girar: mirarlo mientras se va no es mirarlo.
+    if (seleccionado) girando = false;
+    sucio = true;
+  },
+  /** Vuelve a girar solo. */
+  gira(si) {
+    girando = !!si;
+    sucio = true;
+  },
+};
+</script>
+</body>
+</html>

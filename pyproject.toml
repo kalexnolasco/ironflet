@@ -1,6 +1,6 @@
 [project]
 name = "ironflet"
-version = "0.22.0"
+version = "0.0.1"
 description = "App de Android para entrenos, comidas y progreso, con entrenador dentro. Python + Flet, todo local."
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -93,6 +93,17 @@ dependencies = [
     # (verificado 2026-08-21). Un rango dejaría al resolver elegir una versión
     # sin wheel Android y el build fallaría con "no version satisfies".
     "pillow==11.1.0",
+    # El control `webview` NO existe en el cliente Flutter de flet 0.28.3:
+    # `ft.WebView` está en el Python y la pantalla dice «Unknown control:
+    # webview». Este paquete es quien aporta el lado Dart —trae su
+    # `flutter/flet_webview`, que `flet build` recoge solo— y registra
+    # exactamente ese nombre de control, así que `ft.WebView` de siempre
+    # funciona sin cambiar una línea de la app.
+    #
+    # Pin EXACTO en 0.1.0 y no un rango: a partir de 0.80 el paquete exige
+    # `flet==0.86`, que es otra API entera. 0.1.0 pide `flet>=0.25.2` y es
+    # `py3-none-any`, así que no hay wheel de Android que buscar (trampa 25).
+    "flet-webview==0.1.0",
 ]
 
 [dependency-groups]
@@ -118,6 +129,16 @@ Repository = "https://github.com/kalexnolasco/ironflet"
 Issues = "https://github.com/kalexnolasco/ironflet/issues"
 Changelog = "https://github.com/kalexnolasco/ironflet/blob/main/CHANGELOG.md"
 Releases = "https://github.com/kalexnolasco/ironflet/releases"
+
+# Android 9+ prohíbe el http en claro por defecto **incluso contra
+# localhost**, y `cuerpo3d.py` sirve el modelo 3D desde 127.0.0.1 porque desde
+# `file://` el WebView bloquea el `fetch` con el que GLTFLoader lee el .glb.
+# Sin esta línea el visor muere con `net::ERR_CLEARTEXT_NOT_PERMITTED`.
+#
+# No abre nada hacia fuera: el servidor está atado al bucle local y a un puerto
+# efímero, y la app no habla http en claro con ningún otro sitio.
+[tool.flet.android.manifest_application]
+usesCleartextTraffic = "true"
 
 [tool.flet]
 app.module = "main"

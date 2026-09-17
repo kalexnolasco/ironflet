@@ -4,6 +4,78 @@ Todos los cambios notables de IronFlet.
 El formato sigue [Keep a Changelog](https://keepachangelog.com/) y el proyecto
 usa [SemVer](https://semver.org/).
 
+## [0.0.1] — 2026-09-17
+
+**El cuerpo, en 3D de verdad.**
+
+### Añadido
+
+- **Un cuerpo anatómico girable en Historial.** Sustituye al mapa plano en el
+  móvil: se arrastra con el dedo para darle la vuelta, se pellizca para
+  acercarse, y al tocar un músculo dice cuántas series lleva. Gira solo hasta
+  que lo tocas, los colores se funden al cambiar de semana, y el músculo
+  elegido late.
+
+  Es three.js dentro de un `ft.WebView`, con un modelo anatómico real de
+  quince mallas —una por grupo muscular. Los colores son **los mismos** que el
+  mapa plano: `color_de` la calcula una vez y la usan los dos, para que la
+  misma semana no salga naranja en una pantalla y roja en la otra.
+
+  El mapa plano sigue ahí y no se ha tocado: el 3D necesita un WebView, que
+  solo existe en Android y iOS. En el PC, en los tests y si el visor falla, la
+  pantalla cae al de siempre.
+
+- **`scripts/forja.mjs`**, que convierte el atlas anatómico original —826
+  mallas, 8,2 MB— en el modelo que viaja en la APK: **0,44 MB** y quince
+  mallas. No es solo tamaño: cada malla es una llamada de dibujo por fotograma,
+  y fundirlas dobló los fotogramas por segundo.
+
+### Lo que no hay
+
+- **El cuerpo no hace los ejercicios.** El modelo es geometría estática, sin
+  esqueleto ni animaciones, así que las animaciones son de cámara, de color y
+  de latido. Un cuerpo que ejecuta un press de banca pediría otro modelo con
+  rig y datos de movimiento por ejercicio.
+
+### Detalles que costaron
+
+- **`ft.WebView` no existe en el Flutter de flet 0.28.3.** El control está en el
+  Python; la pantalla decía `Unknown control: webview` y logcat, nada. Lo aporta
+  `flet-webview==0.1.0`.
+
+- **JavaScript viene apagado, y encenderlo tarde no sirve.** El lado Dart no lee
+  el atributo al montar y encender después de que la página cargara no vuelve a
+  ejecutar el módulo: se quedaba en «cargando el cuerpo…» para siempre, sin un
+  error en ninguna parte. Ahora nace en blanco, enciende, y entonces navega.
+
+- **Desde `file://` el modelo no llega.** Android bloquea `fetch` entre ficheros
+  locales y GLTFLoader lee el `.glb` con `fetch`. Se sirve desde un servidor
+  http dentro de la propia app, atado a 127.0.0.1 — y con hilos, porque el
+  navegador pide los módulos en paralelo y uno secuencial los mataba con un
+  error que sonaba a permisos.
+
+- **El abdomen sin entrenar parecía un agujero.** El negro del mapa plano
+  funciona dentro de una silueta dibujada; en 3D, sin silueta, se lee como que
+  al cuerpo le falta el vientre. Ahora lo no tocado es el escenario oscurecido.
+
+- **Y la calavera negra.** El resto del cuerpo se pintaba de `bg_sunken` a
+  secas, que en tema oscuro es casi negro: cabeza y manos flotaban en negro
+  entre músculos de colores.
+
+### Arreglado
+
+- **Dos tests que caducaban.** `test_history_view.py` fijaba `2026-08-10` y
+  comprobaba una tarjeta que mira **las últimas cuatro semanas contadas desde
+  hoy**: pasaron durante treinta y seis días y se pusieron rojos solos, sin que
+  nadie tocara el código. El fallo —«falta la nota de series sin contar»— no
+  apunta al calendario por ningún lado. Ahora la fecha es relativa.
+
+### Créditos
+
+El modelo deriva de [Z-Anatomy](https://www.z-anatomy.com/) (CC BY-SA 4.0) y se
+dibuja con [three.js](https://threejs.org/) (MIT). Detalle y obligaciones de la
+licencia en `anatomia/CREDITOS.md`.
+
 ## [0.22.0] — 2026-09-01
 
 **El cuerpo humano, coloreado con lo que entrenas.**
@@ -20,9 +92,9 @@ usa [SemVer](https://semver.org/).
   lista contesta «cuántas series de dorsal»; el cuerpo contesta **qué llevas
   flojo**, que es la pregunta con la que se abre esa pantalla.
 
-  Sin 3D: Flet no trae motor y meter uno por una pantalla cambiaría 80 MB de
-  APK por bastante más. El volumen sale de un degradado radial con el foco
-  donde daría la luz, y en una silueta plana eso basta.
+  Sin 3D: el volumen sale de un degradado radial con el foco donde daría la
+  luz, y en una silueta plana eso basta. (En 0.0.1 sí lo hay, y este mapa se
+  queda como el cuerpo de repuesto para cuando el WebView no está.)
 
 ### Detalles que costaron
 

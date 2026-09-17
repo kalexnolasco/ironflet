@@ -19,9 +19,12 @@ contra él.
 
 ## El volumen, sin 3D
 
-`PaintRadialGradient` con el foco donde daría la luz. Es lo que hace que una
-silueta plana se lea como un cuerpo — y cuesta un gradiente por músculo en vez
-de un motor 3D dentro de un APK de 80 MB.
+`PaintRadialGradient` con el foco donde daría la luz: es lo que hace que una
+silueta plana se lea como un cuerpo, y cuesta un gradiente por músculo.
+
+Desde 0.0.1 el móvil enseña un cuerpo 3D anatómico (`cuerpo3d.py`) y esto es lo
+que se ve cuando aquel no puede: en el PC, en los tests, o si el visor falla.
+`color_de` y `mezcla` son públicas porque las usan los dos.
 """
 
 from __future__ import annotations
@@ -63,8 +66,11 @@ def _cubicas(pts: tuple[tuple[float, float], ...], esc: float, dx: float, dy: fl
     return elementos
 
 
-def _mezcla(hex_a: str, hex_b: str, t: float) -> str:
-    """Interpola dos colores `#rrggbb`. `t=0` da el primero."""
+def mezcla(hex_a: str, hex_b: str, t: float) -> str:
+    """Interpola dos colores `#rrggbb`. `t=0` da el primero.
+
+    Pública porque el cuerpo 3D también mezcla —el color del escenario sale de
+    la paleta y no de un hex escrito a mano (trampa 5)."""
 
     def leer(h):
         h = h.lstrip("#")
@@ -80,13 +86,17 @@ def _con_alfa(hex_color: str, alfa: float) -> str:
     return f"#{round(max(0.0, min(1.0, alfa)) * 255):02x}{hex_color.lstrip('#')}"
 
 
-def _color_de(intensidad: float, series: float) -> str:
+def color_de(intensidad: float, series: float) -> str:
     """El color de un músculo según lo trabajado que esté.
 
     **Cuatro tramos y no un degradado de un solo tono.** El primer intento
     mezclaba el gris del fondo con el acento, y con 15 series de pierna y 3 de
     tríceps los dos salían azules: la escala existía en los números y no en el
     ojo. Un mapa de calor que no discrimina es un dibujo bonito.
+
+    Es pública —y no `_color_de`— desde que hay dos cuerpos: el plano de este
+    módulo y el de `cuerpo3d`. Que los dos pregunten aquí es lo que impide que
+    la misma semana salga naranja en una pantalla y roja en la otra.
 
     Los colores salen todos de la paleta —`accent`, `success`, `warning`,
     `danger`— porque ninguna vista puede escribir un hex (trampa 5), y de paso
@@ -97,18 +107,18 @@ def _color_de(intensidad: float, series: float) -> str:
     if series <= 0:
         # Ni siquiera el primer color de la escala: sin tocar tiene que leerse
         # como un hueco, porque es exactamente lo que es.
-        return _mezcla(C.bg_surface, C.bg_sunken, 0.5)
+        return mezcla(C.bg_surface, C.bg_sunken, 0.5)
 
     tramos = ((0.0, C.accent), (0.4, C.success), (0.7, C.warning), (1.0, C.danger))
     for i in range(len(tramos) - 1):
         t0, c0 = tramos[i]
         t1, c1 = tramos[i + 1]
         if intensidad <= t1:
-            return _mezcla(c0, c1, (intensidad - t0) / (t1 - t0) if t1 > t0 else 0.0)
-    # Por `_mezcla` también en el extremo. Devolver el color de la paleta a
+            return mezcla(c0, c1, (intensidad - t0) / (t1 - t0) if t1 > t0 else 0.0)
+    # Por `mezcla` también en el extremo. Devolver el color de la paleta a
     # pelo salía en mayúsculas mientras el resto salía en minúsculas: Flutter
     # se traga los dos y el único que se entera es quien compare cadenas.
-    return _mezcla(tramos[-1][1], tramos[-1][1], 0.0)
+    return mezcla(tramos[-1][1], tramos[-1][1], 0.0)
 
 
 def formas(
@@ -148,8 +158,8 @@ def formas(
         series = volumen.get(m.clave, 0.0)
         intensidad = min(1.0, series / tope) if series > 0 else 0.0
 
-        base = _color_de(intensidad, series)
-        brillo = _mezcla(base, "#ffffff", 0.32)
+        base = color_de(intensidad, series)
+        brillo = mezcla(base, "#ffffff", 0.32)
 
         luz = (m.luz[0] * esc + dx, m.luz[1] * esc + dy)
         x0, y0, x1, y1 = cuerpo.caja(m)

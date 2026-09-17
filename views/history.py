@@ -185,6 +185,16 @@ class HistoryView:
         #: preferencia.
         self.vista_cuerpo: str = "frente"
         self.musculo_tocado: str = ""
+        #: El visor 3D, si el aparato lo admite. Vive aquí y no dentro de
+        #: `build()` porque el manejador del toque le habla cuando ya no hay
+        #: ninguna llamada a `build()` en la pila. Se **rehace** en cada
+        #: redibujado, no se reutiliza: ver `_cuerpo_en_3d`.
+        self._visor = None
+        #: La columna de texto que va al lado del cuerpo. Se guarda para poder
+        #: cambiarla sola: tocar un músculo en 3D no puede reconstruir la
+        #: pantalla, porque eso se llevaría por delante el visor.
+        self._detalle_col: ft.Column | None = None
+        self._girar_3d = None
 
     def on_show(self):
         pass
@@ -397,6 +407,10 @@ class HistoryView:
         except Exception:
             return None
 
+        cuerpo_3d = self._cuerpo_en_3d(volumen)
+        if cuerpo_3d is not None:
+            return cuerpo_3d
+
         try:
             lienzo = cv.Canvas(
                 formas(
@@ -440,27 +454,7 @@ class HistoryView:
                 ),
                 ft.Column(
                     [
-                        ft.Container(
-                            content=ft.Row(
-                                [
-                                    ft.Icon(ft.Icons.CACHED_ROUNDED, size=14, color=C.accent),
-                                    ft.Text(
-                                        "Espalda" if self.vista_cuerpo == "frente" else "Frente",
-                                        size=11,
-                                        color=C.accent,
-                                        weight=ft.FontWeight.W_700,
-                                    ),
-                                ],
-                                spacing=4,
-                                tight=True,
-                            ),
-                            on_click=_girar,
-                            ink=True,
-                            padding=ft.padding.symmetric(horizontal=10, vertical=6),
-                            border=ft.border.all(1, C.border),
-                            border_radius=Radius.pill,
-                            tooltip="Ver el otro lado",
-                        ),
+                        self._chip_girar(_girar),
                         ft.Container(height=10),
                         *detalle,
                     ],
@@ -472,6 +466,140 @@ class HistoryView:
             spacing=12,
             vertical_alignment=ft.CrossAxisAlignment.START,
         )
+
+    #: El cuerpo 3D es más alto que el plano porque no tiene que compartir la
+    #: fila con nada: gira, y una figura que gira necesita sitio por delante y
+    #: por detrás para no salirse del cuadro a media vuelta.
+    ALTO_CUERPO_3D = 320.0
+    ANCHO_CUERPO_3D = 168.0
+
+    def _chip_girar(self, al_pulsar) -> ft.Control:
+        """El botón de dar la vuelta al cuerpo, igual en 2D que en 3D."""
+        return ft.Container(
+            content=ft.Row(
+                [
+                    ft.Icon(ft.Icons.CACHED_ROUNDED, size=14, color=C.accent),
+                    ft.Text(
+                        "Espalda" if self.vista_cuerpo == "frente" else "Frente",
+                        size=11,
+                        color=C.accent,
+                        weight=ft.FontWeight.W_700,
+                    ),
+                ],
+                spacing=4,
+                tight=True,
+            ),
+            on_click=al_pulsar,
+            ink=True,
+            padding=ft.padding.symmetric(horizontal=10, vertical=6),
+            border=ft.border.all(1, C.border),
+            border_radius=Radius.pill,
+            tooltip="Ver el otro lado",
+        )
+
+    def _cuerpo_en_3d(self, volumen: dict[str, float]) -> ft.Control | None:
+        """El cuerpo anatómico de verdad, o `None` si este aparato no puede.
+
+        No puede en el PC —`ft.WebView` solo existe en móvil— ni si falta la
+        carpeta del modelo, y en los dos casos la pantalla se queda con el mapa
+        plano. Que el 3D sea un extra y no un requisito es lo que permite que
+        los tests, que corren en Linux, sigan probando el cuerpo.
+
+        **Nada de aquí llama a `refresh_current()`.** Reconstruir la pantalla
+        obliga a un visor nuevo —ver abajo— y con él a recargar el modelo: el
+        cuerpo pegaría un salto cada vez que se toca un músculo. Lo que cambia
+        al tocar es solo el texto de al lado, y ese se cambia en su sitio.
+
+        **Y el visor se rehace en cada `build()`, a propósito.** La versión
+        anterior lo guardaba en la vista para que sobreviviera al redibujado, y
+        parecía la decisión correcta: la vista vive lo que la app, así que el
+        modelo se cargaría una sola vez. En el móvil el resultado era una caja
+        **negra**: volver a meter la misma instancia de `ft.WebView` en un árbol
+        recién construido no la remonta, y no hay ningún error — el cuerpo
+        simplemente desaparecía al cambiar de semana. Un visor nuevo recarga
+        0,44 MB desde `127.0.0.1`, que es medio segundo y se ve.
+        """
+        try:
+            from components import visor3d
+
+            if not visor3d.disponible(self.page):
+                return None
+        except Exception:
+            return None
+
+        def _tocar(clave: str) -> None:
+            # Tocar el mismo otra vez lo suelta, igual que en el mapa plano.
+            self.musculo_tocado = "" if (not clave or clave == self.musculo_tocado) else clave
+            if self._visor is not None:
+                self._visor.selecciona(self.musculo_tocado)
+            self._refresca_detalle(volumen)
+
+        def _girar(_):
+            self.vista_cuerpo = "espalda" if self.vista_cuerpo == "frente" else "frente"
+            self.musculo_tocado = ""
+            if self._visor is not None:
+                self._visor.vista(self.vista_cuerpo)
+                self._visor.selecciona("")
+            self._refresca_detalle(volumen)
+
+        try:
+            import cuerpo3d
+
+            self._visor = visor3d.Visor(_tocar)
+            self._visor.pinta(cuerpo3d.paleta(volumen, C))
+            self._visor.selecciona(self.musculo_tocado)
+            # Y de qué lado se estaba mirando: sin esto, cambiar de semana
+            # devolvía el cuerpo de frente aunque el chip dijera «Frente».
+            #
+            # Solo si NO es el lado por defecto, y esa condición es la que hace
+            # que el cuerpo siga girando solo la primera vez: pedir una vista
+            # para el visor significa «quieto ahí», así que pedirla siempre
+            # mataba la única animación que se ve sin tocar nada.
+            if self.vista_cuerpo != "frente":
+                self._visor.vista(self.vista_cuerpo)
+        except Exception:
+            self._visor = None
+            return None
+
+        self._detalle_col = ft.Column(
+            [
+                self._chip_girar(_girar),
+                ft.Container(height=10),
+                *self._detalle_musculo(volumen),
+            ],
+            spacing=0,
+            tight=True,
+            expand=True,
+        )
+        self._girar_3d = _girar
+
+        return ft.Row(
+            [
+                ft.Container(
+                    self._visor.control,
+                    width=self.ANCHO_CUERPO_3D,
+                    height=self.ALTO_CUERPO_3D,
+                    border_radius=Radius.md,
+                    clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
+                ),
+                self._detalle_col,
+            ],
+            spacing=12,
+            vertical_alignment=ft.CrossAxisAlignment.START,
+        )
+
+    def _refresca_detalle(self, volumen: dict[str, float]) -> None:
+        """Cambia solo el texto de al lado del cuerpo, sin tocar el visor."""
+        col = self._detalle_col
+        if col is None:
+            return
+        with contextlib.suppress(Exception):
+            col.controls = [
+                self._chip_girar(self._girar_3d),
+                ft.Container(height=10),
+                *self._detalle_musculo(volumen),
+            ]
+            col.update()
 
     def _detalle_musculo(self, volumen: dict[str, float]) -> list[ft.Control]:
         """Lo que se lee al lado del cuerpo.
