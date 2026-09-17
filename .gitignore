@@ -15,7 +15,10 @@ venv/
 
 # Local user data (SQLite)
 ironlog.db
+ironflet.db
 *.db-journal
+*.db-wal
+*.db-shm
 
 # Downloaded exercise images (fetched at runtime from Free Exercise DB)
 assets/exercises/

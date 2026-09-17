@@ -1,128 +1,176 @@
-"""Shared exercise detail dialog — used by Plan and Browse views."""
+"""Shared exercise detail dialog — used by Plan and Browse views.
+
+This is the dialog with the most text in the app: three chips, two muscle lines
+and a numbered how-to that runs to eight steps for a squat. It was also the one
+pinned hardest — a 340 px box with a 320 px paragraph inside it and a 600 px
+height — so on any phone narrower than the 420 px it was designed for, the
+instructions were cut off mid-word and the Close button sat below the fold.
+
+Nothing here carries a width any more. The box comes from
+`shared_ui.dialog_width/height`, which read the real window, and every line
+inside takes whatever the box has.
+"""
 
 from __future__ import annotations
 
 import flet as ft
 
+from exercise_details import ES_META as _ES_META
+from exercise_details import ES_MUSCULO as _ES_MUSCULO
 from exercise_details import details_for
-from exercise_details_es import instructions_es
-from exercise_images import EXERCISE_IMAGE, image_for
-from i18n import get_language, t, t_exercise
-from theme import ACCENT, BORDER_2, CARD_BG, DARK_BG, DIM, MUTED, TEXT
+from exercise_images import image_props
+from theme import C
+from views.shared_ui import dialog_height, dialog_width
+
+#: Ceiling for the body, not a size: `dialog_height` cuts it to the window.
+_PREFERRED_H = 560
+#: The photo's height. Width is the parent's, whatever that turns out to be.
+_IMAGE_H = 180
 
 
-def open_exercise_detail(page: ft.Page, key: str) -> None:
+# Presentación en español de los metadatos del Free Exercise DB. Solo capa de
+# pantalla: las claves de los datos siguen en inglés (vienen del catálogo), y
+# un valor que no esté aquí se muestra tal cual en vez de romper nada. Las dos
+# tablas viven en `exercise_details.py`, junto al vocabulario que traducen,
+# porque `substitutions.py` escribe las mismas palabras en sus frases y es
+# lógica pura: no puede importar de `views/`.
+
+
+def build_exercise_detail(page, key: str) -> ft.AlertDialog | None:
+    """The dialog for `key`, or None when there is nothing to show.
+
+    Split out from `open_exercise_detail` so it can be built and measured
+    without a running app — the same shape `views/help_dialog.py` uses.
+    """
     det = details_for(key)
     if not det:
-        return
-    img_src = image_for(key)
-    lang_is_es = get_language() == "es"
+        return None
+    # `image_props`, not `image_for`: on the phone an assets-relative URL
+    # resolves to nothing and the photo is a silent grey box. See the delivery
+    # note in exercise_images.py.
+    img_props = image_props(key)
 
     def chip_item(label: str, value: str) -> ft.Control:
         return ft.Container(
             content=ft.Column(
                 [
-                    ft.Text(label.upper(), size=9, color=MUTED, weight=ft.FontWeight.W_700),
-                    ft.Text(value, size=12, color=TEXT, weight=ft.FontWeight.W_700),
+                    ft.Text(label.upper(), size=9, color=C.text_muted, weight=ft.FontWeight.W_700),
+                    ft.Text(value, size=12, color=C.text, weight=ft.FontWeight.W_700),
                 ],
                 spacing=1,
                 tight=True,
             ),
-            bgcolor=DARK_BG,
-            border=ft.border.all(1, BORDER_2),
+            bgcolor=C.bg_page,
+            border=ft.border.all(1, C.border_strong),
             border_radius=8,
             padding=ft.padding.symmetric(horizontal=10, vertical=6),
         )
 
-    muscles_primary = ", ".join(t(m) for m in det["primary"]) or "—"
-    muscles_secondary = ", ".join(t(m) for m in det["secondary"]) or "—"
+    muscles_primary = ", ".join(_ES_MUSCULO.get(m, m) for m in det["primary"]) or "—"
+    muscles_secondary = ", ".join(_ES_MUSCULO.get(m, m) for m in det["secondary"]) or "—"
 
     chips_row = ft.Row(
         [
-            chip_item(t("Equipment"), t(det["equipment"]) or "—"),
-            chip_item(t("Level"), t(det["level"]) or "—"),
-            chip_item(t("Type"), t(det["mechanic"]) or "—"),
+            chip_item("Equipo", _ES_META.get(det["equipment"], det["equipment"]) or "—"),
+            chip_item("Nivel", _ES_META.get(det["level"], det["level"]) or "—"),
+            chip_item("Tipo", _ES_META.get(det["mechanic"], det["mechanic"]) or "—"),
         ],
         spacing=6,
         wrap=True,
         run_spacing=6,
     )
 
-    instructions_header = t("How to do it")
-    slug = EXERCISE_IMAGE.get(key)
+    instructions_header = "Cómo se hace"
     instructions_list = det.get("instructions") or []
-    if lang_is_es and slug:
-        es_steps = instructions_es(slug)
-        if es_steps:
-            instructions_list = es_steps
-        else:
-            instructions_header += f"  ·  {t('Instructions in English').lower()}"
 
     body = ft.Column(
         [
             ft.Container(
+                # `float("inf")` is Flet's "fill the parent", which is the
+                # opposite of a pinned width: the photo follows the dialog.
                 content=ft.Image(
-                    src=img_src, fit=ft.ImageFit.COVER, width=float("inf"), height=180
+                    **img_props,
+                    fit=ft.ImageFit.COVER,
+                    width=float("inf"),
+                    height=_IMAGE_H,
+                    # DECODE SMALL: the source is an 850×567 photo and `height`
+                    # only scales the drawing. No `cache_width` — the width is
+                    # the dialog's and is not known here.
+                    cache_height=_IMAGE_H * 2,
+                    error_content=ft.Icon(ft.Icons.FITNESS_CENTER, color=C.text_muted, size=28),
                 ),
-                bgcolor="#0f0f11",
+                bgcolor=C.bg_sunken,
                 border_radius=10,
                 clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
             )
-            if img_src
+            if img_props
             else ft.Container(),
             ft.Container(height=10),
             chips_row,
             ft.Container(height=10),
             ft.Text(
-                f"{t('Primary')}: ",
+                "Principal: ",
                 size=11,
-                color=ACCENT,
+                color=C.accent,
                 weight=ft.FontWeight.W_700,
                 spans=[
                     ft.TextSpan(
-                        muscles_primary, ft.TextStyle(color=TEXT, weight=ft.FontWeight.W_400)
+                        muscles_primary, ft.TextStyle(color=C.text, weight=ft.FontWeight.W_400)
                     )
                 ],
             ),
             ft.Text(
-                f"{t('Secondary')}: ",
+                "Secundario: ",
                 size=11,
-                color=DIM,
+                color=C.text_secondary,
                 weight=ft.FontWeight.W_700,
                 spans=[
                     ft.TextSpan(
-                        muscles_secondary, ft.TextStyle(color="#aaa", weight=ft.FontWeight.W_400)
+                        muscles_secondary,
+                        ft.TextStyle(color=C.text_secondary, weight=ft.FontWeight.W_400),
                     )
                 ],
             ),
             ft.Container(height=12),
-            ft.Text(instructions_header, size=12, color=ACCENT, weight=ft.FontWeight.W_800),
+            ft.Text(instructions_header, size=12, color=C.accent, weight=ft.FontWeight.W_800),
             ft.Container(height=6),
+            # No width: the steps are the longest text in the app and a pinned
+            # one is what cut them off. The Column bounds them.
             ft.Text(
                 "\n\n".join(f"{i + 1}.  {s}" for i, s in enumerate(instructions_list)),
                 size=11,
-                color="#ffffff",
-                width=320,
+                color=C.text,
             ),
             ft.Container(height=6),
         ],
         scroll=ft.ScrollMode.AUTO,
         spacing=4,
-        width=340,
+        horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
     )
 
     dialog = ft.AlertDialog(
         modal=False,
-        bgcolor=CARD_BG,
-        title=ft.Text(t_exercise(key), size=16, weight=ft.FontWeight.W_900, color=TEXT),
-        content=ft.Container(content=body, width=340, height=600, alignment=ft.alignment.top_left),
+        bgcolor=C.bg_surface,
+        title=ft.Text(key, size=16, weight=ft.FontWeight.W_900, color=C.text),
+        content=ft.Container(
+            content=body,
+            width=dialog_width(page),
+            height=dialog_height(page, _PREFERRED_H),
+            alignment=ft.alignment.top_left,
+        ),
         actions=[
             ft.TextButton(
-                t("Close"),
+                "Cerrar",
                 on_click=lambda _: page.close(dialog),
-                style=ft.ButtonStyle(color=ACCENT),
+                style=ft.ButtonStyle(color=C.accent),
             ),
         ],
         actions_alignment=ft.MainAxisAlignment.END,
     )
-    page.open(dialog)
+    return dialog
+
+
+def open_exercise_detail(page: ft.Page, key: str) -> None:
+    dialog = build_exercise_detail(page, key)
+    if dialog is not None:
+        page.open(dialog)

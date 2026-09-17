@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  El widget. Solo RemoteViews: un widget no puede tener vistas propias, así que
+  esto es LinearLayout y TextView y nada más.
+
+  Los textos por defecto son los que se ven mientras no haya `widget.json` —
+  recién colocado, o antes del primer arranque de la app. Por eso invitan a
+  abrirla en vez de dejar huecos, que se leerían como un widget roto.
+
+  Los colores van a pelo y no por `theme.py`: esto lo pinta Android, no Flet, y
+  la paleta de la app vive en Python. Son el azul de acento y los grises de
+  `theme.DARK`, copiados a mano — la única duplicación de color del proyecto, y
+  está aquí porque no hay forma de que el sistema lea aquella.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/ironflet_widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="14dp"
+    android:background="#111418">
+
+    <TextView
+        android:id="@+id/ironflet_widget_entreno"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Abre IronFlet"
+        android:textColor="#4F9CF9"
+        android:textSize="15sp"
+        android:textStyle="bold"
+        android:maxLines="2"
+        android:ellipsize="end" />
+
+    <TextView
+        android:id="@+id/ironflet_widget_peso"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:text=""
+        android:textColor="#F2F4F7"
+        android:textSize="20sp"
+        android:textStyle="bold"
+        android:maxLines="1" />
+
+    <TextView
+        android:id="@+id/ironflet_widget_series"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:text=""
+        android:textColor="#9AA4B2"
+        android:textSize="12sp"
+        android:maxLines="1" />
+
+    <TextView
+        android:id="@+id/ironflet_widget_cintura"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:text=""
+        android:textColor="#9AA4B2"
+        android:textSize="12sp"
+        android:maxLines="1" />
+</LinearLayout>

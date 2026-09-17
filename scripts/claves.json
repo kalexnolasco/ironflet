@@ -1,0 +1,22 @@
+{
+ "calves": ["gastrocnemius", "soleus", "tibialis", "fibularis", "plantaris", "popliteus",
+            "flexor hallucis longus", "extensor hallucis", "flexor digitorum longus",
+            "extensor digitorum longus"],
+ "shoulders": ["deltoid", "supraspinatus", "infraspinatus", "subscapularis", "teres minor"],
+ "chest": ["pectoralis major", "pectoralis minor", "serratus anterior", "subclavius"],
+ "biceps": ["biceps brachii", "brachialis muscle", "coracobrachialis"],
+ "triceps": ["triceps brachii", "anconeus"],
+ "forearms": ["flexor carpi", "extensor carpi", "brachioradialis", "pronator", "supinator",
+              "flexor digitorum", "extensor digitorum", "palmaris", "flexor pollicis",
+              "extensor pollicis", "abductor pollicis", "extensor indicis"],
+ "abdominals": ["rectus abdominis", "abdominal oblique", "transversus abdominis", "pyramidalis"],
+ "lats": ["latissimus dorsi", "teres major", "rhomboid", "levator scapulae"],
+ "traps": ["trapezius"],
+ "middle back": ["erector spinae", "semispinalis", "splenius", "serratus posterior"],
+ "lower back": ["quadratus lumborum", "longissimus", "iliocostalis", "multifidus", "spinalis"],
+ "glutes": ["gluteus", "gemellus", "piriformis", "obturator", "quadratus femoris",
+            "tensor of fascia lata"],
+ "quadriceps": ["rectus femoris", "vastus", "sartorius", "psoas", "iliacus", "pectineus",
+                "adductor brevis", "adductor longus", "adductor magnus", "gracilis"],
+ "hamstrings": ["biceps femoris", "semitendinosus", "semimembranosus"]
+}

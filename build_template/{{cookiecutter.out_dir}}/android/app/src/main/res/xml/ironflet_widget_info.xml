@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  La descripción del widget que lee Android para ofrecerlo en el selector.
+
+  `updatePeriodMillis` es 1800000 (30 min) porque **ese es el mínimo real**:
+  Android ignora cualquier valor menor y aplica 30 min igualmente, así que
+  pedir menos solo da una falsa sensación de frescura. No hace falta más: lo
+  que enseña este widget cambia cuando abres la app, y para ese caso
+  `main.dart` le manda un broadcast en cuanto `widget.json` cambia.
+
+  `minWidth`/`minHeight` en 2x1 celdas (110dp × 40dp es el tamaño de dos
+  columnas por una fila en la retícula del lanzador). `resizeMode` horizontal y
+  vertical: no cuesta nada y en un móvil ancho se agradece.
+-->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:initialLayout="@layout/ironflet_widget"
+    android:minWidth="180dp"
+    android:minHeight="110dp"
+    android:resizeMode="horizontal|vertical"
+    android:updatePeriodMillis="1800000"
+    android:widgetCategory="home_screen" />

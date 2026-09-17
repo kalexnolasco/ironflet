@@ -1,7 +1,7 @@
 [project]
 name = "ironflet"
-version = "0.1.0"
-description = "Bilingual (ES/EN) weight-training tracker built with Flet — runs on Android, desktop and web from a single Python codebase."
+version = "0.0.1"
+description = "App de Android para entrenos, comidas y progreso, con entrenador dentro. Python + Flet, todo local."
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.10,<3.13"
@@ -15,14 +15,12 @@ keywords = [
     "flutter",
     "android",
     "mobile",
-    "spanish",
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: End Users/Desktop",
     "License :: OSI Approved :: MIT License",
     "Natural Language :: English",
-    "Natural Language :: Spanish",
     "Operating System :: Android",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
@@ -31,10 +29,94 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Topic :: Software Development :: User Interfaces",
 ]
-dependencies = ["flet>=0.25,<0.30"]
+# THIS LIST IS THE ANDROID BUILD LIST. Keep it pure-Python.
+#
+# `flet build apk` does not install the desktop venv onto the phone. It reads
+# `[project] dependencies` verbatim and pip-installs those names into the APK's
+# bundled site-packages, targeting Android/arm64-v8a against pypi.flet.dev.
+# Verified in flet_cli/commands/build.py:1746 — `[tool.flet.android.dependencies]`
+# only ever EXTENDS this list, it cannot subtract from it. So anything that has
+# no Android wheel has to live in an extra below, not here.
+#
+# Two things used to be here and both broke `flet build apk` outright. Since
+# 0.13 neither exists anywhere in the project — the PC, the web mode and the
+# shared PostgreSQL were all retired — but the reasons are kept because they
+# are the shape of the trap, not trivia about two packages:
+#
+#   flet[all]  -> flet-cli -> watchdog<5,>=4, which publishes no Android wheel.
+#                 Observed failure: "Could not find a version that satisfies the
+#                 requirement watchdog<5.0.0,>=4.0.0 (from versions: none)".
+#                 flet[all] also drags in flet-web -> uvicorn[standard], i.e.
+#                 uvloop/httptools/watchfiles — three more C extensions with no
+#                 Android wheels — plus flet-desktop-light, a Linux desktop
+#                 binary the phone has no use for.
+#   psycopg[binary] -> a precompiled libpq. Wheels exist only for glibc/macOS/
+#                 Windows; on Android pip would fall back to building libpq
+#                 from source and the build dies.
+#
+# The rule both illustrate: anything with compiled code has to be checked
+# against pypi.flet.dev for a `cp312-…-android_24_arm64_v8a` wheel BEFORE it
+# goes in this list. sqlite3 needs no driver at all — it is in the stdlib
+# CPython that serious-python embeds.
+#
+# `httpx` IS ON THE PHONE, AND IT IS PURE PYTHON — that is the whole point.
+#
+# The coach talks to OpenRouter, whose API is plain JSON over HTTPS, so it needs
+# an HTTP client and nothing else. It used to use the `anthropic` SDK, and that
+# SDK pulled in `pydantic` -> `pydantic-core` plus `jiter`: two Rust extensions
+# that only reached the phone because pypi.flet.dev happens to publish a
+# matching `cp312-android_24_arm64_v8a` wheel for each. That was a standing bet
+# on a third party continuing to build wheels for an ABI almost nobody targets,
+# for an app that is sideloaded and cannot be hotfixed from a gym.
+#
+# Measured, not assumed:
+#
+#   httpx      8 packages in its tree, ZERO with compiled code
+#   anthropic 18 packages in its tree, two with compiled code
+#
+# So the Android build list now contains no compiled third-party code at all.
+# `sqlalchemy` is pure Python, `flet` ships its own native side through the
+# Flutter half, and `sqlite3` is in the stdlib CPython that serious-python
+# embeds. Adding anything with a `.so` puts the bet back — check
+# https://pypi.flet.dev/ FIRST, and see trap #23 in CLAUDE.md.
+#
+# NO API KEY IS COMPILED IN. An APK is a zip; `unzip` plus `strings` reads any
+# constant out of it in seconds. Alex types his OpenRouter key once into
+# Settings and it is stored in `preferencias`, in the app's private storage —
+# see agent.py and storage.SECRET_PREF_KEYS.
+dependencies = [
+    "flet>=0.25,<0.30",
+    "sqlalchemy>=2.0",
+    "httpx>=0.27,<1",
+    # Trampa 25 (compiled code en la APK): pin EXACTO porque pypi.flet.dev
+    # publica pillow-11.1.0 con wheels cp312 android_24 para las cuatro ABIs
+    # (verificado 2026-08-21). Un rango dejaría al resolver elegir una versión
+    # sin wheel Android y el build fallaría con "no version satisfies".
+    "pillow==11.1.0",
+    # El control `webview` NO existe en el cliente Flutter de flet 0.28.3:
+    # `ft.WebView` está en el Python y la pantalla dice «Unknown control:
+    # webview». Este paquete es quien aporta el lado Dart —trae su
+    # `flutter/flet_webview`, que `flet build` recoge solo— y registra
+    # exactamente ese nombre de control, así que `ft.WebView` de siempre
+    # funciona sin cambiar una línea de la app.
+    #
+    # Pin EXACTO en 0.1.0 y no un rango: a partir de 0.80 el paquete exige
+    # `flet==0.86`, que es otra API entera. 0.1.0 pide `flet>=0.25.2` y es
+    # `py3-none-any`, así que no hay wheel de Android que buscar (trampa 25).
+    "flet-webview==0.1.0",
+]
 
 [dependency-groups]
+# Solo lo que hace falta para desarrollar y probar. En 0.13 salieron de aquí
+# `flet[all]` (arrastraba flet-web, que solo servía al modo web ya jubilado) y
+# `psycopg` (no queda PostgreSQL con quien hablar). La suite entera corre
+# ahora sobre SQLite, sin Docker y sin saltarse un solo test.
 dev = [
+    # Repetido de `[project] dependencies` porque `uv sync --group dev`
+    # instala únicamente lo que está listado aquí.
+    "flet>=0.25,<0.30",
+    "httpx>=0.27,<1",
+    "pillow==11.1.0",
     "ruff>=0.7",
     "pytest>=8",
     "pytest-asyncio>=0.24",
@@ -48,23 +130,203 @@ Issues = "https://github.com/kalexnolasco/ironflet/issues"
 Changelog = "https://github.com/kalexnolasco/ironflet/blob/main/CHANGELOG.md"
 Releases = "https://github.com/kalexnolasco/ironflet/releases"
 
+# Android 9+ prohíbe el http en claro por defecto **incluso contra
+# localhost**, y `cuerpo3d.py` sirve el modelo 3D desde 127.0.0.1 porque desde
+# `file://` el WebView bloquea el `fetch` con el que GLTFLoader lee el .glb.
+# Sin esta línea el visor muere con `net::ERR_CLEARTEXT_NOT_PERMITTED`.
+#
+# No abre nada hacia fuera: el servidor está atado al bucle local y a un puerto
+# efímero, y la app no habla http en claro con ningún otro sitio.
+[tool.flet.android.manifest_application]
+usesCleartextTraffic = "true"
+
 [tool.flet]
 app.module = "main"
 
+# WHAT DOES NOT GET COPIED INTO THE APK.
+#
+# `flet build` hands the *whole project directory* to serious_python, which
+# copies it wholesale into `app.zip` inside the APK. Its only built-in
+# exclusion is "build". Without the list below the APK came out at 237 MB,
+# of which 154 MB was this machine's `.venv` — psycopg, libpq, watchdog,
+# uvloop and a pile of `*.cpython-311-x86_64-linux-gnu.so`, i.e. desktop x86
+# binaries that an ARM phone cannot even load. `.git` rode along too.
+#
+# Matching is EXACT RELATIVE PATHS, not globs
+# (serious_python bin/package_command.dart:461 does
+# `excludeList.contains(path.relative(entity.path, from: rootDir))`, walking
+# recursively). That is why every nested `__pycache__` is spelled out: listing
+# plain "__pycache__" would only drop the one at the repo root and silently
+# ship the other four. A new package directory needs its `__pycache__` added
+# here by hand.
+#
+# `assets/exercises` is excluded on purpose and is NOT an oversight: those
+# 9.2 MB are downloaded at runtime by asset_manager.py, which on Android reads
+# them from `FLET_APP_STORAGE_DATA/assets/exercises` — a different, writable
+# path that the bundled copy never satisfies. Shipping them would be dead
+# weight the app cannot read, and would also make the APK size depend on
+# whether whoever built it happened to have run the downloader first.
+app.exclude = [
+    ".venv",
+    ".git",
+    ".github",
+    ".pytest_cache",
+    ".ruff_cache",
+    "assets/exercises",
+    # The forked Flutter build template. It is *input* to the build, not part
+    # of the Python app, so shipping its 1.2 MB of Dart inside app.zip would be
+    # dead weight on the phone.
+    "build_template",
+    "tests",
+    "uv.lock",
+    "__pycache__",
+    "components/__pycache__",
+    "scripts/__pycache__",
+    "tests/__pycache__",
+    "views/__pycache__",
+]
+
+# The name under the launcher icon. It has to live HERE, not under
+# `[tool.flet.android]`: build.py:892 reads `tool.flet.product` and has no
+# per-platform variant, so the `product_name` that used to sit in the android
+# section was read by nothing and the icon was labelled "ironflet" — the
+# slug of `[project] name`, lower-case and all. Verified in the built APK's
+# manifest, not assumed; see the note in [tool.flet.android].
+product = "IronFlet"
+
+# THE FORKED FLUTTER BUILD TEMPLATE, AND WHY THIS REPO CARRIES ONE.
+#
+# `flet build` normally clones flet-dev/flet-build-template. `build_template/`
+# is that template with three lines added to `lib/main.dart`, and it exists for
+# one reason: **keeping the screen on**.
+#
+# Flet 0.28.3 offers no way to ask for that from Python. Verified against the
+# installed package, not from memory: `Page` exposes nothing about the screen,
+# `flet.core.window` does not exist in this version, the Dart client answers
+# exactly nine `_invoke_method` names and none touches the display, and there
+# is no JavaScript evaluation either, so even the web build cannot reach the
+# browser's Screen Wake Lock. See the long note in views/workout.py.
+#
+# Meanwhile `wakelock_plus` was *already compiled into the APK* — flet depends
+# on it, `GeneratedPluginRegistrant.java` registers it — with nobody calling
+# it. The fork calls it. Between sets the phone lies on the floor or the bench
+# and locks, so every set cost an unlock with chalked hands before the app was
+# even back; the rest timer, the plate hint and the prescribed target are all
+# worth less behind that.
+#
+# THE PRICE, so nobody discovers it the hard way: this pins the build to a copy
+# of the template. **Raising the flet pin means re-forking it** — diff the new
+# upstream template against `build_template/` and re-apply the wakelock block.
+# `cookiecutter` takes a plain local directory, so the fork costs a copy rather
+# than a hosted repo; the changes are marked with a comment naming this note.
+template.url = "build_template"
+
+# NEVER LEAVE THE USER LOOKING AT NOTHING.
+#
+# This is the second half of the black-screen fix (the first is
+# flet_reconnect.py). While the Flutter side has no session — at boot, and for
+# the moment after Android re-creates the client — Flet renders
+# `Scaffold(body: PageMedia())`: an empty Material scaffold inside a MaterialApp
+# whose `themeMode` is still null, i.e. ThemeMode.system. On a phone in dark
+# mode that scaffold is near-black and completely blank, which is exactly what
+# Alex describes. Turning the startup screen on replaces it with a spinner and
+# a message — and, when the client reports an error, with the error text
+# instead of silence.
+#
+# It does not by itself fix anything: a stuck client would now show a spinner
+# forever rather than a black rectangle. That is still strictly better — it
+# tells the user (and us) that the app is alive and waiting, instead of looking
+# like a crash.
+#
+# Read by the build template as `tool.flet.app.startup_screen.*`
+# (lib/main.dart -> FletApp(showAppStartupScreen:...) -> controls/page.dart).
+[tool.flet.app.startup_screen]
+show = true
+message = "Loading IronFlet…"
+
+# Must match theme.py: LIGHT.bg_page / DARK.bg_page. LIGHT is the default
+# palette, so a splash painted in the dark background flashed black before the
+# first light frame. These two keys are the only ones flet reads for the splash
+# (per platform it looks at tool.flet.<platform>.splash.color, then falls back
+# here) — a flat `splash_color` under [tool.flet.android] is never read.
 [tool.flet.splash]
-color = "#0A0A0B"
+color = "#F4F6F8"
 dark_color = "#0A0A0B"
 
 [tool.flet.android]
-package_name = "com.ironflet.app"
-product_name = "IronFlet"
+# TWO ARCHITECTURES, NOT THREE — this halves the APK for free.
+#
+# The default build ships arm64-v8a, armeabi-v7a AND x86_64: 49.4 + 43.1 + 50.7
+# MB of native libraries, 83.2 MB in the finished file. A phone runs exactly one
+# of them. Measured on this project, not assumed:
+#
+#   three ABIs (flet's default)   83.2 MB
+#   arm64-v8a + x86_64            49.5 MB   <- this
+#   arm64-v8a alone               29.8 MB
+#
+# `armeabi-v7a` is 32-bit ARM: phones from roughly 2016 and earlier. Nothing
+# that would run this app is on one.
+#
+# `x86_64` is kept ON PURPOSE and it is not for a phone. It is the only ABI the
+# test emulator (`system-images/android-34/google_apis/x86_64`) can install, and
+# every device check this project relies on was made by driving a real APK
+# there. Dropping it saves another 20 MB and costs the ability to verify
+# anything before it is installed — a bad trade. Run
+# `flet build apk --arch arm64-v8a` when the 30 MB file is what is wanted; the
+# Python payload is byte-identical either way.
+#
+# NOTE THE SYNTAX on the command line: `--arch` is `nargs="+"`, i.e.
+# SPACE-separated. `--arch arm64-v8a,x86_64` is read as a single architecture
+# named "arm64-v8a,x86_64", quietly produces an arm64-only APK, and looks like
+# it worked.
+#
+# ⚠️ AND THE REASON THIS LINE IS COMMENTED OUT. **Listing two architectures
+# produces a broken APK.** serious_python packages the Python payload for the
+# FIRST entry only:
+#
+#   target_arch = ["arm64-v8a", "x86_64"]  ->  lib/x86_64/ is missing
+#                                              libpythonsitepackages.so (7.6 MB)
+#                                              and libc++_shared.so
+#
+# The x86_64 slice then has a CPython and no site-packages, and the app opens on
+# a purple "Error running app — ModuleNotFoundError: No module named 'certifi'"
+# screen. Found by installing it, not by reading the build log, which reported
+# success — and note the app's own logcat contained no traceback either, because
+# Flet renders that error into the UI. A screenshot was the only thing that saw
+# it.
+#
+# So it is all three or exactly one. `--arch arm64-v8a` on its own is correct
+# and gives a 29.8 MB file — use it for a release to the phone, and smoke-test
+# that build on the phone, because the x86_64 emulator cannot install it.
+# target_arch = ["arm64-v8a"]
+
+# TWO KEYS THAT USED TO BE HERE AND WERE READ BY NOTHING. Both removed rather
+# than left in place looking like configuration:
+#
+#   product_name = "IronFlet"   -> moved up to `tool.flet.product`, the key the
+#                                  builder actually reads.
+#   package_name = "com.ironflet.app"
+#       Never read anywhere in flet_cli. The real applicationId is
+#       `com.flet.ironflet`, derived by the cookiecutter from `org_name`
+#       (default "com.flet") plus the project slug. The keys that would change
+#       it are `tool.flet.bundle_id` / `tool.flet.org`.
+#
+#       DO NOT "fix" it by setting bundle_id without a migration plan. The
+#       applicationId is what Android keys the app's private storage on, and
+#       that directory is where `storage.sqlite_path()` keeps ironflet.db.
+#       Changing it installs a second, empty app beside the first and leaves
+#       every workout, weight and meal in a directory the new one cannot read.
+# Launcher-icon background layer, not the splash: it shows on the home screen
+# against the wallpaper, so it does not follow the app's page background.
 adaptive_icon_background = "#0A0A0B"
-splash_color = "#0A0A0B"
 
 [tool.ruff]
 line-length = 100
 target-version = "py310"
-extend-exclude = ["exercise_details.py", "exercise_details_es.py", ".venv"]
+# `build_template/` is a vendored fork of the upstream Flutter build template
+# (see `[tool.flet] template.url`). It is third-party Dart and Python that must
+# stay diffable against upstream, so it is not ours to reformat.
+extend-exclude = ["exercise_details.py", ".venv", "build_template"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM"]

@@ -34,15 +34,20 @@ def bmi(weight_kg: float | None, height_cm: float | None) -> float | None:
 
 
 def bmi_category(bmi_value: float | None) -> str | None:
+    """The BMI band, ready to print under the number in Ajustes.
+
+    Display text, not a key: nothing branches on it and nothing stores it —
+    `views/profile.py` renders the return value verbatim.
+    """
     if bmi_value is None:
         return None
     if bmi_value < 18.5:
-        return "underweight"
+        return "bajo peso"
     if bmi_value < 25:
         return "normal"
     if bmi_value < 30:
-        return "overweight"
-    return "obese"
+        return "sobrepeso"
+    return "obesidad"
 
 
 def bmr_mifflin(

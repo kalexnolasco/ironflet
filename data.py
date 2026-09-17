@@ -2,7 +2,7 @@
 CambiaTuFísico routine data.
 7 phases, 24 weeks of periodized training.
 
-All strings are canonical English. i18n.t()/t_exercise() translate to ES.
+All strings are canonical English; there is no translation layer.
 Exercise name (without any [..] bracket) is the DB key in storage.
 """
 
@@ -32,78 +32,78 @@ PHASES: list[Phase] = [
     Phase(
         1,
         "1-3",
-        "Conditioning",
-        "Hypertrophy",
+        "Acondicionamiento",
+        "Hipertrofia",
         "#00D4AA",
         "3×12",
         "1' sets / 2-3' exercises",
-        "No absolute failure. 20' continuous cardio post-weights. Abs 2 days/week.",
+        "Sin fallo absoluto. 20' de cardio continuo tras las pesas. Abdomen 2 días/semana.",
         "high",
     ),
     Phase(
         2,
         "4-6",
-        "Total Hypertrophy",
-        "Muscle Failure",
+        "Hipertrofia total",
+        "Fallo muscular",
         "#FF6B35",
         "3×8-10",
         "1'30\" sets (max 2')",
-        "Failure on last set. Same exercises. 20' cardio. More intense abs.",
+        "Fallo en la última serie. Mismos ejercicios. 20' de cardio. Abdomen más intenso.",
         "high",
     ),
     Phase(
         3,
         "7-9",
-        "Functional Hypertrophy",
-        "Strength + Hypertrophy",
+        "Hipertrofia funcional",
+        "Fuerza + hipertrofia",
         "#7C5CFC",
         "4×5-6 (*=3×8)",
         "2-2'30\" / 3' ex. / 1' on *",
-        "Increase loads. *= 3×8 to failure. 20' cardio. Abs 5×8-12.",
+        "Sube las cargas. *= 3×8 al fallo. 20' de cardio. Abdomen 5×8-12.",
         "high",
     ),
     Phase(
         4,
         "10",
-        "Deload",
-        "Recovery",
+        "Descarga",
+        "Recuperación",
         "#FFD93D",
         "3-4×12",
         "1' sets / 2' exercises",
-        "Low intensity, no failure. 3 days full body.",
+        "Intensidad baja, sin fallo. 3 días de cuerpo entero.",
         "low",
     ),
     Phase(
         5,
         "11-14",
-        "Weider Hypertrophy",
-        "High Volume",
+        "Hipertrofia Weider",
+        "Volumen alto",
         "#FF3366",
         "Ascending Pyramid",
         "1'30\" sets / 3' exercises",
-        "5 days, 1 muscle/day. Failure on all sets except first.",
+        "5 días, 1 músculo/día. Fallo en todas las series menos la primera.",
         "low",
     ),
     Phase(
         6,
         "15-18",
-        "High Intensity",
-        "Drop Sets + Compound",
+        "Alta intensidad",
+        "Drop sets + compuestos",
         "#FF8A5C",
         "Drop sets (e.g.: 10,8,6+12↓)",
         "1' sets / 3' exercises",
-        "Drop sets on last set. 5' treadmill pre-weights.",
+        "Drop sets en la última serie. 5' de cinta antes de las pesas.",
         "low",
     ),
     Phase(
         7,
         "19-24",
-        "Fat Loss",
-        "Bi-sets / Supersets",
+        "Definición",
+        "Bi-series / superseries",
         "#4ECDC4",
         "BI 4×8+10 / SS 4×10+10",
         "Min. between blocks, 1-1'30\"",
-        "Weeks 1-3: bi-sets. Weeks 4-6: antagonist supersets.",
+        "Semanas 1-3: bi-series. Semanas 4-6: superseries antagonistas.",
         "high",
     ),
 ]
@@ -373,23 +373,23 @@ UL_PHASES: list[Phase] = [
     Phase(
         1,
         "1-6",
-        "Foundation",
-        "Build base",
+        "Base",
+        "Construye la base",
         "#00D4AA",
         "4×6-10",
         "1'30\"-2' sets",
-        "Same loads. RIR 2-3. Add weight when top reps are easy.",
+        "Mismas cargas. RIR 2-3. Añade peso cuando el tope de repeticiones salga fácil.",
         "high",
     ),
     Phase(
         2,
         "7-12",
-        "Hypertrophy Block",
-        "Volume + Intensity",
+        "Bloque de hipertrofia",
+        "Volumen + intensidad",
         "#7C5CFC",
         "4×8-12",
         "1'-1'30\" sets",
-        "Last set close to failure. Add isolation finishers.",
+        "Última serie cerca del fallo. Añade aislamientos como remate.",
         "high",
     ),
 ]
@@ -490,423 +490,29 @@ UL_DAYS_HYPERTROPHY: list[TrainingDay] = [
 ]
 
 
-# ─── Women Fitness 12-week (glute + tone focus) ──────────────────────
-
-WF_PHASES: list[Phase] = [
-    Phase(
-        1,
-        "1-6",
-        "Tone & Build",
-        "Foundation",
-        "#FF3366",
-        "3×12-15",
-        "1' sets",
-        "3 days/week. Glute focus + upper body balance. 20' cardio after.",
-        "high",
-    ),
-    Phase(
-        2,
-        "7-12",
-        "Shape & Burn",
-        "Fat Loss",
-        "#FF6B35",
-        "4×12-15 + HIIT",
-        "45s sets",
-        "4 days/week. Supersets and HIIT finishers. Keep intensity up.",
-        "high",
-    ),
-]
-
-WF_DAYS_TONE: list[TrainingDay] = [
-    TrainingDay(
-        "Glutes + Lower",
-        [
-            "Squat",
-            "Romanian Deadlift",
-            "Leg Press",
-            "Lying Leg Curl",
-            "Barbell Lunges",
-            "Standing Calf Raise",
-        ],
-    ),
-    TrainingDay(
-        "Upper Body",
-        [
-            "Incline DB Press",
-            "Front Lat Pulldown",
-            "Seated Cable Row",
-            "Lateral Raises",
-            "Cable Curl",
-            "Triceps Pushdown",
-        ],
-    ),
-    TrainingDay(
-        "Core + Cardio",
-        [
-            "Cable Crunch",
-            "Hanging Abs",
-            "Plank",
-            "Leg Raises",
-            "Hyperextensions",
-            "HIIT Intervals",
-        ],
-    ),
-]
-
-WF_DAYS_SHAPE: list[TrainingDay] = [
-    TrainingDay(
-        "Lower A: Glute focus",
-        [
-            "Squat [4×12]",
-            "Romanian Deadlift [4×12]",
-            "Leg Press [3×15]",
-            "Lying Leg Curl [3×15]",
-            "Standing Calf Raise [3×15]",
-        ],
-    ),
-    TrainingDay(
-        "Upper + HIIT",
-        [
-            "Incline DB Press [3×12]",
-            "Front Lat Pulldown [3×12]",
-            "Seated Cable Row [3×12]",
-            "Lateral Raises [3×15]",
-            "Cable Curl [3×12]",
-            "HIIT Intervals [15 min]",
-        ],
-    ),
-    TrainingDay(
-        "Lower B: Quad focus",
-        [
-            "Barbell Lunges [4×12]",
-            "Leg Extensions [3×15]",
-            "Seated Leg Curl [3×15]",
-            "Leg Press [3×15]",
-            "Seated Calf Raise [3×15]",
-        ],
-    ),
-    TrainingDay(
-        "Full Body + Core",
-        [
-            "DB Row [3×12]",
-            "Push-ups [3×max]",
-            "Arnold Press [3×12]",
-            "Cable Crunch [3×15]",
-            "Plank [3×max]",
-            "Leg Raises [3×15]",
-        ],
-    ),
-]
-
-
-# ─── Women — Home (3 days, 8 weeks, bodyweight + optional DBs) ───────
-
-WH_PHASES: list[Phase] = [
-    Phase(
-        1,
-        "1-8",
-        "Home Foundation",
-        "Bodyweight + DBs",
-        "#FF3366",
-        "3×10-15",
-        "45s-1' sets",
-        "3 days/week at home. Start bodyweight, add DBs when top reps feel easy.",
-        "high",
-    ),
-]
-
-WH_DAYS: list[TrainingDay] = [
-    TrainingDay(
-        "Upper at Home",
-        [
-            "Push-ups",
-            "Incline DB Press",
-            "DB Row",
-            "Lateral Raises",
-            "Hammer Curl",
-            "Triceps Kickback",
-        ],
-    ),
-    TrainingDay(
-        "Lower at Home",
-        [
-            "Squat",
-            "Lunges",
-            "Romanian Deadlift",
-            "Standing Calf Raise",
-            "Plank",
-            "Leg Raises",
-        ],
-    ),
-    TrainingDay(
-        "Full Body Flow",
-        [
-            "Squat",
-            "Push-ups",
-            "DB Row",
-            "Lunges",
-            "Lateral Raises",
-            "Plank",
-        ],
-    ),
-]
-
-
-# ─── Women — Strength (4 days, 12 weeks, barbell compounds) ──────────
-
-WS_PHASES: list[Phase] = [
-    Phase(
-        1,
-        "1-6",
-        "Technique Base",
-        "Submax 5×5",
-        "#00D4AA",
-        "5×5 @ RPE 6-7",
-        "2-3' sets",
-        "Submaximal loads. Add weight when 3 sessions at the same load feel easy.",
-        "high",
-    ),
-    Phase(
-        2,
-        "7-12",
-        "Strength Block",
-        "Heavy 5×3-5",
-        "#FF6B35",
-        "5×3-5 @ RPE 8",
-        "3-5' sets",
-        "Top set RPE 8. Back-off sets 10-15% lighter for volume.",
-        "high",
-    ),
-]
-
-WS_DAYS_BASE: list[TrainingDay] = [
-    TrainingDay(
-        "Squat Day",
-        [
-            "Squat",
-            "Romanian Deadlift",
-            "Leg Extensions",
-            "Lying Leg Curl",
-            "Plank",
-        ],
-    ),
-    TrainingDay(
-        "Bench Day",
-        [
-            "Barbell Bench Press",
-            "Incline DB Press",
-            "Seated DB Press",
-            "Triceps Pushdown",
-            "Cable Curl",
-        ],
-    ),
-    TrainingDay(
-        "Deadlift Day",
-        [
-            "Deadlift",
-            "Barbell Row",
-            "Pull-ups",
-            "Lateral Raises",
-            "Hyperextensions",
-        ],
-    ),
-    TrainingDay(
-        "Press Day",
-        [
-            "Barbell Military Press",
-            "Front Lat Pulldown",
-            "DB Row",
-            "EZ Bar Curl",
-            "Skull Crushers",
-        ],
-    ),
-]
-
-WS_DAYS_HEAVY: list[TrainingDay] = [
-    TrainingDay(
-        "Squat Day",
-        [
-            "Squat [5×3]",
-            "Romanian Deadlift [4×5]",
-            "Leg Press [3×8-10]",
-            "Lying Leg Curl [3×10]",
-            "Plank [3×max]",
-        ],
-    ),
-    TrainingDay(
-        "Bench Day",
-        [
-            "Barbell Bench Press [5×3]",
-            "Incline DB Press [4×5-6]",
-            "Seated DB Press [3×8]",
-            "Triceps Pushdown [3×10]",
-            "Cable Curl [3×10]",
-        ],
-    ),
-    TrainingDay(
-        "Deadlift Day",
-        [
-            "Deadlift [5×3]",
-            "Barbell Row [4×5]",
-            "Pull-ups [4×max]",
-            "Lateral Raises [3×12]",
-            "Hyperextensions [3×12]",
-        ],
-    ),
-    TrainingDay(
-        "Press Day",
-        [
-            "Barbell Military Press [5×3]",
-            "Front Lat Pulldown [4×6-8]",
-            "DB Row [3×8]",
-            "EZ Bar Curl [3×8]",
-            "Skull Crushers [3×10]",
-        ],
-    ),
-]
-
-
-# ─── Women — Volume (4 days, 12 weeks, high-volume hypertrophy) ──────
-
-WV_PHASES: list[Phase] = [
-    Phase(
-        1,
-        "1-6",
-        "Volume Base",
-        "Build volume",
-        "#7C5CFC",
-        "4×10-12",
-        "60-90s sets",
-        "Moderate loads, higher volume. Mind-muscle focus over loads.",
-        "high",
-    ),
-    Phase(
-        2,
-        "7-12",
-        "Metabolic Peak",
-        "Pump + burn",
-        "#FF8A5C",
-        "4×12-15 + drop set",
-        "45-60s sets",
-        "Last set each exercise ends with a drop set for extra intensity.",
-        "high",
-    ),
-]
-
-WV_DAYS_BASE: list[TrainingDay] = [
-    TrainingDay(
-        "Lower A: Quads",
-        [
-            "Squat",
-            "Leg Press",
-            "Leg Extensions",
-            "Barbell Lunges",
-            "Standing Calf Raise",
-        ],
-    ),
-    TrainingDay(
-        "Upper A: Push",
-        [
-            "Incline DB Press",
-            "Barbell Bench Press",
-            "Arnold Press",
-            "Lateral Raises",
-            "Cable Crossover",
-            "Triceps Pushdown",
-        ],
-    ),
-    TrainingDay(
-        "Lower B: Posterior",
-        [
-            "Romanian Deadlift",
-            "Lying Leg Curl",
-            "Seated Leg Curl",
-            "DB Lunges",
-            "Seated Calf Raise",
-        ],
-    ),
-    TrainingDay(
-        "Upper B: Pull",
-        [
-            "Pull-ups",
-            "Seated Cable Row",
-            "Front Lat Pulldown",
-            "Cable Rear Delts",
-            "EZ Bar Curl",
-            "Hammer Curl",
-        ],
-    ),
-]
-
-WV_DAYS_PEAK: list[TrainingDay] = [
-    TrainingDay(
-        "Lower A: Quads",
-        [
-            "Squat [4×12]",
-            "Leg Press [4×12+drop]",
-            "Leg Extensions [3×15+drop]",
-            "Barbell Lunges [3×12]",
-            "Standing Calf Raise [4×15]",
-        ],
-    ),
-    TrainingDay(
-        "Upper A: Push",
-        [
-            "Incline DB Press [4×12]",
-            "Barbell Bench Press [4×12]",
-            "Arnold Press [3×12+drop]",
-            "Lateral Raises [4×15+drop]",
-            "Cable Crossover [3×15]",
-            "Triceps Pushdown [3×15+drop]",
-        ],
-    ),
-    TrainingDay(
-        "Lower B: Posterior",
-        [
-            "Romanian Deadlift [4×12]",
-            "Lying Leg Curl [4×12+drop]",
-            "Seated Leg Curl [3×15]",
-            "DB Lunges [3×12]",
-            "Seated Calf Raise [4×15+drop]",
-        ],
-    ),
-    TrainingDay(
-        "Upper B: Pull",
-        [
-            "Pull-ups [4×max]",
-            "Seated Cable Row [4×12]",
-            "Front Lat Pulldown [4×12+drop]",
-            "Cable Rear Delts [4×15]",
-            "EZ Bar Curl [3×12+drop]",
-            "Hammer Curl [3×12]",
-        ],
-    ),
-]
-
-
 # ─── Push / Pull / Legs 12-week (alternative routine) ────────────────
 
 PPL_PHASES: list[Phase] = [
     Phase(
         1,
         "1-6",
-        "Foundation",
-        "Build base",
+        "Base",
+        "Construye la base",
         "#00D4AA",
         "4×6-10",
         "1'30\"-2' sets",
-        "6 days/week. Same exercises twice. RIR 2-3 until last set.",
+        "6 días/semana. Mismos ejercicios dos veces. RIR 2-3 hasta la última serie.",
         "high",
     ),
     Phase(
         2,
         "7-12",
-        "Intensification",
-        "Volume + Intensity",
+        "Intensificación",
+        "Volumen + intensidad",
         "#FF6B35",
         "4×8-12",
         "1'-1'30\" sets",
-        "Push last set to failure. Add drop set on isolation moves.",
+        "Lleva la última serie al fallo. Añade un drop set en los aislamientos.",
         "high",
     ),
 ]
@@ -990,6 +596,211 @@ PPL_DAYS_INTENSIFICATION: list[TrainingDay] = [
 ]
 
 
+RECOMP_PHASES: list[Phase] = [
+    Phase(
+        1,
+        "1-2",
+        "Base",
+        "Fija tus pesos de trabajo",
+        "#00D4AA",
+        "4×5-8 / 3×8-12",
+        "3' compounds / 60-90s isolation",
+        "Busca una carga que deje 2-3 reps en reserva. La semana 1 fija la línea base, no récords.",
+        "low",
+    ),
+    Phase(
+        2,
+        "3-5",
+        "Acumulación",
+        "Una serie extra en el primero",
+        "#FF6B35",
+        "5×5-8 / 3×8-12",
+        "3' compounds / 60-90s isolation",
+        "Añade 1 serie al primer ejercicio de cada sesión. Progresión doble: llega al "
+        "tope del rango en todas las series y entonces suma 2,5 kg en superior / 5 kg en inferior.",
+        "low",
+    ),
+    Phase(
+        3,
+        "6",
+        "Descarga",
+        "Mismo peso, la mitad de series",
+        "#4A9EFF",
+        "2×5-8 / 2×8-12",
+        "3' compounds / 60-90s isolation",
+        "Mismas cargas, la mitad de series, sin cardio matinal. Semana de recuperación antes del siguiente bloque.",
+        "low",
+    ),
+]
+
+# 5-day PPL + Upper/Lower. Frequency 2 per muscle group, legs 72 h apart.
+# Mon Push 18:30 · Tue Legs A 14:30 · Wed Pull 18:30 · Thu Upper 14:30 · Fri Lower 14:30
+RECOMP_DAYS_BASE: list[TrainingDay] = [
+    TrainingDay(
+        "Push",
+        [
+            "Barbell Bench Press [4×5-8]",
+            "Barbell Military Press [3×6-10]",
+            "Incline DB Press [3×8-12]",
+            "Lateral Raises [4×12-20]",
+            "Dips [3×8-12]",
+            "Triceps Pushdown [3×10-15]",
+        ],
+    ),
+    TrainingDay(
+        "Legs A: quad focus",
+        [
+            "Squat [4×5-8]",
+            "Leg Press [3×8-12]",
+            "Leg Extensions [3×12-15]",
+            "Lying Leg Curl [3×10-15]",
+            "Standing Calf Raise [4×12-20]",
+        ],
+    ),
+    TrainingDay(
+        "Pull",
+        [
+            "Pull-ups [4×6-10]",
+            "Barbell Row [4×6-10]",
+            "Seated Cable Row [3×10-12]",
+            "Face Pull [3×15-20]",
+            "EZ Bar Curl [3×8-12]",
+            "Hammer Curl [3×10-15]",
+        ],
+    ),
+    TrainingDay(
+        "Upper",
+        [
+            "Incline Barbell Bench Press [4×6-10]",
+            "DB Row [4×8-12]",
+            "Seated DB Press [3×8-12]",
+            "Front Lat Pulldown [3×10-12]",
+            "Cable Lateral Raises [3×15-20]",
+            "Incline DB Curl [3×10-15]",
+            "Overhead Extension [3×10-15]",
+        ],
+    ),
+    TrainingDay(
+        "Lower: hip focus",
+        [
+            "Romanian Deadlift [4×6-10]",
+            "Hip Thrust [3×8-12]",
+            "Bulgarian Split Squat [3×8-12]",
+            "Seated Leg Curl [3×10-15]",
+            "Seated Calf Raise [4×15-20]",
+        ],
+    ),
+]
+
+# Phase 2 adds one set to the opener of every session.
+RECOMP_DAYS_ACCUMULATION: list[TrainingDay] = [
+    TrainingDay(
+        "Push",
+        [
+            "Barbell Bench Press [5×5-8]",
+            "Barbell Military Press [3×6-10]",
+            "Incline DB Press [3×8-12]",
+            "Lateral Raises [4×12-20]",
+            "Dips [3×8-12]",
+            "Triceps Pushdown [3×10-15]",
+        ],
+    ),
+    TrainingDay(
+        "Legs A: quad focus",
+        [
+            "Squat [5×5-8]",
+            "Leg Press [3×8-12]",
+            "Leg Extensions [3×12-15]",
+            "Lying Leg Curl [3×10-15]",
+            "Standing Calf Raise [4×12-20]",
+        ],
+    ),
+    TrainingDay(
+        "Pull",
+        [
+            "Pull-ups [5×6-10]",
+            "Barbell Row [4×6-10]",
+            "Seated Cable Row [3×10-12]",
+            "Face Pull [3×15-20]",
+            "EZ Bar Curl [3×8-12]",
+            "Hammer Curl [3×10-15]",
+        ],
+    ),
+    TrainingDay(
+        "Upper",
+        [
+            "Incline Barbell Bench Press [5×6-10]",
+            "DB Row [4×8-12]",
+            "Seated DB Press [3×8-12]",
+            "Front Lat Pulldown [3×10-12]",
+            "Cable Lateral Raises [3×15-20]",
+            "Incline DB Curl [3×10-15]",
+            "Overhead Extension [3×10-15]",
+        ],
+    ),
+    TrainingDay(
+        "Lower: hip focus",
+        [
+            "Romanian Deadlift [5×6-10]",
+            "Hip Thrust [3×8-12]",
+            "Bulgarian Split Squat [3×8-12]",
+            "Seated Leg Curl [3×10-15]",
+            "Seated Calf Raise [4×15-20]",
+        ],
+    ),
+]
+
+# Deload: same loads, half the sets.
+RECOMP_DAYS_DELOAD: list[TrainingDay] = [
+    TrainingDay(
+        "Push",
+        [
+            "Barbell Bench Press [2×5-8]",
+            "Barbell Military Press [2×6-10]",
+            "Incline DB Press [2×8-12]",
+            "Lateral Raises [2×12-20]",
+            "Dips [2×8-12]",
+        ],
+    ),
+    TrainingDay(
+        "Legs A: quad focus",
+        [
+            "Squat [2×5-8]",
+            "Leg Press [2×8-12]",
+            "Lying Leg Curl [2×10-15]",
+            "Standing Calf Raise [2×12-20]",
+        ],
+    ),
+    TrainingDay(
+        "Pull",
+        [
+            "Pull-ups [2×6-10]",
+            "Barbell Row [2×6-10]",
+            "Face Pull [2×15-20]",
+            "EZ Bar Curl [2×8-12]",
+        ],
+    ),
+    TrainingDay(
+        "Upper",
+        [
+            "Incline Barbell Bench Press [2×6-10]",
+            "DB Row [2×8-12]",
+            "Seated DB Press [2×8-12]",
+            "Cable Lateral Raises [2×15-20]",
+        ],
+    ),
+    TrainingDay(
+        "Lower: hip focus",
+        [
+            "Romanian Deadlift [2×6-10]",
+            "Hip Thrust [2×8-12]",
+            "Seated Leg Curl [2×10-15]",
+            "Seated Calf Raise [2×15-20]",
+        ],
+    ),
+]
+
+
 @dataclass
 class Routine:
     id: str
@@ -1011,11 +822,228 @@ WEEK_ROTATION: list[list[str]] = [
 ]
 
 
+# ─────────────────────────────────────────────────────────────────────────
+# Rutinas conocidas, añadidas en 0.18
+#
+# Alex: «agrega muchas rutinas». Estas cuatro no son inventadas: son programas
+# publicados y con años de uso detrás, transcritos con sus series y
+# repeticiones originales. Lo único que se ha traducido son los **nombres de
+# los ejercicios**, y no al español: al vocabulario que esta app ya usa. PHUL
+# empieza por «Bench Press» y aquí es `Barbell Bench Press`, porque ese nombre
+# **es** la clave del historial (trampa 2) y un segundo nombre para el press de
+# banca partiría en dos meses de series.
+#
+# `tests/test_rutinas_nuevas.py` comprueba que cada ejercicio de cada rutina
+# existe en el catálogo, que es lo único que impide que una de estas abra un
+# historial paralelo sin que nada falle.
+# ─────────────────────────────────────────────────────────────────────────
+
+# PHUL — Power Hypertrophy Upper Lower, de Brandon Campbell.
+# Dos días de fuerza (3-5 reps) y dos de hipertrofia (8-12), sobre el mismo
+# split. Es la que mejor encaja con una recomposición: la fuerza mantiene la
+# carga mientras el déficit corre, y el volumen se lleva el estímulo.
+PHUL_PHASES: list[Phase] = [
+    Phase(
+        1,
+        "1-12",
+        "Fuerza e hipertrofia",
+        "Dos caras del mismo split",
+        "#00D4AA",
+        "4×3-5 / 4×8-12",
+        "2'-3' fuerza · 1'-1'30\" hipertrofia",
+        "Los días de fuerza van a 3-5 con RIR 1-2. Los de hipertrofia, 8-12 "
+        "dejando la última serie cerca del fallo. Sube el peso cuando cierres "
+        "el tope de repeticiones en todas las series.",
+        "high",
+    ),
+]
+
+PHUL_DAYS: list[TrainingDay] = [
+    TrainingDay(
+        "Upper Power",
+        [
+            "Barbell Bench Press [4×3-5]",
+            "Barbell Row [4×3-5]",
+            "Incline DB Press [3×6-10]",
+            "Front Lat Pulldown [3×6-10]",
+            "Barbell Military Press [3×5-8]",
+            "Barbell Curl [3×6-10]",
+            "EZ Bar Skull Crushers [3×8-12]",
+        ],
+    ),
+    TrainingDay(
+        "Lower Power",
+        [
+            "Squat [4×3-5]",
+            "Deadlift [4×3-5]",
+            "Bulgarian Split Squat [3×6-10]",
+            "Lying Leg Curl [3×6-10]",
+            "Standing Calf Raise [4×6-10]",
+        ],
+    ),
+    TrainingDay(
+        "Upper Hypertrophy",
+        [
+            "Incline Barbell Bench Press [4×8-12]",
+            "Seated Cable Row [4×8-12]",
+            "Incline DB Flyes [3×8-12]",
+            "DB Row [3×8-12]",
+            "Lateral Raises [3×8-12]",
+            "DB Curl [3×8-12]",
+            "Triceps Pushdown [3×10-15]",
+        ],
+    ),
+    TrainingDay(
+        "Lower Hypertrophy",
+        [
+            "Barbell Lunges [3×8-12]",
+            "Leg Press [4×8-12]",
+            "Leg Extensions [3×8-12]",
+            "Lying Leg Curl [3×8-12]",
+            "Standing Calf Raise [4×8-12]",
+            "Seated Calf Raise [3×8-12]",
+        ],
+    ),
+]
+
+# StrongLifts 5×5 — el clásico de fuerza para empezar.
+# Tres días, cinco ejercicios, dos sesiones que se alternan. Nada de
+# aislamientos: la premisa es que con poco tiempo entrenado lo que falta es
+# carga en los básicos, no variedad.
+SL_PHASES: list[Phase] = [
+    Phase(
+        1,
+        "1-12",
+        "Progresión lineal",
+        "Cinco por cinco",
+        "#FF6B35",
+        "5×5",
+        "3'-5' sets",
+        "Sube 2,5 kg cada sesión mientras cierres las cinco series de cinco. "
+        "A la tercera vez que falles el mismo peso, baja un 10 % y vuelve a "
+        "subir. El peso muerto es 1×5, no 5×5.",
+        "high",
+    ),
+]
+
+SL_DAYS: list[TrainingDay] = [
+    TrainingDay("Workout A", ["Squat [5×5]", "Barbell Bench Press [5×5]", "Barbell Row [5×5]"]),
+    TrainingDay("Workout B", ["Squat [5×5]", "Barbell Military Press [5×5]", "Deadlift [1×5]"]),
+]
+
+# Arnold Split — 6 días, dos grupos por sesión, mucho volumen.
+# Para semanas en que sobra tiempo y el objetivo es tamaño. Pide comer y
+# dormir en consecuencia; con déficit agresivo no se sostiene.
+ARNOLD_PHASES: list[Phase] = [
+    Phase(
+        1,
+        "1-8",
+        "Volumen",
+        "Seis días, mucho trabajo",
+        "#7C5CFC",
+        "4×8-12",
+        "1'-1'30\" sets",
+        "Series al fallo técnico en la última de cada ejercicio. Esta rutina "
+        "solo funciona con superávit o mantenimiento: en déficit agresivo el "
+        "volumen deja de recuperarse.",
+        "high",
+    ),
+]
+
+ARNOLD_DAYS: list[TrainingDay] = [
+    TrainingDay(
+        "Chest - Back",
+        [
+            "Barbell Bench Press [4×8-12]",
+            "Incline DB Press [4×8-12]",
+            "Pec Deck [3×10-12]",
+            "Pull-ups [4×8-12]",
+            "Barbell Row [4×8-12]",
+            "Seated Cable Row [3×10-12]",
+        ],
+    ),
+    TrainingDay(
+        "Shoulders - Arms",
+        [
+            "Barbell Military Press [4×8-12]",
+            "Lateral Raises [4×10-15]",
+            "Standing Rear Delts [3×12-15]",
+            "Barbell Curl [4×8-12]",
+            "Alternate Hammer Curl [3×10-12]",
+            "EZ Bar Skull Crushers [4×8-12]",
+            "Triceps Pushdown [3×10-15]",
+        ],
+    ),
+    TrainingDay(
+        "Legs",
+        [
+            "Squat [5×8-12]",
+            "Leg Press [4×10-15]",
+            "Lying Leg Curl [4×10-12]",
+            "Romanian Deadlift [3×8-12]",
+            "Standing Calf Raise [5×15-20]",
+        ],
+    ),
+]
+
+# Full Body 3 días — para las semanas en que no hay más.
+# Tres sesiones tocan todo dos veces por semana con la mitad del tiempo; es la
+# rutina a la que bajar en un mes malo, en vez de dejar de entrenar.
+FB_PHASES: list[Phase] = [
+    Phase(
+        1,
+        "1-12",
+        "Cuerpo completo",
+        "Tres días, todo el cuerpo",
+        "#4D96FF",
+        "3×8-12",
+        "1'30\"-2' sets",
+        "La rutina de las semanas con poco tiempo: tres sesiones de una hora "
+        "que tocan todo. Menos volumen que un split, y aún así suficiente para "
+        "mantener y progresar despacio.",
+        "low",
+    ),
+]
+
+FB_DAYS: list[TrainingDay] = [
+    TrainingDay(
+        "Full Body A",
+        [
+            "Squat [3×8-12]",
+            "Barbell Bench Press [3×8-12]",
+            "Barbell Row [3×8-12]",
+            "Lateral Raises [3×12-15]",
+            "Plank [3×30-60]",
+        ],
+    ),
+    TrainingDay(
+        "Full Body B",
+        [
+            "Deadlift [3×6-8]",
+            "Barbell Military Press [3×8-12]",
+            "Front Lat Pulldown [3×8-12]",
+            "Leg Press [3×10-15]",
+            "Barbell Curl [3×10-12]",
+        ],
+    ),
+    TrainingDay(
+        "Full Body C",
+        [
+            "Bulgarian Split Squat [3×8-12]",
+            "Incline DB Press [3×8-12]",
+            "Seated Cable Row [3×8-12]",
+            "Lying Leg Curl [3×10-12]",
+            "Triceps Pushdown [3×10-15]",
+        ],
+    ),
+]
+
+
 ROUTINES: list[Routine] = [
     Routine(
         id="cambiatufisico",
         name="CambiaTuFísico",
-        description="Periodized routine · 24 weeks · 7 phases",
+        description="Rutina periodizada · 24 semanas · 7 fases",
         phases=PHASES,
         days_by_phase={
             1: DAYS_PHASE_1_3,
@@ -1031,7 +1059,7 @@ ROUTINES: list[Routine] = [
     Routine(
         id="upper-lower",
         name="Upper / Lower",
-        description="4-day split · 12 weeks · 2 phases",
+        description="Split de 4 días · 12 semanas · 2 fases",
         phases=UL_PHASES,
         days_by_phase={1: UL_DAYS_FOUNDATION, 2: UL_DAYS_HYPERTROPHY},
         week_rotation=None,
@@ -1039,41 +1067,53 @@ ROUTINES: list[Routine] = [
     Routine(
         id="push-pull-legs",
         name="Push / Pull / Legs",
-        description="6-day split · 12 weeks · 2 phases",
+        description="Split de 6 días · 12 semanas · 2 fases",
         phases=PPL_PHASES,
         days_by_phase={1: PPL_DAYS_FOUNDATION, 2: PPL_DAYS_INTENSIFICATION},
         week_rotation=None,
     ),
     Routine(
-        id="women-fitness",
-        name="Women Fitness",
-        description="Glute + tone focus · 12 weeks · 2 phases",
-        phases=WF_PHASES,
-        days_by_phase={1: WF_DAYS_TONE, 2: WF_DAYS_SHAPE},
+        id="recomp-ppl-ul",
+        name="Recomp — PPL + Upper/Lower",
+        description="5 días · 6 semanas · volumen limpio",
+        phases=RECOMP_PHASES,
+        days_by_phase={
+            1: RECOMP_DAYS_BASE,
+            2: RECOMP_DAYS_ACCUMULATION,
+            3: RECOMP_DAYS_DELOAD,
+        },
         week_rotation=None,
     ),
     Routine(
-        id="women-home",
-        name="Women — Home",
-        description="At home · 3 days · 8 weeks · 1 phase",
-        phases=WH_PHASES,
-        days_by_phase={1: WH_DAYS},
+        id="phul",
+        name="PHUL",
+        description="Power Hypertrophy · 4 días · 12 semanas",
+        phases=PHUL_PHASES,
+        days_by_phase={1: PHUL_DAYS},
         week_rotation=None,
     ),
     Routine(
-        id="women-strength",
-        name="Women — Strength",
-        description="Barbell strength · 4 days · 12 weeks · 2 phases",
-        phases=WS_PHASES,
-        days_by_phase={1: WS_DAYS_BASE, 2: WS_DAYS_HEAVY},
+        id="stronglifts",
+        name="StrongLifts 5×5",
+        description="Fuerza básica · 3 días · progresión lineal",
+        phases=SL_PHASES,
+        days_by_phase={1: SL_DAYS},
         week_rotation=None,
     ),
     Routine(
-        id="women-volume",
-        name="Women — Volume",
-        description="High volume hypertrophy · 4 days · 12 weeks · 2 phases",
-        phases=WV_PHASES,
-        days_by_phase={1: WV_DAYS_BASE, 2: WV_DAYS_PEAK},
+        id="arnold",
+        name="Arnold Split",
+        description="Volumen alto · 6 días · 8 semanas",
+        phases=ARNOLD_PHASES,
+        days_by_phase={1: ARNOLD_DAYS},
+        week_rotation=None,
+    ),
+    Routine(
+        id="full-body",
+        name="Full Body 3 días",
+        description="Para las semanas con poco tiempo · 12 semanas",
+        phases=FB_PHASES,
+        days_by_phase={1: FB_DAYS},
         week_rotation=None,
     ),
 ]

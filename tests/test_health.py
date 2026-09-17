@@ -17,12 +17,12 @@ def test_bmi_value():
 
 
 def test_bmi_category_boundaries():
-    assert bmi_category(17) == "underweight"
+    assert bmi_category(17) == "bajo peso"
     assert bmi_category(18.5) == "normal"
     assert bmi_category(24.9) == "normal"
-    assert bmi_category(25) == "overweight"
-    assert bmi_category(29.9) == "overweight"
-    assert bmi_category(30) == "obese"
+    assert bmi_category(25) == "sobrepeso"
+    assert bmi_category(29.9) == "sobrepeso"
+    assert bmi_category(30) == "obesidad"
 
 
 def test_bmr_mifflin_male():
